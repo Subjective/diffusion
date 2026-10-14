@@ -1,0 +1,48 @@
+[project]
+name = "diffusion-review"
+version = "0.1.0"
+description = "Turn a pull request or local branch into a guided, linked review walkthrough with an AI side chat."
+license = "MIT"
+keywords = ["code-review", "pull-request", "llm", "agent", "claude", "openai"]
+requires-python = ">=3.12"
+dependencies = [
+  "anthropic>=1.0",
+  "openai>=1.60",
+  "claude-agent-sdk>=0.2.128,<0.3",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "pydantic>=2.7",
+  "unidiff>=0.7.5",
+  "typer>=0.12",
+]
+
+[project.scripts]
+diffusion = "diffusion.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/diffusion"]
+# `make build` copies web/dist here so the wheel serves the UI without Node.
+artifacts = ["src/diffusion/web/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["live: calls a real model backend from your config (run with -m live)"]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+# The formatter handles code line length; long strings/comments/docstrings are allowed.
+ignore = ["E501"]

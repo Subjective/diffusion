@@ -1,0 +1,1290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diffusion · wireframe</title>
+<style>
+  :root {
+    --sans: "Söhne", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Söhne Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    --bg: #ffffff;
+    --panel: #f9f9f9;
+    --surface: #ffffff;
+    --text: #0d0d0d;
+    --muted: #5d5d5d;
+    --subtle: #8f8f8f;
+    --border: #ececec;
+    --border-strong: #e0e0e0;
+    --hover: rgba(0,0,0,.04);
+    --chip: #f0f0f0;
+    --solid: #0d0d0d;
+    --solid-fg: #ffffff;
+    --brand: #10a37f;
+    --hl: rgba(37,99,235,.10);
+    --hl-flash: rgba(37,99,235,.24);
+    --hl-bar: #2563eb;
+    --add: rgba(16,163,127,.08);
+    --del: rgba(239,68,68,.07);
+    --add-fg: #0a7a5c;
+    --del-fg: #d03b3b;
+    --t-k: #7c3aed; --t-s: #0a7a5c; --t-n: #b45309; --t-c: #8f8f8f; --t-f: #2563eb; --t-t: #b4235a;
+    --shadow: 0 10px 30px rgba(0,0,0,.10), 0 1px 3px rgba(0,0,0,.06);
+  }
+  :root.dark {
+    --bg: #212121;
+    --panel: #181818;
+    --surface: #2a2a2a;
+    --text: #ececec;
+    --muted: #b4b4b4;
+    --subtle: #8a8a8a;
+    --border: rgba(255,255,255,.08);
+    --border-strong: rgba(255,255,255,.14);
+    --hover: rgba(255,255,255,.05);
+    --chip: #303030;
+    --solid: #ececec;
+    --solid-fg: #0d0d0d;
+    --hl: rgba(96,165,250,.16);
+    --hl-flash: rgba(96,165,250,.32);
+    --hl-bar: #60a5fa;
+    --add: rgba(16,163,127,.13);
+    --del: rgba(239,68,68,.12);
+    --add-fg: #4fd1a5;
+    --del-fg: #f87171;
+    --t-k: #c4a7ff; --t-s: #6ee7b7; --t-n: #fbbf24; --t-c: #7a7a7a; --t-f: #93c5fd; --t-t: #f9a8d4;
+    --shadow: 0 10px 30px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; font: 14px/1.5 var(--sans); color: var(--text); background: var(--bg);
+    display: flex; flex-direction: column; overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  .ic { display: block; flex: none; }
+  .hidden { display: none !important; }
+  .grow { flex: 1; }
+  code { font: 12.5px var(--mono); background: var(--chip); padding: 1px 5px; border-radius: 5px; }
+
+  /* ---------- buttons ---------- */
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 8px; display: inline-grid; place-items: center;
+    color: var(--muted); transition: background .12s, color .12s;
+  }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
+  .icon-btn.sm { width: 26px; height: 26px; border-radius: 6px; }
+  .icon-btn.solid { background: var(--solid); color: var(--solid-fg); border-radius: 999px; }
+  .icon-btn.solid:hover { opacity: .85; }
+  .icon-btn.on { color: var(--text); background: var(--hover); }
+
+  /* ---------- top bar ---------- */
+  .top {
+    height: 56px; flex: none; display: flex; align-items: center; gap: 16px;
+    padding: 0 12px 0 16px; border-bottom: 1px solid var(--border);
+  }
+  .brand { width: 30px; height: 30px; border-radius: 9px; background: var(--solid); color: var(--solid-fg); display: grid; place-items: center; }
+  .url {
+    margin: 0 auto; width: min(600px, 48vw); height: 40px; display: flex; align-items: center; gap: 10px;
+    padding: 0 4px 0 14px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
+    color: var(--subtle);
+  }
+  .url:focus-within { border-color: var(--subtle); }
+  .url input { flex: 1; border: 0; outline: 0; background: transparent; font: 14px var(--sans); color: var(--text); }
+  .top-r { display: flex; gap: 2px; }
+
+  /* ---------- layout ---------- */
+  .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 360px minmax(0,1fr) var(--chat-w, 380px); }
+  .app.no-chat { grid-template-columns: 360px minmax(0,1fr) 0; }
+  .app.no-chat .chat { display: none; }
+
+  /* ---------- guide pane ---------- */
+  .guide { overflow: auto; background: var(--panel); border-right: 1px solid var(--border); padding: 20px 16px 48px; }
+  .pr h1 { font-size: 17px; line-height: 1.35; font-weight: 600; margin: 0 4px 8px; letter-spacing: -.01em; }
+  .meta { display: flex; align-items: center; gap: 8px; margin: 0 4px; color: var(--subtle); font-size: 12.5px; }
+  .avatar { width: 18px; height: 18px; border-radius: 50%; background: #d9d3f5; color: #4a3aa8; font-size: 9px; font-weight: 700; display: grid; place-items: center; }
+  .n-add { color: var(--add-fg); font-family: var(--mono); font-size: 12px; }
+  .n-del { color: var(--del-fg); font-family: var(--mono); font-size: 12px; }
+  .sep { width: 3px; height: 3px; border-radius: 50%; background: var(--border-strong); }
+
+  .sec { margin-top: 22px; }
+  .sec-h { display: flex; align-items: center; gap: 6px; margin: 0 4px 8px; color: var(--subtle); font-size: 11.5px; font-weight: 500; letter-spacing: .02em; }
+  .sec-h .grow + * { font-family: var(--mono); }
+  .tldr { margin: 0 4px; font-size: 14px; line-height: 1.55; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 4px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 8px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--border); font-size: 12.5px; color: var(--muted);
+  }
+  .chip.warn { color: #b45309; border-color: rgba(180,83,9,.25); background: rgba(245,158,11,.07); }
+  :root.dark .chip.warn { color: #fbbf24; border-color: rgba(251,191,36,.25); background: rgba(251,191,36,.07); }
+
+  .flow { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 6px 4px; }
+  .flow svg { width: 100%; display: block; }
+  .fn { cursor: pointer; }
+  .fn rect { fill: var(--surface); stroke: var(--border-strong); transition: fill .12s, stroke .12s; }
+  .fn text { fill: var(--text); font: 11.5px var(--mono); }
+  .fn .num circle { fill: var(--chip); }
+  .fn .num text { font: 600 9.5px var(--sans); fill: var(--muted); text-anchor: middle; }
+  .fn.hover rect { fill: var(--hl); stroke: var(--hl-bar); }
+  .fn.active rect { stroke: var(--text); stroke-width: 1.5; }
+  .fn.active .num circle { fill: var(--solid); }
+  .fn.active .num text { fill: var(--solid-fg); }
+  .fe { fill: none; stroke: var(--subtle); stroke-width: 1.2; }
+  .fe.err { stroke: var(--del-fg); stroke-dasharray: 3 3; }
+  .mk { fill: var(--subtle); } .mk.err { fill: var(--del-fg); }
+  .fl { font: 10px var(--sans); fill: var(--subtle); }
+  .fl.err { fill: var(--del-fg); }
+
+  .progress { flex: 0 0 56px; height: 3px; background: var(--border-strong); border-radius: 3px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--brand); transition: width .25s; }
+
+  .step {
+    position: relative; display: grid; grid-template-columns: 24px 1fr auto; gap: 10px; align-items: start;
+    padding: 10px 8px 10px 10px; border-radius: 12px; border: 1px solid transparent; cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  .step + .step { margin-top: 2px; }
+  .step:hover, .step.hover { background: var(--hover); }
+  .step.active { background: var(--surface); border-color: var(--border-strong); }
+  .step .num {
+    width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface);
+    display: grid; place-items: center; font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 1px;
+  }
+  .step.active .num { background: var(--solid); border-color: var(--solid); color: var(--solid-fg); }
+  .step.done .num { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .step .t { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
+  .step .t .ic { color: var(--subtle); }
+  .step .s { color: var(--muted); font-size: 13px; line-height: 1.45; margin-top: 2px; }
+  .step .s code { font-size: 11.5px; }
+  .refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .ref { font: 11px var(--mono); color: var(--subtle); background: var(--chip); padding: 1px 6px; border-radius: 5px; }
+  .step .acts { display: flex; flex-direction: column; gap: 2px; }
+  .step .acts .ask { opacity: 0; }
+  .step:hover .acts .ask { opacity: 1; }
+  .step.done .t { color: var(--muted); }
+
+  .skip-row {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; color: var(--subtle);
+    font: 12px var(--mono); cursor: pointer;
+  }
+  .skip-row:hover { background: var(--hover); color: var(--muted); }
+  .skip-row .cnt { margin-left: auto; }
+
+  /* generating state */
+  .gen { padding: 24px 6px; }
+  .gen-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; color: var(--subtle); font-size: 13px; }
+  .gen-row .dot-i { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--border); }
+  .gen-row.cur { color: var(--text); }
+  .gen-row.cur .dot-i { border-color: var(--subtle); }
+  .gen-row.done .dot-i { color: var(--brand); }
+  .gen-row .spin { margin-left: auto; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .fade-in > * { animation: fadeUp .35s both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(4px); } }
+
+  /* ---------- diff pane ---------- */
+  .diffpane { overflow: auto; position: relative; }
+  .toolbar {
+    position: sticky; top: 0; z-index: 4; height: 44px; display: flex; align-items: center; gap: 4px;
+    padding: 0 12px 0 20px; background: var(--bg); border-bottom: 1px solid var(--border); color: var(--subtle); font-size: 12.5px;
+  }
+  .toolbar .lbl { display: flex; align-items: center; gap: 6px; }
+  .files { padding: 12px 16px 120px; }
+  .files.hide-skip .file.skip { display: none; }
+  .file { border: 1px solid var(--border); border-radius: 12px; overflow: clip; margin-bottom: 12px; background: var(--bg); }
+  .file-h {
+    position: sticky; top: 44px; z-index: 3; height: 40px; display: flex; align-items: center; gap: 8px;
+    padding: 0 8px 0 10px; background: var(--panel); border-bottom: 1px solid var(--border); cursor: pointer; color: var(--subtle);
+  }
+  .file.collapsed .file-h { border-bottom-color: transparent; }
+  .file.collapsed .file-b { display: none; }
+  .file.collapsed .chev { transform: rotate(-90deg); }
+  .chev { transition: transform .15s; }
+  .path { font: 12.5px var(--mono); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .path .dir { color: var(--subtle); }
+  .file.skip .path { color: var(--subtle); }
+  .cnt { font: 11.5px var(--mono); white-space: nowrap; }
+  .cnt .a { color: var(--add-fg); } .cnt .d { color: var(--del-fg); }
+  .badges { display: flex; gap: 3px; }
+  .viewed.on { color: var(--brand); }
+
+  table.diff { width: 100%; border-collapse: collapse; font: 12.5px/20px var(--mono); }
+  td { padding: 0; vertical-align: top; }
+  td.mark { width: 26px; text-align: center; padding-top: 2px; }
+  td.no { width: 44px; padding: 0 8px; text-align: right; color: var(--subtle); user-select: none; font-size: 11.5px; opacity: .8; }
+  td.code { position: relative; white-space: pre; padding: 0 16px 0 24px; }
+  .sg { position: absolute; left: 9px; color: var(--subtle); user-select: none; }
+  tr.add td { background-color: var(--add); }
+  tr.del td { background-color: var(--del); }
+  tr.add .sg { color: var(--add-fg); } tr.del .sg { color: var(--del-fg); }
+  tr.hh td { background: var(--panel); color: var(--subtle); font-size: 11.5px; padding: 3px 12px; }
+  tr.hh td span { color: var(--muted); }
+  tr.hl td, tr.pin td, tr.sel td { background-image: linear-gradient(var(--hl), var(--hl)); }
+  tr.hl td.mark, tr.pin td.mark, tr.sel td.mark { box-shadow: inset 2px 0 0 var(--hl-bar); }
+  tr.flash td.code, tr.flash td.no { animation: flash 1.1s ease-out; }
+  @keyframes flash { from { box-shadow: inset 0 0 0 100vmax var(--hl-flash); } to { box-shadow: inset 0 0 0 100vmax transparent; } }
+  .ask-btn {
+    position: absolute; left: -11px; top: 1px; width: 20px; height: 18px; border-radius: 6px;
+    background: var(--hl-bar); color: #fff; display: none; place-items: center; z-index: 1;
+  }
+  tr.ln:hover .ask-btn { display: grid; }
+  .t-k { color: var(--t-k); } .t-s { color: var(--t-s); } .t-n { color: var(--t-n); }
+  .t-c { color: var(--t-c); font-style: italic; } .t-f { color: var(--t-f); } .t-t { color: var(--t-t); }
+
+  .dot {
+    display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--solid); color: var(--solid-fg); font: 600 9.5px var(--sans); cursor: pointer;
+  }
+  .dot.sm { width: 15px; height: 15px; font-size: 9px; background: var(--chip); color: var(--muted); }
+  .dot.sm:hover { background: var(--solid); color: var(--solid-fg); }
+
+  /* ---------- ask popup ---------- */
+  .ask-pop {
+    position: fixed; z-index: 50; width: 360px; background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: 16px; box-shadow: var(--shadow); padding: 8px; animation: pop .14s ease-out;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+  .ask-ctx { display: flex; align-items: center; gap: 6px; padding: 2px 4px 8px 6px; font: 11.5px var(--mono); color: var(--subtle); }
+  .ask-ctx b { color: var(--text); font-weight: 500; }
+  .ask-in { display: flex; align-items: center; gap: 6px; }
+  .ask-in input {
+    flex: 1; height: 36px; border: 1px solid var(--border); border-radius: 999px; padding: 0 14px; outline: 0;
+    background: var(--bg); color: var(--text); font: 14px var(--sans);
+  }
+  .ask-in input:focus { border-color: var(--subtle); }
+
+  /* ---------- chat ---------- */
+  .chat { position: relative; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border); background: var(--bg); }
+  .chat-h { height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--border); color: var(--subtle); }
+  .msgs { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
+  .empty { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 18px; color: var(--subtle); }
+  .empty .big { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-strong); display: grid; place-items: center; }
+  .sugg { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .sugg button {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--border-strong);
+    border-radius: 999px; font-size: 13px; color: var(--muted);
+  }
+  .sugg button:hover { background: var(--hover); color: var(--text); }
+  .msg.user { align-self: flex-end; max-width: 88%; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .bubble { background: var(--chip); padding: 9px 14px; border-radius: 18px; font-size: 14px; }
+  .ctx-card {
+    width: 100%; min-width: 220px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; cursor: pointer;
+    background: var(--surface); transition: border-color .12s;
+  }
+  .ctx-card:hover { border-color: var(--hl-bar); }
+  .ctx-card .h { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font: 11.5px var(--mono); color: var(--muted); }
+  .ctx-card .h span { color: var(--subtle); margin-left: auto; }
+  .ctx-card pre {
+    margin: 0; padding: 6px 10px 8px; font: 11.5px/18px var(--mono); color: var(--muted); max-height: 62px; overflow: hidden;
+    border-top: 1px solid var(--border); -webkit-mask-image: linear-gradient(#000 60%, transparent);
+  }
+  .msg.ai { display: grid; grid-template-columns: 26px 1fr; gap: 10px; font-size: 14px; line-height: 1.6; }
+  .ai-av { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border-strong); display: grid; place-items: center; color: var(--text); }
+  .ai-body { padding-top: 2px; }
+  .ai-body code { font-size: 12px; }
+  .cursor { display: inline-block; width: 7px; height: 14px; background: var(--text); border-radius: 2px; vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .composer-wrap { padding: 12px 12px 14px; }
+  .composer {
+    display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 16px; border: 1px solid var(--border-strong);
+    border-radius: 24px; background: var(--surface);
+  }
+  .composer:focus-within { border-color: var(--subtle); }
+  .composer textarea {
+    flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: 14px/22px var(--sans);
+    padding: 5px 0; max-height: 140px;
+  }
+
+  /* ---------- drag-to-range ---------- */
+  .ask-btn { cursor: grab; }
+  body.dragging, body.dragging * { cursor: ns-resize !important; user-select: none !important; }
+  body.dragging tr.ln:hover .ask-btn { display: none; }
+  body.dragging tr.drag-origin .ask-btn { display: grid; }
+  .drag-tip {
+    position: fixed; z-index: 60; pointer-events: none; padding: 2px 7px; border-radius: 6px;
+    background: var(--solid); color: var(--solid-fg); font: 11px var(--mono);
+  }
+
+  /* ---------- questions: badges, queue, answers ---------- */
+  tr.qd td.mark { box-shadow: inset 2px 0 0 var(--border-strong); }
+  tr.qd.hl td.mark, tr.qd.pin td.mark, tr.qd.sel td.mark { box-shadow: inset 2px 0 0 var(--hl-bar); }
+  .qbs { position: absolute; right: 8px; top: 1px; display: flex; gap: 4px; }
+  .qb {
+    height: 18px; padding: 0 6px 0 4px; border-radius: 999px; display: inline-flex; align-items: center; gap: 3px;
+    font: 600 10px/1 var(--sans); background: var(--solid); color: var(--solid-fg); border: 1px solid transparent;
+  }
+  .qb.s-staged { background: var(--surface); color: var(--muted); border: 1px dashed var(--subtle); }
+  .qb.s-pending { background: var(--chip); color: var(--muted); }
+  .qb.s-pending .ic { animation: spin .8s linear infinite; }
+  .qb.hover { outline: 2px solid var(--hl-bar); outline-offset: 1px; }
+  .qn {
+    display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+    background: var(--solid); color: var(--solid-fg); font: 600 9.5px/1 var(--sans); flex: none;
+  }
+  .qn.staged { background: var(--surface); color: var(--muted); border: 1px dashed var(--subtle); }
+
+  .tray { border: 1px solid var(--border-strong); border-radius: 16px; margin-bottom: 8px; padding: 6px; background: var(--panel); animation: pop .14s ease-out; }
+  .tray-h { display: flex; align-items: center; gap: 6px; padding: 0 0 4px 8px; color: var(--subtle); font-size: 12px; }
+  .q-row {
+    display: grid; grid-template-columns: auto auto minmax(0,1fr) auto; align-items: center; gap: 8px;
+    padding: 4px 4px 4px 8px; border-radius: 10px; cursor: pointer; font-size: 13px;
+  }
+  .q-row:hover, .q-row.hover { background: var(--hover); }
+  .q-row .ref { font: 11px var(--mono); color: var(--subtle); white-space: nowrap; }
+  .q-row .qt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .q-row .x { opacity: 0; } .q-row:hover .x { opacity: 1; }
+  #chatSend, #askSend { position: relative; }
+  .send-n {
+    position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px;
+    background: var(--hl-bar); color: #fff; font: 600 9.5px/1 var(--sans); display: grid; place-items: center; border: 2px solid var(--surface);
+  }
+
+  /* ---------- chat: resize + history ---------- */
+  .resizer { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 7; }
+  .resizer::after { content: ''; position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; transition: background .12s; }
+  .resizer:hover::after, body.resizing .resizer::after { background: var(--hl-bar); }
+  body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
+  .thread { display: flex; flex-direction: column; gap: 18px; }
+  .hist { position: absolute; top: 44px; left: 0; right: 0; bottom: 0; z-index: 6; overflow: auto; padding: 8px; background: var(--bg); animation: pop .14s ease-out; }
+  .h-item { padding: 9px 10px; border-radius: 10px; cursor: pointer; }
+  .h-item + .h-item { margin-top: 2px; }
+  .h-item:hover { background: var(--hover); }
+  .h-item.active { background: var(--chip); }
+  .h-t { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .h-m { display: flex; align-items: center; gap: 10px; margin-top: 3px; color: var(--subtle); font: 11.5px var(--mono); }
+  .h-m span { display: inline-flex; align-items: center; gap: 4px; }
+
+  .msg.user { gap: 12px; }
+  .q-item { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; width: 100%; cursor: pointer; }
+  .q-item.hover .ctx-card { border-color: var(--hl-bar); }
+  .q-item.hover .bubble { box-shadow: 0 0 0 1px var(--hl-bar); }
+  .bubble .qn { margin-right: 7px; vertical-align: 1px; }
+  .ans + .ans { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .ans-h {
+    display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px; padding: 2px 9px 2px 3px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 999px; font: 11.5px var(--mono); color: var(--muted);
+  }
+  .ans-h:hover, .ans-h.hover { border-color: var(--hl-bar); }
+  .ans-wait { color: var(--subtle); display: inline-block; animation: spin .8s linear infinite; }
+  .qflash { animation: ansflash 1.1s ease-out; border-radius: 10px; }
+  @keyframes ansflash { from { background: var(--hl-flash); } to { background: transparent; } }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand" data-i="route"></div>
+  <div class="url">
+    <span data-i="github"></span>
+    <input id="url" value="github.com/acme/web-app/pull/482" spellcheck="false">
+    <button class="icon-btn solid" id="genBtn" title="Generate guide" data-i="sparkles"></button>
+  </div>
+  <div class="top-r">
+    <button class="icon-btn" id="themeBtn" title="Theme"></button>
+    <button class="icon-btn on" id="chatBtn" title="Chat" data-i="panel-right"></button>
+  </div>
+</header>
+
+<main class="app" id="app">
+  <!-- ============ guide ============ -->
+  <aside class="guide" id="guidePane">
+    <div class="gen hidden" id="genState"></div>
+    <div id="guide">
+      <div class="pr">
+        <h1>Add automatic token refresh to SessionManager</h1>
+        <div class="meta">
+          <span data-i="git-pull-request" data-s="14"></span><span>web-app #482</span>
+          <span class="sep"></span><span class="avatar">JY</span>
+          <span class="sep"></span><span class="n-add" id="totAdd"></span><span class="n-del" id="totDel"></span>
+        </div>
+      </div>
+
+      <section class="sec">
+        <div class="sec-h"><span data-i="zap" data-s="13"></span>TL;DR</div>
+        <p class="tldr">Sessions now refresh tokens automatically 60s before expiry. A failed refresh ends the session and throws <code>SessionExpiredError</code>.</p>
+      </section>
+
+      <section class="sec">
+        <div class="sec-h"><span data-i="info" data-s="13"></span>Context</div>
+        <div class="chips">
+          <span class="chip"><span data-i="key-round" data-s="13"></span>Access token TTL 15m</span>
+          <span class="chip"><span data-i="server" data-s="13"></span><code style="background:none;padding:0">/auth/refresh</code> live since #471</span>
+          <span class="chip warn"><span data-i="shield-alert" data-s="13"></span>No retry on 5xx</span>
+        </div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-h"><span data-i="workflow" data-s="13"></span>Flow</div>
+        <div class="flow" id="flow"></div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-h">
+          <span data-i="list-ordered" data-s="13"></span>Steps
+          <span class="grow"></span>
+          <span id="progTxt"></span>
+          <span class="progress"><i id="progBar"></i></span>
+        </div>
+        <div id="steps"></div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-h"><span data-i="eye-off" data-s="13"></span>Skippable</div>
+        <div id="skips"></div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- ============ diff ============ -->
+  <section class="diffpane" id="diffPane">
+    <div class="toolbar">
+      <span class="lbl"><span data-i="file-code" data-s="14"></span><span id="fileCount"></span></span>
+      <span class="grow"></span>
+      <button class="icon-btn sm on" id="orderBtn" title="Order: guide / A–Z" data-i="route" data-s="15"></button>
+      <button class="icon-btn sm" id="skipBtn" title="Hide skippable" data-i="eye-off" data-s="15"></button>
+      <button class="icon-btn sm" id="collapseBtn" title="Collapse all" data-i="chevrons-down-up" data-s="15"></button>
+      <button class="icon-btn sm" title="Split view" data-i="columns-2" data-s="15"></button>
+    </div>
+    <div class="files" id="files"></div>
+  </section>
+
+  <!-- ============ chat ============ -->
+  <aside class="chat" id="chat">
+    <div class="resizer" id="chatResize" title="Drag to resize · double-click to reset"></div>
+    <div class="chat-h">
+      <span data-i="message-circle" data-s="16"></span>
+      <span class="grow"></span>
+      <button class="icon-btn sm" id="histBtn" title="History" data-i="history" data-s="15"></button>
+      <button class="icon-btn sm" id="clearChat" title="New chat" data-i="square-pen" data-s="15"></button>
+      <button class="icon-btn sm" id="closeChat" title="Close" data-i="x" data-s="15"></button>
+    </div>
+    <div class="hist hidden" id="hist"></div>
+    <div class="msgs" id="msgs">
+      <div class="empty" id="empty">
+        <div class="big" data-i="sparkles" data-s="20"></div>
+        <div class="sugg">
+          <button data-sugg="What are the risks in this PR?"><span data-i="shield-alert" data-s="14"></span>Risks</button>
+          <button data-sugg="What isn't tested?"><span data-i="flask-conical" data-s="14"></span>Test gaps</button>
+          <button data-sugg="Explain the flow end to end."><span data-i="workflow" data-s="14"></span>Flow</button>
+        </div>
+      </div>
+    </div>
+    <div class="composer-wrap">
+      <div class="tray hidden" id="tray">
+        <div class="tray-h"><span data-i="layers" data-s="13"></span><span id="trayN"></span><span class="grow"></span>
+          <button class="icon-btn sm" id="trayClear" title="Clear queue" data-i="trash-2" data-s="14"></button></div>
+        <div id="trayList"></div>
+      </div>
+      <div class="composer">
+        <textarea id="chatIn" rows="1" placeholder="Ask anything"></textarea>
+        <button class="icon-btn solid" id="chatSend" title="Send (↵)" data-i="arrow-up" data-s="16"></button>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<!-- select-to-ask popup -->
+<div class="ask-pop hidden" id="askPop">
+  <div class="ask-ctx"><span data-i="file-code" data-s="13"></span><b id="askFile"></b><span id="askLines"></span><span class="grow"></span>
+    <button class="icon-btn sm" id="askClose" data-i="x" data-s="13"></button></div>
+  <div class="ask-in">
+    <input id="askIn" placeholder="Ask about these lines" autocomplete="off">
+    <button class="icon-btn" id="askStage" title="Queue (⇧↵)" data-i="list-plus" data-s="17"></button>
+    <button class="icon-btn solid" id="askSend" title="Ask now (↵)" data-i="arrow-up" data-s="16"></button>
+  </div>
+</div>
+
+<script>
+/* =================================================================
+   Icons (lucide, MIT)
+   ================================================================= */
+const P = (...d) => d.map(x => `<path d="${x}"/>`).join('');
+const I = {
+  route: '<circle cx="6" cy="19" r="3"/>' + P('M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15') + '<circle cx="18" cy="5" r="3"/>',
+  github: P('M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4', 'M9 18c-4.51 2-5-2-7-2'),
+  sparkles: P('M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z', 'M20 3v4', 'M22 5h-4', 'M4 17v2', 'M5 18H3'),
+  sun: '<circle cx="12" cy="12" r="4"/>' + P('M12 2v2', 'M12 20v2', 'm4.93 4.93 1.41 1.41', 'm17.66 17.66 1.41 1.41', 'M2 12h2', 'M20 12h2', 'm6.34 17.66-1.41 1.41', 'm19.07 4.93-1.41 1.41'),
+  moon: P('M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'),
+  'panel-right': '<rect width="18" height="18" x="3" y="3" rx="2"/>' + P('M15 3v18'),
+  zap: P('M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z'),
+  info: '<circle cx="12" cy="12" r="10"/>' + P('M12 16v-4', 'M12 8h.01'),
+  workflow: '<rect width="8" height="8" x="3" y="3" rx="2"/>' + P('M7 11v4a2 2 0 0 0 2 2h4') + '<rect width="8" height="8" x="13" y="13" rx="2"/>',
+  'list-ordered': P('M10 12h11', 'M10 18h11', 'M10 6h11', 'M4 10h2', 'M4 6h1v4', 'M6 18H4c0-1 2-2 2-3s-1-1.5-2-1'),
+  'eye-off': P('M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49', 'M14.084 14.158a3 3 0 0 1-4.242-4.242', 'M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143', 'm2 2 20 20'),
+  crosshair: '<circle cx="12" cy="12" r="10"/>' + P('M22 12h-4', 'M6 12H2', 'M12 6V2', 'M12 22v-4'),
+  diamond: P('M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41L13.7 2.71a2.41 2.41 0 0 0-3.41 0Z'),
+  braces: P('M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1', 'M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1'),
+  plug: P('M12 22v-5', 'M9 8V2', 'M15 8V2', 'M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z'),
+  power: P('M12 2v10', 'M18.4 6.6a9 9 0 1 1-12.77.04'),
+  'flask-conical': P('M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2', 'M8.5 2h7', 'M7 16h10'),
+  'chevron-down': P('m6 9 6 6 6-6'),
+  circle: '<circle cx="12" cy="12" r="10"/>',
+  'circle-check': '<circle cx="12" cy="12" r="10"/>' + P('m9 12 2 2 4-4'),
+  'file-code': P('M10 12.5 8 15l2 2.5', 'm14 12.5 2 2.5-2 2.5', 'M14 2v4a2 2 0 0 0 2 2h4', 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'),
+  lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>' + P('M7 11V7a5 5 0 0 1 10 0v4'),
+  camera: P('M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z') + '<circle cx="12" cy="13" r="3"/>',
+  'message-circle': P('M7.9 20A9 9 0 1 0 4 16.1L2 22Z'),
+  'arrow-up': P('m5 12 7-7 7 7', 'M12 19V5'),
+  x: P('M18 6 6 18', 'm6 6 12 12'),
+  'key-round': P('M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z') + '<circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/>' + P('M6 6h.01', 'M6 18h.01'),
+  'shield-alert': P('M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z', 'M12 8v4', 'M12 16h.01'),
+  'shield-check': P('M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z', 'm9 12 2 2 4-4'),
+  'chevrons-down-up': P('m7 20 5-5 5 5', 'm7 4 5 5 5-5'),
+  'columns-2': '<rect width="18" height="18" x="3" y="3" rx="2"/>' + P('M12 3v18'),
+  'git-pull-request': '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/>' + P('M13 6h3a2 2 0 0 1 2 2v7', 'M6 9v12'),
+  layers: P('m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z', 'm22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65', 'm22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65'),
+  'loader-circle': P('M21 12a9 9 0 1 1-6.219-8.56'),
+  check: P('M20 6 9 17l-5-5'),
+  'arrow-down-a-z': P('m3 16 4 4 4-4', 'M7 20V4', 'M20 8h-5', 'M15 10V6.5a2.5 2.5 0 0 1 5 0V10', 'M15 14h5l-5 6h5'),
+  history: P('M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8', 'M3 3v5h5', 'M12 7v5l4 2'),
+  'list-plus': P('M11 12H3', 'M16 6H3', 'M16 18H3', 'M18 9v6', 'M21 12h-6'),
+  'trash-2': P('M3 6h18', 'M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6', 'M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2', 'M10 11v6', 'M14 11v6'),
+  'square-pen': P('M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7', 'M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z'),
+};
+const ic = (n, s = 16) =>
+  `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${I[n] || ''}</svg>`;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const hydrateIcons = (root = document) => $$('[data-i]', root).forEach(el => { el.innerHTML = ic(el.dataset.i, +el.dataset.s || 16); });
+
+/* =================================================================
+   Mock PR data  (what the engine would return: files → hunks, guide)
+   ================================================================= */
+const S = 'src/auth/session.ts', T = 'src/auth/types.ts', C = 'src/api/client.ts', X = 'tests/session.test.ts';
+const L = 'package-lock.json', N = 'src/auth/__snapshots__/session.test.ts.snap';
+const body = t => t.replace(/^\n/, '').replace(/\n$/, '');
+
+const FILES = [
+  { path: S, hunks: [{ id: 'H1', old: 1, nw: 1, ctx: 'class SessionManager', text: body(`
+-import { Session, TokenPair } from "./types";
++import { Session, TokenPair, SessionExpiredError } from "./types";
++import { refreshTokens } from "../api/client";
++
++const REFRESH_MARGIN_MS = 60_000;
+
+ export class SessionManager {
+   private session: Session | null = null;
++  private refreshTimer?: ReturnType<typeof setTimeout>;
+
+   start(tokens: TokenPair) {
+     this.session = { ...tokens, startedAt: Date.now() };
++    this.scheduleRefresh(tokens.expiresAt);
+   }
+
++  private scheduleRefresh(expiresAt: number) {
++    clearTimeout(this.refreshTimer);
++    const delay = Math.max(0, expiresAt - Date.now() - REFRESH_MARGIN_MS);
++    this.refreshTimer = setTimeout(() => this.refresh(), delay);
++  }
++
++  async refresh() {
++    if (!this.session) return;
++    try {
++      const next = await refreshTokens(this.session.refreshToken);
++      this.session = { ...this.session, ...next };
++      this.scheduleRefresh(next.expiresAt);
++    } catch (err) {
++      this.end();
++      throw new SessionExpiredError(err);
++    }
++  }
++
+   end() {
+-    this.session = null;
++    clearTimeout(this.refreshTimer);
++    this.session = null;
+   }
+ }
+`) }] },
+  { path: T, hunks: [{ id: 'H2', old: 3, nw: 3, ctx: 'interface TokenPair', text: body(`
+ export interface TokenPair {
+   accessToken: string;
+   refreshToken: string;
++  expiresAt: number;
+ }
+
+ export interface Session extends TokenPair {
+   startedAt: number;
+ }
++
++export class SessionExpiredError extends Error {
++  constructor(public cause: unknown) {
++    super("Session expired");
++  }
++}
+`) }] },
+  { path: C, hunks: [{ id: 'H3', old: 12, nw: 12, ctx: 'login()', text: body(`
+ export async function login(user: string, pass: string): Promise<TokenPair> {
+   const res = await http.post("/auth/login", { user, pass });
+-  return res.data;
++  return withExpiry(res.data);
+ }
+
++export async function refreshTokens(refreshToken: string): Promise<TokenPair> {
++  const res = await http.post("/auth/refresh", { refreshToken });
++  return withExpiry(res.data);
++}
++
++function withExpiry(data: RawTokens): TokenPair {
++  return {
++    accessToken: data.access_token,
++    refreshToken: data.refresh_token,
++    expiresAt: Date.now() + data.expires_in * 1000,
++  };
++}
++
+ export async function logout() {
+`) }] },
+  { path: X, hunks: [{ id: 'H4', old: 0, nw: 1, ctx: '', text: body(`
++import { vi, test, expect } from "vitest";
++import { SessionManager } from "../src/auth/session";
++import * as client from "../src/api/client";
++
++vi.useFakeTimers();
++
++test("refreshes one minute before expiry", async () => {
++  const spy = vi.spyOn(client, "refreshTokens").mockResolvedValue(tokens(120_000));
++  const s = new SessionManager();
++  s.start(tokens(120_000));
++  await vi.advanceTimersByTimeAsync(60_000);
++  expect(spy).toHaveBeenCalledOnce();
++});
++
++test("ends session when refresh fails", async () => {
++  vi.spyOn(client, "refreshTokens").mockRejectedValue(new Error("401"));
++  const s = new SessionManager();
++  s.start(tokens(0));
++  await expect(s.refresh()).rejects.toThrow("Session expired");
++});
+`) }] },
+  { path: L, skip: 'lockfile', hunks: [{ id: 'H5', old: 1012, nw: 1012, ctx: '', text: body(`
+     "node_modules/vitest": {
+-      "version": "1.4.0",
+-      "resolved": "https://registry.npmjs.org/vitest/-/vitest-1.4.0.tgz",
++      "version": "1.6.0",
++      "resolved": "https://registry.npmjs.org/vitest/-/vitest-1.6.0.tgz",
++      "integrity": "sha512-H5r/dN06swuFnzNFhq/dnz37bPXnq8xB2xB5JOVk8K09rUtoeNN+LHWkoQ0A",
+       "dev": true,
+`) }] },
+  { path: N, skip: 'snapshot', hunks: [{ id: 'H6', old: 1, nw: 1, ctx: '', text: body(`
+ exports[\`login > returns tokens 1\`] = \`
+ {
+   "accessToken": "a1",
++  "expiresAt": 1700000900000,
+   "refreshToken": "r1",
+ }
+ \`;
+`) }] },
+];
+
+const KIND_ICON = { entry: 'crosshair', core: 'diamond', contract: 'braces', wiring: 'plug', cleanup: 'power', test: 'flask-conical' };
+const STEPS = [
+  { id: 1, kind: 'entry',    title: 'Start',        summary: '<code>start()</code> now schedules the first refresh.',
+    refs: [{ file: S, from: 8, to: 8 }, { file: S, from: 10, to: 13 }] },
+  { id: 2, kind: 'core',     title: 'Refresh loop', summary: 'Fires 60s before expiry, swaps tokens, reschedules. Any error → <code>end()</code> + throw.',
+    refs: [{ file: S, from: 4, to: 4 }, { file: S, from: 15, to: 31 }] },
+  { id: 3, kind: 'contract', title: 'Types',        summary: '<code>TokenPair.expiresAt</code> + new <code>SessionExpiredError</code>.',
+    refs: [{ file: T, from: 6, to: 6 }, { file: T, from: 13, to: 17 }] },
+  { id: 4, kind: 'wiring',   title: 'API client',   summary: '<code>refreshTokens()</code>; <code>withExpiry</code> turns <code>expires_in</code> into a timestamp.',
+    refs: [{ file: C, from: 14, to: 14 }, { file: C, from: 17, to: 28 }] },
+  { id: 5, kind: 'cleanup',  title: 'Teardown',     summary: '<code>end()</code> cancels the pending timer.',
+    refs: [{ file: S, from: 33, to: 36 }] },
+  { id: 6, kind: 'test',     title: 'Tests',        summary: 'Fake timers: refresh fires; failure ends session.',
+    refs: [{ file: X, from: 7, to: 20 }] },
+];
+const GUIDE_ORDER = [S, T, C, X, L, N];
+const base = p => p.split('/').pop();
+
+/* =================================================================
+   Syntax highlight (tiny)
+   ================================================================= */
+const KW = /^(import|from|export|const|let|class|private|public|async|await|function|return|if|try|catch|throw|new|extends|interface|true|false|null|typeof|as)$/;
+function hl(src) {
+  const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`)|(\b\d[\d_]*\b)|([A-Za-z_$][\w$]*)(?=\s*[(<])|([A-Za-z_$][\w$]*)/g;
+  let out = '', last = 0, m;
+  while ((m = re.exec(src))) {
+    out += esc(src.slice(last, m.index));
+    const t = m[0];
+    if (m[1]) out += `<span class="t-c">${esc(t)}</span>`;
+    else if (m[2]) out += `<span class="t-s">${esc(t)}</span>`;
+    else if (m[3]) out += `<span class="t-n">${t}</span>`;
+    else if (KW.test(t)) out += `<span class="t-k">${t}</span>`;
+    else if (m[4]) out += `<span class="t-f">${t}</span>`;
+    else if (/^[A-Z]/.test(t)) out += `<span class="t-t">${t}</span>`;
+    else out += t;
+    last = re.lastIndex;
+  }
+  return out + esc(src.slice(last));
+}
+
+/* =================================================================
+   Render: diff
+   ================================================================= */
+let totAdd = 0, totDel = 0;
+function renderFiles() {
+  $('#files').innerHTML = FILES.map(f => {
+    let rows = '', add = 0, del = 0;
+    for (const h of f.hunks) {
+      const lines = h.text.split('\n');
+      const oc = lines.filter(l => l[0] !== '+').length, nc = lines.filter(l => l[0] !== '-').length;
+      rows += `<tr class="hh"><td colspan="4">@@ -${h.old},${oc} +${h.nw},${nc} @@ <span>${esc(h.ctx)}</span></td></tr>`;
+      let o = h.old, n = h.nw, lastNew = h.nw - 1;
+      for (const raw of lines) {
+        const t = raw === '' ? ' ' : raw[0], code = raw.slice(1);
+        if (t === '+') { add++; rows += row('add', '', n, n, code, f.path); lastNew = n++; }
+        else if (t === '-') { del++; rows += row('del', o++, '', lastNew + .5, code, f.path); }
+        else { rows += row('ctx', o++, n, n, code, f.path); lastNew = n++; }
+      }
+    }
+    totAdd += add; totDel += del;
+    const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : '';
+    const steps = STEPS.filter(s => s.refs.some(r => r.file === f.path)).map(s => s.id);
+    const lead = f.skip ? ic(f.skip === 'lockfile' ? 'lock' : 'camera', 14) : ic('file-code', 14);
+    f.add = add; f.del = del;
+    return `<section class="file${f.skip ? ' skip collapsed' : ''}" data-path="${f.path}">
+      <div class="file-h">
+        <span class="chev">${ic('chevron-down', 14)}</span>${lead}
+        <span class="path"><span class="dir">${dir}</span>${base(f.path)}</span>
+        <span class="cnt"><span class="a">+${add}</span> <span class="d">−${del}</span></span>
+        <span class="badges">${steps.map(s => `<span class="dot sm" data-step="${s}">${s}</span>`).join('')}</span>
+        <span class="grow"></span>
+        <button class="icon-btn sm viewed" title="Viewed">${ic('circle', 15)}</button>
+      </div>
+      <div class="file-b"><table class="diff">${rows}</table></div>
+    </section>`;
+  }).join('');
+
+  // step markers in the gutter, at the first line of each ref
+  for (const s of STEPS) for (const r of s.refs) {
+    const first = rowsFor(r)[0];
+    if (first && !first.querySelector(`.dot[data-step="${s.id}"]`))
+      first.querySelector('.mark').insertAdjacentHTML('beforeend', `<span class="dot" data-step="${s.id}" title="Step ${s.id}">${s.id}</span>`);
+  }
+  $('#totAdd').textContent = '+' + totAdd;
+  $('#totDel').textContent = '−' + totDel;
+  $('#fileCount').textContent = FILES.length;
+  applyOrder(GUIDE_ORDER);
+}
+function row(type, o, n, pos, code, path) {
+  const sign = type === 'add' ? '+' : type === 'del' ? '−' : '';
+  return `<tr class="ln ${type}" data-file="${path}" data-pos="${pos}"${n !== '' ? ` data-new="${n}"` : ''}${o !== '' ? ` data-old="${o}"` : ''}>
+    <td class="mark"></td><td class="no">${o}</td><td class="no">${n}</td>
+    <td class="code"><button class="ask-btn" title="Click, or drag to select lines">${ic('message-circle', 12)}</button><span class="sg">${sign}</span><span class="src">${hl(code) || ' '}</span></td></tr>`;
+}
+const fileEl = p => $(`.file[data-path="${CSS.escape(p)}"]`);
+const rowsFor = r => $$(`tr.ln[data-file="${CSS.escape(r.file)}"]`).filter(x => +x.dataset.pos >= r.from && +x.dataset.pos <= r.to);
+const stepRows = id => STEPS.find(s => s.id === id).refs.flatMap(rowsFor);
+function applyOrder(order) { const root = $('#files'); order.forEach(p => root.appendChild(fileEl(p))); }
+
+/* =================================================================
+   Render: guide
+   ================================================================= */
+const done = new Set();
+function renderSteps() {
+  $('#steps').innerHTML = STEPS.map(s => `
+    <div class="step${done.has(s.id) ? ' done' : ''}" data-step="${s.id}">
+      <div class="num">${done.has(s.id) ? ic('check', 12) : s.id}</div>
+      <div>
+        <div class="t">${ic(KIND_ICON[s.kind], 14)}${s.title}</div>
+        <div class="s">${s.summary}</div>
+        <div class="refs">${s.refs.map(r => `<span class="ref">${base(r.file)}:${r.from}${r.to !== r.from ? '–' + r.to : ''}</span>`).join('')}</div>
+      </div>
+      <div class="acts">
+        <button class="icon-btn sm check" title="Mark read" data-done="${s.id}">${ic(done.has(s.id) ? 'circle-check' : 'circle', 15)}</button>
+        <button class="icon-btn sm ask" title="Ask" data-askstep="${s.id}">${ic('message-circle', 14)}</button>
+      </div>
+    </div>`).join('');
+  $('#progTxt').textContent = `${done.size}/${STEPS.length}`;
+  $('#progBar').style.width = (done.size / STEPS.length * 100) + '%';
+  syncActive();
+}
+
+function renderSkips() {
+  $('#skips').innerHTML = FILES.filter(f => f.skip).map(f => `
+    <div class="skip-row" data-goto="${f.path}" title="${f.skip}">${ic(f.skip === 'lockfile' ? 'lock' : 'camera', 13)}
+      <span>${base(f.path)}</span><span class="cnt"><span class="n-add">+${f.add}</span> <span class="n-del">−${f.del}</span></span></div>`).join('');
+}
+
+function renderFlow() {
+  const nodes = [
+    { id: 'start',    label: 'start()',           step: 1, x: 112, y: 6,   w: 96 },
+    { id: 'schedule', label: 'scheduleRefresh()', step: 2, x: 78,  y: 60,  w: 164 },
+    { id: 'refresh',  label: 'refresh()',         step: 2, x: 105, y: 114, w: 110 },
+    { id: 'api',      label: 'refreshTokens()',   step: 4, x: 12,  y: 176, w: 148 },
+    { id: 'end',      label: 'end()',             step: 5, x: 212, y: 176, w: 82 },
+  ];
+  const edge = (d, cls = '') => `<path class="fe ${cls}" d="${d}" marker-end="url(#${cls ? 'ae' : 'a'})"/>`;
+  $('#flow').innerHTML = `
+  <svg viewBox="0 0 320 210">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk" d="M0 1 L9 5 L0 9z"/></marker>
+      <marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk err" d="M0 1 L9 5 L0 9z"/></marker>
+    </defs>
+    ${edge('M160 34 L160 58')}
+    ${edge('M160 88 L160 112')}<text class="fl" x="166" y="105">timer</text>
+    ${edge('M215 128 C268 128 268 74 244 74')}<text class="fl" x="262" y="104">ok</text>
+    ${edge('M140 142 L100 174')}
+    ${edge('M185 142 L245 174', 'err')}<text class="fl err" x="222" y="154">err</text>
+    ${nodes.map(n => `
+      <g class="fn" data-step="${n.step}" data-node="${n.id}">
+        <rect x="${n.x}" y="${n.y}" width="${n.w}" height="28" rx="8"/>
+        <g class="num"><circle cx="${n.x + 15}" cy="${n.y + 14}" r="8"/><text x="${n.x + 15}" y="${n.y + 17.5}">${n.step}</text></g>
+        <text x="${n.x + 29}" y="${n.y + 18}">${n.label}</text>
+      </g>`).join('')}
+  </svg>`;
+}
+
+/* =================================================================
+   Linking: hover → highlight, click → scroll/expand/pin
+   ================================================================= */
+let hoverStep = null, pinStep = null;
+function setHover(id) {
+  if (id === hoverStep) return;
+  hoverStep = id;
+  $$('tr.hl').forEach(r => r.classList.remove('hl'));
+  $$('.step.hover, .fn.hover').forEach(e => e.classList.remove('hover'));
+  if (id == null) return;
+  stepRows(id).forEach(r => r.classList.add('hl'));
+  $$(`.step[data-step="${id}"], .fn[data-step="${id}"]`).forEach(e => e.classList.add('hover'));
+}
+function syncActive() {
+  $$('.step.active, .fn.active').forEach(e => e.classList.remove('active'));
+  if (pinStep != null) $$(`.step[data-step="${pinStep}"], .fn[data-step="${pinStep}"]`).forEach(e => e.classList.add('active'));
+}
+function focusRows(rows) {
+  if (!rows.length) return;
+  [...new Set(rows.map(r => r.closest('.file')))].forEach(f => { f.classList.remove('collapsed'); f.closest('.files').classList.remove('hide-skip'); });
+  rows[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  rows.forEach(r => { r.classList.remove('flash'); void r.offsetWidth; r.classList.add('flash'); });
+}
+function focusStep(id, fromDiff) {
+  pinStep = pinStep === id && !fromDiff ? null : id;
+  $$('tr.pin').forEach(r => r.classList.remove('pin'));
+  syncActive();
+  if (pinStep == null) return;
+  const rows = stepRows(id);
+  rows.forEach(r => r.classList.add('pin'));
+  focusRows(rows);
+  if (fromDiff) $(`.step[data-step="${id}"]`).scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+document.addEventListener('mouseover', e => {
+  if (drag) return;
+  const qEl = e.target.closest('[data-q]');
+  if (qEl) { setHover(null); setHoverQ(+qEl.dataset.q); return; }
+  setHoverQ(null);
+  const el = e.target.closest('[data-step]');
+  setHover(el ? +el.dataset.step : null);
+});
+document.addEventListener('click', e => {
+  const t = e.target;
+  const doneBtn = t.closest('[data-done]');
+  if (doneBtn) { const id = +doneBtn.dataset.done; done.has(id) ? done.delete(id) : done.add(id); renderSteps(); return; }
+  const askStep = t.closest('[data-askstep]');
+  if (askStep) { const s = STEPS.find(x => x.id === +askStep.dataset.askstep); sendQs([newQ(`Walk me through step ${s.id}.`, { step: s }, true)]); return; }
+  const un = t.closest('[data-unstage]');
+  if (un) { unstage(+un.dataset.unstage); return; }
+  const qEl = t.closest('[data-q]');
+  if (qEl) { const id = +qEl.dataset.q; qEl.classList.contains('qb') ? revealQ(id) : focusRows(qRows(getQ(id))); return; }
+  const goto = t.closest('[data-goto]');
+  if (goto) { const f = fileEl(goto.dataset.goto); f.closest('.files').classList.remove('hide-skip'); f.classList.remove('collapsed'); f.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+  const stepEl = t.closest('[data-step]');
+  if (stepEl) { focusStep(+stepEl.dataset.step, !!t.closest('.diffpane')); return; }
+  const viewed = t.closest('.viewed');
+  if (viewed) {
+    const f = viewed.closest('.file'), on = !viewed.classList.contains('on');
+    viewed.classList.toggle('on', on); viewed.innerHTML = ic(on ? 'circle-check' : 'circle', 15);
+    f.classList.toggle('collapsed', on); return;
+  }
+  const fh = t.closest('.file-h');
+  if (fh) { fh.parentElement.classList.toggle('collapsed'); return; }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (drag) { endDrag(); closeAsk(); } closeAsk(); pinStep = null; $$('tr.pin').forEach(r => r.classList.remove('pin')); syncActive(); }
+  if (/input|textarea/i.test(document.activeElement.tagName)) return;
+  if (e.key === 'j' || e.key === 'k') {
+    const cur = pinStep ?? 0, nxt = Math.min(STEPS.length, Math.max(1, cur + (e.key === 'j' ? 1 : -1)));
+    focusStep(nxt, true);
+  }
+});
+
+/* =================================================================
+   Select-to-ask: text selection, or press-and-drag the line bubble
+   ================================================================= */
+let askCtx = null, drag = null;
+const rowOf = n => (n?.nodeType === 3 ? n.parentElement : n)?.closest?.('tr.ln');
+const lineNo = r => +(r.dataset.new || r.dataset.old);
+const rangeOf = rows => { const n = rows.map(lineNo); return [Math.min(...n), Math.max(...n)]; };
+const rangeTxt = (from, to) => from === to ? `L${from}` : `L${from}–${to}`;
+
+$('#files').addEventListener('mouseup', e => setTimeout(() => {
+  const sel = getSelection();
+  if (drag || !sel || sel.isCollapsed || !sel.toString().trim()) return;
+  const a = rowOf(sel.anchorNode), b = rowOf(sel.focusNode);
+  if (!a || !b || a.dataset.file !== b.dataset.file) return;
+  const all = $$('tr.ln', a.closest('table'));
+  const [i, j] = [all.indexOf(a), all.indexOf(b)].sort((x, y) => x - y);
+  openAsk(all.slice(i, j + 1), e.clientX, e.clientY);
+}));
+
+$('#files').addEventListener('mousedown', e => {
+  const btn = e.target.closest('.ask-btn');
+  if (!btn || e.button !== 0) return;
+  e.preventDefault();
+  closeAsk(); getSelection().removeAllRanges();
+  const origin = btn.closest('tr.ln');
+  const tip = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'drag-tip' }));
+  drag = { origin, end: origin, all: $$('tr.ln', origin.closest('table')), tip, x: e.clientX, y: e.clientY };
+  document.body.classList.add('dragging');
+  origin.classList.add('drag-origin');
+  paintDrag(e.clientX, e.clientY);
+  drag.timer = setInterval(autoScroll, 16);
+});
+function dragRows() {
+  const i = drag.all.indexOf(drag.origin), j = drag.all.indexOf(drag.end);
+  return drag.all.slice(Math.min(i, j), Math.max(i, j) + 1);
+}
+function paintDrag(x, y) {
+  drag.x = x; drag.y = y;
+  const r = document.elementFromPoint?.(x, y)?.closest('tr.ln');
+  if (r && drag.all.includes(r)) drag.end = r;
+  $$('tr.sel').forEach(r => r.classList.remove('sel'));
+  const rows = dragRows();
+  rows.forEach(r => r.classList.add('sel'));
+  drag.tip.textContent = rangeTxt(...rangeOf(rows));
+  drag.tip.style.left = x + 14 + 'px';
+  drag.tip.style.top = y - 10 + 'px';
+}
+function autoScroll() {
+  const pane = $('#diffPane'), b = pane.getBoundingClientRect();
+  const dy = drag.y < b.top + 110 ? -14 : drag.y > b.bottom - 40 ? 14 : 0;
+  if (dy) { pane.scrollTop += dy; paintDrag(drag.x, drag.y); }
+}
+function endDrag() {
+  clearInterval(drag.timer); drag.tip.remove();
+  drag.origin.classList.remove('drag-origin');
+  document.body.classList.remove('dragging');
+  drag = null;
+}
+document.addEventListener('mousemove', e => { if (drag) paintDrag(e.clientX, e.clientY); });
+document.addEventListener('mouseup', e => {
+  if (!drag) return;
+  const rows = dragRows();
+  endDrag();
+  openAsk(rows, e.clientX, e.clientY);
+});
+
+function ctxFromRows(rows) {
+  const [from, to] = rangeOf(rows);
+  return {
+    file: rows[0].dataset.file, from, to,
+    pfrom: +rows[0].dataset.pos, pto: +rows[rows.length - 1].dataset.pos,
+    code: rows.map(r => r.querySelector('.src').textContent).join('\n'),
+  };
+}
+function openAsk(rows, x, y) {
+  closeAsk();
+  askCtx = ctxFromRows(rows);
+  rows.forEach(r => r.classList.add('sel'));
+  $('#askFile').textContent = base(askCtx.file);
+  $('#askLines').textContent = rangeTxt(askCtx.from, askCtx.to);
+  const pop = $('#askPop');
+  pop.classList.remove('hidden');
+  pop.style.left = Math.min(x, innerWidth - 376) + 'px';
+  pop.style.top = Math.min(y + 12, innerHeight - 120) + 'px';
+  $('#askIn').value = '';
+  setTimeout(() => $('#askIn').focus(), 0);
+}
+function closeAsk() {
+  $('#askPop').classList.add('hidden');
+  $$('tr.sel').forEach(r => r.classList.remove('sel'));
+}
+function submitAsk(stage) {
+  const q = $('#askIn').value.trim() || 'Explain this.';
+  const ctx = askCtx; closeAsk(); getSelection().removeAllRanges();
+  const item = newQ(q, ctx, true);
+  stage ? stageQ(item) : sendQs([item]);
+}
+$('#askSend').onclick = () => submitAsk(false);
+$('#askStage').onclick = () => submitAsk(true);
+$('#askClose').onclick = closeAsk;
+$('#askIn').addEventListener('keydown', e => { if (e.key === 'Enter') submitAsk(e.shiftKey); });
+document.addEventListener('mousedown', e => { if (!e.target.closest('#askPop') && !e.target.closest('.ask-btn')) closeAsk(); });
+
+/* =================================================================
+   Chats: each owns its questions, line annotations, and thread.
+   Questions stay linked to their lines (gutter badge ⇄ chat).
+   Line comments can be queued and sent together; chat messages send immediately.
+   ================================================================= */
+const chats = [];
+let cur = null, chatSeq = 0, qSeq = 0;
+function newChat() {
+  if (cur && !cur.Q.length) return showChat(cur);
+  const el = Object.assign(document.createElement('div'), { className: 'thread' });
+  $('#msgs').appendChild(el);
+  cur = { id: ++chatSeq, Q: [], n: 0, at: Date.now(), el };
+  chats.push(cur);
+  showChat(cur);
+}
+function showChat(c) {
+  setHoverQ(null);
+  cur = c;
+  $$('#msgs .thread').forEach(t => t.classList.toggle('hidden', t !== c.el));
+  $('#empty').classList.toggle('hidden', !!c.el.children.length);
+  closeHistory();
+  renderQueue(); renderBadges();
+  $('#msgs').scrollTop = $('#msgs').scrollHeight;
+}
+
+function newQ(q, ctx, tagged) {
+  const item = { id: ++qSeq, q, ctx, status: 'new', chat: cur.id };
+  if (tagged) item.n = ++cur.n;
+  cur.Q.push(item);
+  return item;
+}
+const getQ = id => cur.Q.find(q => q.id === id);
+const qRows = q => q.ctx?.file ? rowsFor({ file: q.ctx.file, from: q.ctx.pfrom, to: q.ctx.pto }) : q.ctx?.step ? stepRows(q.ctx.step.id) : [];
+const refLabel = c => c?.file ? `${base(c.file)}:${c.from}${c.to !== c.from ? '–' + c.to : ''}` : c?.step ? `Step ${c.step.id}` : '';
+const qn = q => q.n ? `<span class="qn${q.status === 'staged' ? ' staged' : ''}">${q.n}</span>` : '';
+const staged = () => cur.Q.filter(q => q.status === 'staged');
+
+function stageQ(item) { item.status = 'staged'; renderQueue(); renderBadges(); openChat(); }
+function unstage(id) { const i = cur.Q.findIndex(q => q.id === id); if (i >= 0) cur.Q.splice(i, 1); renderQueue(); renderBadges(); }
+
+function renderQueue() {
+  const s = staged();
+  $('#tray').classList.toggle('hidden', !s.length);
+  $('#trayN').textContent = s.length;
+  $('#trayList').innerHTML = s.map(q => `
+    <div class="q-row" data-q="${q.id}">${qn(q)}<span class="ref">${refLabel(q.ctx)}</span><span class="qt">${esc(q.q)}</span>
+      <button class="icon-btn sm x" data-unstage="${q.id}" title="Remove">${ic('x', 13)}</button></div>`).join('');
+  $('#chatSend').innerHTML = ic('arrow-up', 16) + (s.length ? `<span class="send-n">${s.length}</span>` : '');
+  $('#chatSend').title = s.length ? `Send ${s.length}` : 'Send (↵)';
+  $('#chatIn').placeholder = s.length ? 'Add a message, or send' : 'Ask anything';
+}
+
+function renderBadges() {
+  $$('.qbs').forEach(e => e.remove());
+  $$('tr.qd').forEach(r => r.classList.remove('qd'));
+  for (const q of cur.Q) {
+    if (!q.ctx?.file || q.status === 'new') continue;
+    const rows = qRows(q);
+    if (!rows.length) continue;
+    rows.forEach(r => r.classList.add('qd'));
+    const td = rows[0].querySelector('td.code');
+    const box = td.querySelector('.qbs') || td.appendChild(Object.assign(document.createElement('span'), { className: 'qbs' }));
+    const icon = q.status === 'pending' ? 'loader-circle' : q.status === 'staged' ? 'list-plus' : 'message-circle';
+    box.insertAdjacentHTML('beforeend', `<button class="qb s-${q.status}" data-q="${q.id}">${ic(icon, 11)}${q.n}</button>`);
+  }
+  if (hoverQ != null) { const h = hoverQ; hoverQ = null; setHoverQ(h); }
+}
+
+let hoverQ = null;
+function setHoverQ(id) {
+  if (id === hoverQ) return;
+  if (hoverQ != null) {
+    $$('tr.hl').forEach(r => r.classList.remove('hl'));
+    $$('[data-q].hover').forEach(e => e.classList.remove('hover'));
+  }
+  hoverQ = id;
+  const q = id != null && getQ(id);
+  if (!q) return;
+  qRows(q).forEach(r => r.classList.add('hl'));
+  $$(`[data-q="${id}"]`).forEach(e => e.classList.add('hover'));
+}
+const qflash = el => { if (!el) return; el.classList.remove('qflash'); void el.offsetWidth; el.classList.add('qflash'); };
+function revealQ(id) {
+  const q = getQ(id);
+  openChat();
+  const el = q.status === 'staged' ? $(`.q-row[data-q="${id}"]`) : $(`.ans[data-ans="${id}"]`);
+  el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  qflash(el);
+}
+
+/* ---------- history ---------- */
+const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'now' : m < 60 ? m + 'm' : m < 1440 ? Math.round(m / 60) + 'h' : Math.round(m / 1440) + 'd'; };
+function renderHistory() {
+  const list = chats.filter(c => c.Q.length || c === cur).sort((a, b) => b.at - a.at);
+  $('#hist').innerHTML = list.map(c => {
+    const anchored = c.Q.filter(q => q.ctx).length;
+    return `<div class="h-item${c === cur ? ' active' : ''}" data-chat="${c.id}">
+      <div class="h-t">${c.Q.length ? esc(c.Q[0].q) : 'New chat'}</div>
+      <div class="h-m"><span>${ic('message-circle', 12)}${c.Q.length}</span>${anchored ? `<span>${ic('file-code', 12)}${anchored}</span>` : ''}<span class="grow"></span><span>${ago(c.at)}</span></div>
+    </div>`;
+  }).join('');
+}
+const closeHistory = () => { $('#hist').classList.add('hidden'); $('#histBtn').classList.remove('on'); };
+$('#histBtn').onclick = () => {
+  const open = $('#hist').classList.toggle('hidden') === false;
+  $('#histBtn').classList.toggle('on', open);
+  if (open) renderHistory();
+};
+$('#hist').addEventListener('click', e => { const it = e.target.closest('[data-chat]'); if (it) showChat(chats.find(c => c.id === +it.dataset.chat)); });
+$('#clearChat').onclick = newChat;
+
+/* ---------- canned answers (engine streams these via SSE) ---------- */
+const A = {
+  err: '**Every** failure ends the session, including a transient network blip or a 5xx. Consider a short retry with backoff before calling `end()`.\n\nAlso: `refresh()` runs from a `setTimeout`, so this `throw` becomes an **unhandled rejection**. Nothing awaits it.',
+  delay: '`delay` is clamped at 0, so a token that has already expired refreshes immediately. The 60s margin (`REFRESH_MARGIN_MS`) allows for clock skew.\n\nThere is no jitter, so tabs opened together will all refresh at the same moment.',
+  expiry: '`expires_in` is in **seconds** per the auth API, so `* 1000` is right. `expiresAt` uses the client clock, which is fine because it is only compared against local `Date.now()`.',
+  tests: 'Covered: the timer fires, and failure ends the session.\n\nNot covered: `end()` cancelling a pending timer, rescheduling after a successful refresh, and unit conversion in `withExpiry`.',
+  risks: '1. `refresh()` throws inside a timer, so the rejection is unhandled.\n2. No retry on transient failures.\n3. No jitter, so multiple tabs hit `/auth/refresh` at the same time.',
+  flow: '`login()` → tokens with `expiresAt` → `start()` → `scheduleRefresh()` sets a timer → `refresh()` calls `refreshTokens()` and reschedules itself. Any error → `end()`.',
+};
+function answerFor(q, ctx) {
+  const code = ctx?.code || '', ql = q.toLowerCase();
+  if (/catch|SessionExpiredError\(|this\.end/.test(code)) return A.err;
+  if (/delay|REFRESH_MARGIN/.test(code)) return A.delay;
+  if (/withExpiry|expires_in/.test(code)) return A.expiry;
+  if (/test\(|vi\./.test(code) || ctx?.step?.kind === 'test') return A.tests;
+  if (ctx?.step?.id === 2) return A.err;
+  if (ctx?.step) return `**${ctx.step.title}**: ${ctx.step.summary.replace(/<\/?code>/g, '`')}\n\nNothing risky stands out here.`;
+  if (ctx) {
+    const s = STEPS.find(s => s.refs.some(r => r.file === ctx.file && ctx.pfrom <= r.to && ctx.pto >= r.from));
+    return s ? `Part of **step ${s.id} · ${s.title}**: ${s.summary.replace(/<\/?code>/g, '`')}\n\nNothing risky stands out on these lines.`
+             : 'This is context that the PR does not change.';
+  }
+  if (/risk/.test(ql)) return A.risks;
+  if (/test/.test(ql)) return A.tests;
+  return A.flow;
+}
+const md = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+
+/* ---------- send: one turn, N questions, answers stream in parallel ---------- */
+const openChat = () => { $('#app').classList.remove('no-chat'); $('#chatBtn').classList.add('on'); };
+function cardHtml(c) {
+  if (c?.step) return `<div class="ctx-card"><div class="h">${ic(KIND_ICON[c.step.kind], 13)}Step ${c.step.id} · ${c.step.title}</div></div>`;
+  if (c?.file) return `<div class="ctx-card"><div class="h">${ic('file-code', 13)}${base(c.file)}<span>${rangeTxt(c.from, c.to)}</span></div><pre>${esc(c.code)}</pre></div>`;
+  return '';
+}
+function sendQs(qs) {
+  if (!qs.length) return;
+  openChat(); closeHistory();
+  $('#empty').classList.add('hidden');
+  cur.at = Date.now();
+  if (qs.length > 1) qs.forEach(q => { if (!q.n) q.n = ++cur.n; });
+  qs.forEach(q => q.status = 'pending');
+  const thread = cur.el, msgs = $('#msgs');
+  thread.insertAdjacentHTML('beforeend', `<div class="msg user">${qs.map(q => `
+    <div class="q-item"${q.n ? ` data-q="${q.id}"` : ''}>${cardHtml(q.ctx)}<div class="bubble">${qn(q)}${esc(q.q)}</div></div>`).join('')}</div>`);
+  thread.insertAdjacentHTML('beforeend', `<div class="msg ai"><div class="ai-av">${ic('sparkles', 14)}</div><div class="ai-body">${qs.map(q => `
+    <div class="ans" data-ans="${q.id}">${q.n ? `<div class="ans-h" data-q="${q.id}">${qn(q)}${esc(refLabel(q.ctx) || q.q.slice(0, 28))}</div>` : ''}<div class="ans-t"><span class="cursor"></span></div></div>`).join('')}</div></div>`);
+  msgs.scrollTop = msgs.scrollHeight;
+  renderQueue(); renderBadges();
+  qs.forEach((q, i) => stream(q, 500 + i * 450 + Math.random() * 400));
+}
+function stream(q, latency) {
+  const out = $(`.ans[data-ans="${q.id}"] .ans-t`), msgs = $('#msgs');
+  const words = answerFor(q.q, q.ctx).split(/(\s+)/);
+  let i = 0;
+  setTimeout(function tick() {
+    if (!out.isConnected) return;
+    const visible = q.chat === cur.id, stick = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80;
+    i += 2;
+    out.innerHTML = md(words.slice(0, i).join('')) + (i < words.length ? '<span class="cursor"></span>' : '');
+    if (visible && stick) msgs.scrollTop = msgs.scrollHeight;
+    if (i < words.length) return setTimeout(tick, 28);
+    q.status = 'answered';
+    if (visible) renderBadges();
+  }, latency);
+}
+
+/* ---------- composer: sends immediately; also flushes any queued line comments ---------- */
+function sendComposer() {
+  const ta = $('#chatIn'), text = ta.value.trim();
+  const qs = staged();
+  if (text) qs.push(newQ(text, null, qs.length > 0));
+  if (!qs.length) return;
+  ta.value = ''; ta.style.height = '';
+  sendQs(qs);
+}
+$('#chatSend').onclick = sendComposer;
+$('#chatIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendComposer(); } });
+$('#chatIn').addEventListener('input', e => { e.target.style.height = ''; e.target.style.height = e.target.scrollHeight + 'px'; });
+$$('.sugg button').forEach(b => b.onclick = () => sendQs([newQ(b.dataset.sugg, null, false)]));
+$('#trayClear').onclick = () => staged().forEach(q => unstage(q.id));
+
+/* =================================================================
+   Chrome: theme, panels, toolbar, generate
+   ================================================================= */
+const root = document.documentElement;
+const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+const setTheme = dark => { root.classList.toggle('dark', dark); $('#themeBtn').innerHTML = ic(dark ? 'sun' : 'moon', 17); store.set('rv-theme', dark ? 'dark' : 'light'); };
+setTheme((store.get('rv-theme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark');
+$('#themeBtn').onclick = () => setTheme(!root.classList.contains('dark'));
+const toggleChat = () => { const off = $('#app').classList.toggle('no-chat'); $('#chatBtn').classList.toggle('on', !off); };
+$('#chatBtn').onclick = toggleChat;
+
+const CHAT_W = 380;
+const setChatW = w => { w = Math.round(Math.max(300, Math.min(w, innerWidth - 360 - 420))); $('#app').style.setProperty('--chat-w', w + 'px'); return w; };
+setChatW(+store.get('rv-chat-w') || CHAT_W);
+$('#chatResize').addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  document.body.classList.add('resizing');
+  let w;
+  const move = e => { w = setChatW(innerWidth - e.clientX); };
+  const up = () => {
+    document.body.classList.remove('resizing');
+    removeEventListener('mousemove', move); removeEventListener('mouseup', up);
+    if (w) store.set('rv-chat-w', w);
+  };
+  addEventListener('mousemove', move); addEventListener('mouseup', up);
+});
+$('#chatResize').addEventListener('dblclick', () => store.set('rv-chat-w', setChatW(CHAT_W)));
+$('#closeChat').onclick = toggleChat;
+
+let guideOrder = true;
+$('#orderBtn').onclick = e => {
+  guideOrder = !guideOrder;
+  applyOrder(guideOrder ? GUIDE_ORDER : [...GUIDE_ORDER].sort());
+  const b = $('#orderBtn'); b.innerHTML = ic(guideOrder ? 'route' : 'arrow-down-a-z', 15); b.title = guideOrder ? 'Order: guide' : 'Order: A–Z';
+};
+$('#skipBtn').onclick = () => { const on = $('#files').classList.toggle('hide-skip'); $('#skipBtn').classList.toggle('on', on); };
+let allCollapsed = false;
+$('#collapseBtn').onclick = () => { allCollapsed = !allCollapsed; $$('.file').forEach(f => f.classList.toggle('collapsed', allCollapsed || f.classList.contains('skip'))); };
+
+const PIPE = [['git-pull-request', 'Fetch PR'], ['layers', 'Split hunks'], ['sparkles', 'Read & plan'], ['shield-check', 'Validate refs']];
+$('#genBtn').onclick = () => {
+  const g = $('#guide'), st = $('#genState');
+  g.classList.add('hidden'); st.classList.remove('hidden');
+  st.innerHTML = PIPE.map(([i, l]) => `<div class="gen-row"><span class="dot-i">${ic(i, 15)}</span>${l}<span class="spin hidden">${ic('loader-circle', 15)}</span></div>`).join('');
+  const rows = $$('.gen-row', st);
+  let k = 0;
+  (function next() {
+    rows.forEach((r, i) => {
+      r.classList.toggle('done', i < k); r.classList.toggle('cur', i === k);
+      r.querySelector('.spin').classList.toggle('hidden', i !== k);
+      if (i < k) r.querySelector('.dot-i').innerHTML = ic('check', 15);
+    });
+    if (k++ < rows.length) return setTimeout(next, 550);
+    setTimeout(() => { st.classList.add('hidden'); g.classList.remove('hidden'); g.classList.remove('fade-in'); void g.offsetWidth; g.classList.add('fade-in'); }, 250);
+  })();
+};
+
+/* ---------- boot ---------- */
+hydrateIcons();
+renderFiles();
+renderFlow();
+renderSteps();
+renderSkips();
+
+const ctxAt = (file, from, to) => ctxFromRows(rowsFor({ file, from, to }));
+function seedChat(ago, ...qs) {
+  newChat();
+  qs.forEach(([q, ctx]) => sendQs([newQ(q, ctx, !!ctx)]));
+  cur.at = Date.now() - ago;
+}
+seedChat(2 * 3600e3, ['Is the unit conversion right?', ctxAt(C, 21, 27)], ['Should 5xx retry?', ctxAt(S, 26, 29)]);
+seedChat(25 * 60e3, ['What are the risks in this PR?']);
+newChat();
+</script>
+</body>
+</html>
