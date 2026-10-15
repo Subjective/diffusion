@@ -1,6 +1,7 @@
 # Diffusion
 
-AI has made code faster to write than ever before. The burden has shifted from writing code to reviewing it.
+Code is now effectively free to write. The burden has shifted from writing to reviewing, but the tools for review
+haven't kept pace.
 
 See [`docs/design.md`](docs/design.md) for the design and [`docs/design/wireframe.html`](docs/design/wireframe.html)
 for the UI reference.
