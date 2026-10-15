@@ -2,10 +2,10 @@
   "version": 1,
   "skills": {
     "write-pr-description": {
-      "source": "warpdotdev/common-skills",
+      "source": "eveld/claude",
       "sourceType": "github",
-      "skillPath": ".agents/skills/write-pr-description/SKILL.md",
-      "computedHash": "12dcdad5ff5180cf324165deb0c8fad902ae0a79ae9d86b18cf5d347501870cb"
+      "skillPath": "skills/write-pr-description/SKILL.md",
+      "computedHash": "53149a6e200f5204bebffd391c3803465e7ace1f4c945cd6782cefbc0f322b91"
     }
   }
 }
