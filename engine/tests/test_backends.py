@@ -156,7 +156,7 @@ async def test_max_turns_and_provider_errors(tmp_path, repo):
     assert done.is_error and "2 turns" in done.result
 
     class Boom:
-        async def stream(self, *a):
+        async def stream(self, system, messages, tools, model):
             raise RuntimeError("401 bad key")
             yield  # pragma: no cover
 
@@ -206,8 +206,8 @@ def test_openai_wire_format():
 
 def test_claude_code_sandbox_decision(repo):
     assert sandbox_decision("Read", {"file_path": str(repo / "src/a.py")}, repo) is None
-    assert "outside" in sandbox_decision("Read", {"file_path": str(repo.parent / "secret.txt")}, repo)
-    assert "outside" in sandbox_decision("Grep", {"pattern": "x", "path": "/etc"}, repo)
+    assert "outside" in (sandbox_decision("Read", {"file_path": str(repo.parent / "secret.txt")}, repo) or "")
+    assert "outside" in (sandbox_decision("Grep", {"pattern": "x", "path": "/etc"}, repo) or "")
     assert sandbox_decision("Glob", {"pattern": "/etc/*"}, repo)
     assert sandbox_decision("Grep", {"pattern": "x"}, repo) is None
     assert sandbox_decision("mcp__diffusion__get_hunk", {"ids": ["H1"]}, repo) is None

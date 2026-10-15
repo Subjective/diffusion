@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
-from unidiff import PatchSet
+from unidiff.patch import PatchSet
 
 LineType = Literal["add", "del", "ctx"]
 

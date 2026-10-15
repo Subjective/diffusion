@@ -12,10 +12,13 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from ..agent import ToolSpec
 from ..config import Config
+
+if TYPE_CHECKING:
+    from anthropic.types import MessageParam, ToolUnionParam
 
 
 @dataclass
@@ -120,6 +123,8 @@ class AnthropicProvider:
         return out
 
     async def stream(self, system, messages, tools, model):
+        from anthropic import omit
+
         wire_tools = [{"name": t.name, "description": t.description, "input_schema": t.schema} for t in tools]
         if wire_tools:
             wire_tools[-1] = {**wire_tools[-1], "cache_control": {"type": "ephemeral"}}
@@ -127,11 +132,13 @@ class AnthropicProvider:
             model=model,
             max_tokens=self.max_tokens,
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-            messages=self.to_wire(messages),
-            tools=wire_tools or None,
+            # to_wire builds plain dicts (simple to test and merge); they match the SDK's TypedDict params,
+            # whose 15-member block unions would make the builder far noisier to annotate.
+            messages=cast("list[MessageParam]", self.to_wire(messages)),
+            tools=cast("list[ToolUnionParam]", wire_tools) if wire_tools else omit,
         ) as s:
             async for ev in s:
-                if ev.type == "content_block_delta" and getattr(ev.delta, "type", "") == "text_delta":
+                if ev.type == "content_block_delta" and ev.delta.type == "text_delta":
                     yield TextDelta(ev.delta.text)
             msg = await s.get_final_message()
         text = "".join(b.text for b in msg.content if b.type == "text")

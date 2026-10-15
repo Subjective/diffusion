@@ -229,7 +229,7 @@ def load_config(environ: dict[str, str] | None = None, profile: str | None = Non
     auth = p.get("auth") or ("x-api-key" if protocol == "anthropic" else "bearer")
     if auth not in ("x-api-key", "bearer"):
         raise ConfigError(f"Profile {name!r}: unknown auth {auth!r} (x-api-key, bearer).")
-    if backend == "api":
+    if protocol is not None:  # set exactly when backend == "api"
         api_key, key_source = _resolve_key(p, env, inherited)
         if not api_key and not p.get("no_key"):
             raise ConfigError(f"Profile {name!r}: no API key ({p.get('api_key_env') or 'set api_key_env'}).")

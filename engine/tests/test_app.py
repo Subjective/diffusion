@@ -236,7 +236,7 @@ async def test_overlapping_turns_serialize_and_both_persist(setup):
     await asyncio.sleep(0.05)
     assert resumes == [None]  # B waits for A
     gate.set()
-    await a, await b
+    await asyncio.gather(a, b)
     assert resumes == [None, "sess-1"]  # B continues A's session
     stored = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()
     assert [t["questions"][0]["text"] for t in stored["turns"]] == ["A", "B"]
