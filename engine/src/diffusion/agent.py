@@ -67,6 +67,8 @@ def summarize_tool(name: str, args: dict) -> str:
     if short == "get_hunk":
         ids = args.get("ids") or []
         return f"Hunk {', '.join(ids) if isinstance(ids, list) else ids}"
+    if short == "show_code":
+        return f"Show {Path(str(args.get('file', ''))).name}:{args.get('start', '')}"
     return short
 
 

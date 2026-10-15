@@ -6,6 +6,7 @@ import {
   History,
   Layers,
   LoaderCircle,
+  LocateFixed,
   MessageCircle,
   ShieldAlert,
   Sparkles,
@@ -14,13 +15,16 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { type Anchor, type Question, useChat } from "../chat";
-import { Markdown } from "../lib/md";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Anchor, type Question, type Show, useChat } from "../chat";
+import { type CodeLoc, parseCite, type Resolved, resolveLoc } from "../lib/cite";
+import { useHunkIndex } from "../lib/linking";
+import { InlineCodeContext, Markdown } from "../lib/md";
 import { CHAT_W, startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
 import { useApp } from "../store";
 import type { StepKind } from "../types";
+import { useUI } from "../ui";
 import { ic, STEP_ICON } from "./icons";
 
 export interface ChatLinkProps {
@@ -47,6 +51,16 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
 
   const turns = groupTurns(sent);
   const waiting = chat.questions.filter((q) => q.status === "waiting");
+
+  // The model's first show_code of a turn jumps the diff (chat.ts decides whether the reviewer was busy there).
+  const autoShow = useChat((s) => s.autoShow);
+  const resolve = useResolveLoc();
+  useEffect(() => {
+    if (!autoShow) return;
+    const show = useChat.getState().chat.questions.find((q) => q.id === autoShow.q)?.shows[autoShow.i];
+    const r = show && resolve(show);
+    if (r) useUI.getState().focus(r.keys, r.files);
+  }, [autoShow, resolve]);
 
   return (
     <aside className="chat">
@@ -83,12 +97,14 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
         {!turns.length ? (
           <Empty />
         ) : (
-          <div className="thread">
-            {turns.map((qs, i) => (
-              <Turn key={i} qs={qs} link={link} />
-            ))}
-            {waiting.length > 0 && <Waiting qs={waiting} link={link} />}
-          </div>
+          <InlineCodeContext.Provider value={Cite}>
+            <div className="thread">
+              {turns.map((qs, i) => (
+                <Turn key={i} qs={qs} link={link} />
+              ))}
+              {waiting.length > 0 && <Waiting qs={waiting} link={link} />}
+            </div>
+          </InlineCodeContext.Provider>
         )}
         {error && <div className="chat-err">{error}</div>}
       </div>
@@ -99,6 +115,69 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
 
 /** Same rule as the engine's history title: the first question asked. */
 const chatTitle = (sent: Question[]) => [...sent].sort((a, b) => a.turn! - b.turn!)[0]?.text.trim() ?? "";
+
+function useResolveLoc(): (loc: CodeLoc) => Resolved | null {
+  const files = useApp((s) => s.files);
+  const idx = useHunkIndex();
+  return useCallback((loc: CodeLoc) => resolveLoc(loc, files, idx), [files, idx]);
+}
+
+/** Hover highlights the rows; click scrolls to and flashes them. */
+const locLink = (r: Resolved) => ({
+  onMouseEnter: () => useUI.getState().setHover(r.keys),
+  onMouseLeave: () => useUI.getState().setHover([]),
+  onClick: (e: React.MouseEvent) => {
+    e.stopPropagation();
+    useUI.getState().focus(r.keys, r.files);
+  },
+});
+
+/** Inline code in answers: `path:line` citations of diff lines become links (shown by file name; full path on
+ *  hover); others stay plain code. */
+function Cite({ text }: { text: string }) {
+  const resolve = useResolveLoc();
+  const loc = useMemo(() => parseCite(text), [text]);
+  const r = useMemo(() => (loc ? resolve(loc) : null), [loc, resolve]);
+  if (!loc) return <code>{text}</code>;
+  if (!r)
+    return (
+      <code className="cite off" title="Not part of this diff">
+        {text}
+      </code>
+    );
+  return (
+    <button type="button" className="cite" title={`${r.file} · Show in diff`} {...locLink(r)}>
+      <code>{text.trim().replace(/^.*\//, "")}</code>
+    </button>
+  );
+}
+
+const locText = (s: CodeLoc) => `${s.file.split("/").pop()}:${s.start}${s.end !== s.start ? `–${s.end}` : ""}`;
+
+/** Regions the model pointed at with show_code. */
+function Shows({ shows }: { shows: Show[] }) {
+  const resolve = useResolveLoc();
+  return (
+    <div className="shows">
+      {shows.map((s, i) => {
+        const r = resolve(s);
+        return (
+          <button
+            key={i}
+            className="show-chip"
+            disabled={!r}
+            title={r ? "Show in diff" : "No longer in this diff"}
+            {...(r ? locLink(r) : {})}
+          >
+            {ic(LocateFixed, 13)}
+            {s.label && <span className="lbl">{s.label}</span>}
+            <span className="loc">{locText(s)}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function groupTurns(qs: Question[]): Question[][] {
   const by = new Map<number, Question[]>();
@@ -252,6 +331,7 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
                 {q.status === "pending" && <span className="cursor" />}
                 {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
               </div>
+              {q.shows.length > 0 && <Shows shows={q.shows} />}
             </div>
           ))}
           {tools.length > 0 && (

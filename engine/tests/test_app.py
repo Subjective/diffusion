@@ -145,6 +145,8 @@ async def test_chat_lifecycle(setup):
         if "## Q2" in req.prompt:
             yield TextEvent("### Q1\nfirst\n### Q2\nsecond")
         else:
+            show = next(t for t in req.tools if t.name == "show_code")
+            await show.handler({"file": "src/api/client.ts", "start": 2, "label": "call site"})
             yield TextEvent("only answer")
         yield DoneEvent(1, 0.0, False, f"sess-{len(seen)}")
 
@@ -164,13 +166,17 @@ async def test_chat_lifecycle(setup):
     r2 = await client.post(
         f"/api/chats/{cid}/turn", json={"url": URL, "questions": [{"n": 3, "text": "More?"}]}
     )
-    assert parse_sse(r2.text)[-1][0] == "done"
+    evs2 = parse_sse(r2.text)
+    assert evs2[-1][0] == "done"
+    focus = {"n": 3, "file": "src/api/client.ts", "start": 2, "end": 2, "side": "new", "label": "call site"}
+    assert ("focus", focus) in evs2
     assert seen[0].resume is None and seen[1].resume == "sess-1"
 
     stored = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()
     assert [t["answers"] for t in stored["turns"]] == [{"1": "first\n", "2": "second"}, {"3": "only answer"}]
     assert stored["turns"][0]["questions"][0]["anchor"]["file"] == "src/auth/types.ts"
     assert stored["session_id"] == "sess-2"
+    assert [t["shows"] for t in stored["turns"]] == [[], [focus]]
 
     listing = (await client.get("/api/chats", params={"url": URL})).json()
     assert listing == [{**listing[0], "id": cid, "title": "Why?", "questions": 3, "anchored": 1}]

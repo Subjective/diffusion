@@ -4,6 +4,13 @@ import { storage } from "./lib/storage";
 
 export type Order = "guide" | "alpha";
 
+/** Last time the reviewer scrolled or clicked in the diff themselves. Chat only auto-jumps the diff if it's older
+ *  than the question, so an answer never yanks the view away from what they're reading. */
+export const diffActivity = { at: 0 };
+export const markDiffActivity = () => {
+  diffActivity.at = Date.now();
+};
+
 interface UI {
   prKey: string;
   collapsed: Record<string, boolean>;

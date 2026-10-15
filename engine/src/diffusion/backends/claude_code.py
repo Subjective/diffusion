@@ -41,6 +41,15 @@ def mcp_name(tool: str) -> str:
     return f"mcp__{MCP_SERVER}__{tool}"
 
 
+def tool_names_note(tools: list[ToolSpec]) -> str:
+    """Prompts name engine tools plainly (`show_code`); here they're namespaced, and models sometimes call the
+    plain name, fail, and give up. Spell out the mapping."""
+    if not tools:
+        return ""
+    names = ", ".join(f"`{t.name}` is `{mcp_name(t.name)}`" for t in tools)
+    return f"\n\nTool names: {names}."
+
+
 def sandbox_decision(tool_name: str, tool_input: dict, root: Path) -> str | None:
     """Reason to deny a built-in tool call that reaches outside ``root``, or None to allow."""
     if tool_name not in READ_TOOLS:
@@ -99,7 +108,7 @@ def claude_code_runner(cfg: Config) -> Runner:
         allowed = READ_TOOLS + [mcp_name(t.name) for t in req.tools]
         opts = ClaudeAgentOptions(
             model=req.model or None,
-            system_prompt=req.system_prompt,
+            system_prompt=req.system_prompt + tool_names_note(req.tools),
             cwd=str(req.cwd),
             tools=allowed,
             allowed_tools=allowed,

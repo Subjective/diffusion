@@ -6,7 +6,7 @@ import pytest
 
 from diffusion.agent import AgentRequest, DoneEvent, SandboxError, TextEvent, ToolEvent, ToolSpec, within
 from diffusion.backends.api import SessionStore, api_runner
-from diffusion.backends.claude_code import sandbox_decision
+from diffusion.backends.claude_code import sandbox_decision, tool_names_note
 from diffusion.backends.codex import build_args, codex_runner, strict_schema
 from diffusion.backends.providers import (
     AnthropicProvider,
@@ -320,3 +320,12 @@ async def test_codex_runner_chat_and_failure(tmp_path, repo):
 
 def test_paths_exist():
     assert Path(__file__).exists()
+
+
+def test_claude_code_prompt_maps_plain_tool_names():
+    async def h(_):
+        return ""
+
+    assert tool_names_note([]) == ""
+    note = tool_names_note([ToolSpec("show_code", "", {}, h)])
+    assert "`show_code` is `mcp__diffusion__show_code`" in note
