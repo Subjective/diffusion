@@ -17,7 +17,15 @@ export interface Hunk {
   symbol: string;
   lines: Line[];
 }
-export type SkipReason = "lockfile" | "generated" | "snapshot" | "vendored" | "rename" | "binary" | "formatting" | "trivial";
+export type SkipReason =
+  | "lockfile"
+  | "generated"
+  | "snapshot"
+  | "vendored"
+  | "rename"
+  | "binary"
+  | "formatting"
+  | "trivial";
 export interface FileDiff {
   path: string;
   old_path: string | null;

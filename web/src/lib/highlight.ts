@@ -10,16 +10,60 @@ export interface Token {
 }
 export type LineTokens = Token[];
 
-const theme = createCssVariablesTheme({ name: "rv", variablePrefix: "--shiki-", variableDefaults: {}, fontStyle: true });
+const theme = createCssVariablesTheme({
+  name: "rv",
+  variablePrefix: "--shiki-",
+  variableDefaults: {},
+  fontStyle: true,
+});
 
 const EXT: Record<string, string> = {
-  ts: "typescript", tsx: "tsx", js: "javascript", jsx: "jsx", mjs: "javascript", cjs: "javascript",
-  py: "python", pyi: "python", go: "go", rs: "rust", java: "java", kt: "kotlin", scala: "scala",
-  c: "c", h: "c", cc: "cpp", cpp: "cpp", hpp: "cpp", cs: "csharp", rb: "ruby", php: "php", swift: "swift",
-  sh: "bash", bash: "bash", zsh: "bash", sql: "sql", json: "json", yaml: "yaml", yml: "yaml", toml: "toml",
-  md: "markdown", html: "html", css: "css", scss: "scss", proto: "proto", tf: "hcl", hcl: "hcl", xml: "xml",
-  dockerfile: "docker", makefile: "make", lua: "lua", r: "r", jl: "julia", vue: "vue", svelte: "svelte",
-};  // prettier-ignore
+  ts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  jsx: "jsx",
+  mjs: "javascript",
+  cjs: "javascript",
+  py: "python",
+  pyi: "python",
+  go: "go",
+  rs: "rust",
+  java: "java",
+  kt: "kotlin",
+  scala: "scala",
+  c: "c",
+  h: "c",
+  cc: "cpp",
+  cpp: "cpp",
+  hpp: "cpp",
+  cs: "csharp",
+  rb: "ruby",
+  php: "php",
+  swift: "swift",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  sql: "sql",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  md: "markdown",
+  html: "html",
+  css: "css",
+  scss: "scss",
+  proto: "proto",
+  tf: "hcl",
+  hcl: "hcl",
+  xml: "xml",
+  dockerfile: "docker",
+  makefile: "make",
+  lua: "lua",
+  r: "r",
+  jl: "julia",
+  vue: "vue",
+  svelte: "svelte",
+}; // prettier-ignore
 
 export function langFor(path: string): string | null {
   const name = path.split("/").pop()!.toLowerCase();
@@ -43,9 +87,9 @@ async function tokenize(code: string, lang: string): Promise<LineTokens[]> {
     await h.loadLanguage(lang as Parameters<Highlighter["loadLanguage"]>[0]);
     loaded.add(lang);
   }
-  return h.codeToTokensBase(code, { lang: lang as never, theme }).map((line) =>
-    line.map((t) => ({ content: t.content, color: t.color })),
-  );
+  return h
+    .codeToTokensBase(code, { lang: lang as never, theme })
+    .map((line) => line.map((t) => ({ content: t.content, color: t.color })));
 }
 
 /** Tokens per hunk line index, keyed by `${hunk.id}:${i}`. Missing entries render as plain text. */

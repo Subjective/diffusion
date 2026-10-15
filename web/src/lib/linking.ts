@@ -1,9 +1,9 @@
 // Translate guide entities (steps, refs) into row keys for highlight/focus.
 import { useMemo } from "react";
 import { useApp } from "../store";
-import { useUI } from "../ui";
 import type { Guide, Ref } from "../types";
-import { indexFiles, rowKey, rowsForRef, type HunkIndex } from "./refs";
+import { useUI } from "../ui";
+import { type HunkIndex, indexFiles, rowKey, rowsForRef } from "./refs";
 
 export function useHunkIndex(): HunkIndex {
   const files = useApp((s) => s.files);
@@ -22,7 +22,10 @@ export interface Target {
 
 /** Reading order: each step, then its substeps. j/k walk this list. */
 export function readingOrder(guide: Guide | null): Target[] {
-  return (guide?.steps ?? []).flatMap((s) => [{ step: s.id, sub: null }, ...(s.substeps ?? []).map((b) => ({ step: s.id, sub: b.id }))]);
+  return (guide?.steps ?? []).flatMap((s) => [
+    { step: s.id, sub: null },
+    ...(s.substeps ?? []).map((b) => ({ step: s.id, sub: b.id })),
+  ]);
 }
 
 export function refsOf(guide: Guide | null, step: number, sub: number | null = null): Ref[] {

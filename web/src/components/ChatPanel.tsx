@@ -1,12 +1,27 @@
+import {
+  ArrowUp,
+  Clock,
+  FileCode,
+  FlaskConical,
+  History,
+  Layers,
+  LoaderCircle,
+  MessageCircle,
+  ShieldAlert,
+  Sparkles,
+  SquarePen,
+  Trash2,
+  Workflow,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Clock, FileCode, FlaskConical, History, Layers, LoaderCircle, MessageCircle, ShieldAlert, Sparkles, SquarePen, Trash2, Workflow, X } from "lucide-react";
-import { useChat, type Anchor, type Question } from "../chat";
+import { type Anchor, type Question, useChat } from "../chat";
 import { Markdown } from "../lib/md";
-import { storage } from "../lib/storage";
 import { CHAT_W, startResize } from "../lib/panes";
+import { storage } from "../lib/storage";
 import { useApp } from "../store";
-import { STEP_ICON, ic } from "./icons";
 import type { StepKind } from "../types";
+import { ic, STEP_ICON } from "./icons";
 
 export interface ChatLinkProps {
   /** Hover a question (by local id) to highlight its lines; null clears. */
@@ -38,7 +53,11 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
       <div className="chat-h">
         {ic(MessageCircle, 16)}
         <span className="grow" />
-        <button className={`icon-btn sm${historyOpen ? " on" : ""}`} title="History" onClick={() => setHistoryOpen(!historyOpen)}>
+        <button
+          className={`icon-btn sm${historyOpen ? " on" : ""}`}
+          title="History"
+          onClick={() => setHistoryOpen(!historyOpen)}
+        >
           {ic(History, 15)}
         </button>
         <button className="icon-btn sm" title="New chat" onClick={newChat}>
@@ -151,7 +170,8 @@ function Empty() {
 }
 
 export const rangeTxt = (a: number, b: number) => (a === b ? `L${a}` : `L${a}–${b}`);
-export const anchorLabel = (a: Anchor) => (a.step != null ? `Step ${a.step}` : `${a.file.split("/").pop()}:${a.start}${a.end !== a.start ? "–" + a.end : ""}`);
+export const anchorLabel = (a: Anchor) =>
+  a.step != null ? `Step ${a.step}` : `${a.file.split("/").pop()}:${a.start}${a.end !== a.start ? "–" + a.end : ""}`;
 
 function CtxCard({ a }: { a: Anchor }) {
   if (a.step != null) {
@@ -176,7 +196,8 @@ function CtxCard({ a }: { a: Anchor }) {
   );
 }
 
-export const Qn = ({ q }: { q: Question }) => (q.n ? <span className={`qn${q.status === "staged" ? " staged" : ""}`}>{q.n}</span> : null);
+export const Qn = ({ q }: { q: Question }) =>
+  q.n ? <span className={`qn${q.status === "staged" ? " staged" : ""}`}>{q.n}</span> : null;
 
 function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
   const multi = qs.length > 1 || qs.some((q) => q.n);
@@ -251,7 +272,12 @@ function Waiting({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
           key={q.id}
           className={`q-item${link.hoverQ === q.id ? " hover" : ""}`}
           {...(q.anchor
-            ? { "data-q": q.id, onMouseEnter: () => link.onHoverQ(q.id), onMouseLeave: () => link.onHoverQ(null), onClick: () => link.onFocusQ(q) }
+            ? {
+                "data-q": q.id,
+                onMouseEnter: () => link.onHoverQ(q.id),
+                onMouseLeave: () => link.onHoverQ(null),
+                onClick: () => link.onFocusQ(q),
+              }
             : {})}
         >
           {q.anchor && <CtxCard a={q.anchor} />}
@@ -326,7 +352,13 @@ function Composer({ link }: { link: ChatLinkProps }) {
           ref={ta}
           rows={1}
           value={text}
-          placeholder={staged.length ? "Add a message, or send" : chat.busy ? "Ask another — sends after this answer" : "Ask anything"}
+          placeholder={
+            staged.length
+              ? "Add a message, or send"
+              : chat.busy
+                ? "Ask another — sends after this answer"
+                : "Ask anything"
+          }
           onChange={(e) => {
             setText(e.target.value);
             e.target.style.height = "";
@@ -339,7 +371,12 @@ function Composer({ link }: { link: ChatLinkProps }) {
             }
           }}
         />
-        <button id="chatSend" className="icon-btn solid" title={staged.length ? `Send ${staged.length}` : "Send (↵)"} onClick={send}>
+        <button
+          id="chatSend"
+          className="icon-btn solid"
+          title={staged.length ? `Send ${staged.length}` : "Send (↵)"}
+          onClick={send}
+        >
           {ic(ArrowUp, 16)}
           {staged.length > 0 && <span className="send-n">{staged.length}</span>}
         </button>

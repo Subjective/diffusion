@@ -17,12 +17,32 @@ export function FlowGraph() {
 
   return (
     <div className="flow">
-      <svg viewBox={`0 0 ${Math.max(layout.width, 1)} ${Math.max(layout.height, 1)}`} style={{ maxHeight: 360 }} onMouseLeave={() => link.hover(null)}>
+      <svg
+        viewBox={`0 0 ${Math.max(layout.width, 1)} ${Math.max(layout.height, 1)}`}
+        style={{ maxHeight: 360 }}
+        onMouseLeave={() => link.hover(null)}
+      >
         <defs>
-          <marker id={`fa${uid}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker
+            id={`fa${uid}`}
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
             <path className="mk" d="M0 1 L9 5 L0 9z" />
           </marker>
-          <marker id={`fae${uid}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker
+            id={`fae${uid}`}
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
             <path className="mk err" d="M0 1 L9 5 L0 9z" />
           </marker>
         </defs>
@@ -30,7 +50,11 @@ export function FlowGraph() {
           const err = e.kind === "error";
           return (
             <g key={i}>
-              <path className={`fe${err ? " err" : ""}`} d={edgePath(e.points)} markerEnd={`url(#${err ? "fae" : "fa"}${uid})`} />
+              <path
+                className={`fe${err ? " err" : ""}`}
+                d={edgePath(e.points)}
+                markerEnd={`url(#${err ? "fae" : "fa"}${uid})`}
+              />
               {e.label && e.labelPos && (
                 <text className={`fl${err ? " err" : ""}`} x={e.labelPos.x} y={e.labelPos.y + 3} textAnchor="middle">
                   {e.label}
@@ -42,9 +66,17 @@ export function FlowGraph() {
         {layout.nodes.map((n) => {
           const sub = n.substep ?? null;
           const match = (st: number | null, sb: number | null) => st === n.step && (sub == null || sb === sub);
-          const cls = ["fn", match(hoverStep, hoverSub) && "hover", match(pinStep, pinSub) && "active"].filter(Boolean).join(" ");
+          const cls = ["fn", match(hoverStep, hoverSub) && "hover", match(pinStep, pinSub) && "active"]
+            .filter(Boolean)
+            .join(" ");
           return (
-            <g key={n.id} className={cls} data-step={n.step} onMouseEnter={() => link.hover(n.step, sub)} onClick={() => link.focus(n.step, sub)}>
+            <g
+              key={n.id}
+              className={cls}
+              data-step={n.step}
+              onMouseEnter={() => link.hover(n.step, sub)}
+              onClick={() => link.focus(n.step, sub)}
+            >
               <title>{n.label}</title>
               <rect x={n.x} y={n.y} width={n.w} height={n.h} rx={8} />
               <g className="num">
@@ -63,4 +95,3 @@ export function FlowGraph() {
     </div>
   );
 }
-

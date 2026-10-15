@@ -1,6 +1,14 @@
-import { anchorFromRows, rangeText, type RowInfo } from "./selection";
+import { anchorFromRows, type RowInfo, rangeText } from "./selection";
 
-const r = (over: Partial<RowInfo>): RowInfo => ({ file: "a.ts", pos: 0, new: null, old: null, type: "ctx", code: "", ...over });
+const r = (over: Partial<RowInfo>): RowInfo => ({
+  file: "a.ts",
+  pos: 0,
+  new: null,
+  old: null,
+  type: "ctx",
+  code: "",
+  ...over,
+});
 
 test("new-side anchor from mixed rows", () => {
   const a = anchorFromRows([

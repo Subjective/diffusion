@@ -1,5 +1,5 @@
-import { indexFiles, refLabel, rowsForRef, rowsOfHunk } from "./refs";
 import type { FileDiff, Hunk } from "../types";
+import { indexFiles, refLabel, rowsForRef, rowsOfHunk } from "./refs";
 
 const hunk: Hunk = {
   id: "H1",
@@ -20,7 +20,16 @@ const hunk: Hunk = {
   ],
 };
 const files: FileDiff[] = [
-  { path: "src/a.ts", old_path: null, status: "modified", binary: false, additions: 2, deletions: 2, hunks: [hunk], skip: null },
+  {
+    path: "src/a.ts",
+    old_path: null,
+    status: "modified",
+    binary: false,
+    additions: 2,
+    deletions: 2,
+    hunks: [hunk],
+    skip: null,
+  },
 ];
 
 test("positions: deletions sit half a line after the previous new line", () => {
@@ -33,7 +42,8 @@ test("whole-hunk ref covers all rows", () => {
 
 test("new-side range includes interior deletions only", () => {
   const idx = indexFiles(files);
-  const pos = (s: number, e: number) => rowsForRef({ hunk: "H1", side: "new", start: s, end: e }, idx).map((r) => r.pos);
+  const pos = (s: number, e: number) =>
+    rowsForRef({ hunk: "H1", side: "new", start: s, end: e }, idx).map((r) => r.pos);
   expect(pos(11, 12)).toEqual([11, 12]);
   expect(pos(10, 13)).toEqual([10, 10.5, 11, 12, 13]);
   expect(pos(13, 14)).toEqual([13, 13.5, 14]);

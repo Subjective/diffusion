@@ -35,7 +35,12 @@ export function usePaneWidths(chatOpen: boolean) {
 }
 
 /** Drag handler for a pane edge. `toWidth` maps the pointer x to a desired width. */
-export function startResize(e: React.MouseEvent, toWidth: (x: number) => number, apply: (w: number) => void, key: string) {
+export function startResize(
+  e: React.MouseEvent,
+  toWidth: (x: number) => number,
+  apply: (w: number) => void,
+  key: string,
+) {
   if (e.button !== 0) return;
   e.preventDefault();
   document.body.classList.add("resizing");

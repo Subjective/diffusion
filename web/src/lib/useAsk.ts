@@ -9,7 +9,16 @@ function setSel(rows: HTMLElement[], on: boolean) {
 
 export function useAsk() {
   const [ask, setAsk] = useState<AskState | null>(null);
-  const drag = useRef<{ origin: HTMLElement; all: HTMLElement[]; end: HTMLElement; tip: HTMLElement; sel: HTMLElement[]; x: number; y: number; timer: number } | null>(null);
+  const drag = useRef<{
+    origin: HTMLElement;
+    all: HTMLElement[];
+    end: HTMLElement;
+    tip: HTMLElement;
+    sel: HTMLElement[];
+    x: number;
+    y: number;
+    timer: number;
+  } | null>(null);
 
   const clearSel = () => {
     document.querySelectorAll<HTMLElement>("tr.sel").forEach((r) => r.classList.remove("sel"));
@@ -78,7 +87,16 @@ export function useAsk() {
       const origin = btn.closest<HTMLElement>("tr.ln")!;
       const table = origin.closest("table")!;
       const tip = document.body.appendChild(Object.assign(document.createElement("div"), { className: "drag-tip" }));
-      drag.current = { origin, all: [...table.querySelectorAll<HTMLElement>("tr.ln")], end: origin, tip, sel: [], x: e.clientX, y: e.clientY, timer: 0 };
+      drag.current = {
+        origin,
+        all: [...table.querySelectorAll<HTMLElement>("tr.ln")],
+        end: origin,
+        tip,
+        sel: [],
+        x: e.clientX,
+        y: e.clientY,
+        timer: 0,
+      };
       document.body.classList.add("dragging");
       origin.classList.add("drag-origin");
       paint(e.clientX, e.clientY);

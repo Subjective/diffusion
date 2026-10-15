@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
 import { ArrowUp, FileCode, ListPlus, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { Anchor } from "../chat";
 import { rangeText } from "../lib/selection";
 import { ic } from "./icons";
@@ -10,7 +10,12 @@ export interface AskState {
   y: number;
 }
 
-export function AskPopup({ state, onClose, onAsk, onStage }: {
+export function AskPopup({
+  state,
+  onClose,
+  onAsk,
+  onStage,
+}: {
   state: AskState | null;
   onClose: () => void;
   onAsk: (text: string, a: Anchor) => void;
@@ -49,7 +54,10 @@ export function AskPopup({ state, onClose, onAsk, onStage }: {
   };
 
   return (
-    <div className="ask-pop" style={{ left: Math.min(state.x, innerWidth - 376), top: Math.min(state.y + 12, innerHeight - 120) }}>
+    <div
+      className="ask-pop"
+      style={{ left: Math.min(state.x, innerWidth - 376), top: Math.min(state.y + 12, innerHeight - 120) }}
+    >
       <div className="ask-ctx">
         {ic(FileCode, 13)}
         <b>{a.file.split("/").pop()}</b>

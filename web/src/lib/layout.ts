@@ -32,7 +32,12 @@ export function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   for (const n of nodes) g.setNode(n.id, { width: nodeWidth(n.label), height: NODE_H });
   edges.forEach((e, i) => {
     if (g.hasNode(e.from) && g.hasNode(e.to) && e.from !== e.to)
-      g.setEdge(e.from, e.to, { width: e.label ? e.label.length * 6 + 6 : 0, height: e.label ? 12 : 0, labelpos: "c" }, String(i));
+      g.setEdge(
+        e.from,
+        e.to,
+        { width: e.label ? e.label.length * 6 + 6 : 0, height: e.label ? 12 : 0, labelpos: "c" },
+        String(i),
+      );
   });
   dagre.layout(g);
 
@@ -53,11 +58,14 @@ export function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
 /** Smooth path through dagre's control points. */
 export function edgePath(points: { x: number; y: number }[]): string {
   if (!points.length) return "";
-  if (points.length < 3) return `M${points[0].x},${points[0].y} L${points[points.length - 1].x},${points[points.length - 1].y}`;
+  if (points.length < 3)
+    return `M${points[0].x},${points[0].y} L${points[points.length - 1].x},${points[points.length - 1].y}`;
   let d = `M${points[0].x},${points[0].y}`;
   for (let i = 1; i < points.length - 1; i++) {
-    const p = points[i], q = points[i + 1];
-    const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+    const p = points[i],
+      q = points[i + 1];
+    const mx = (p.x + q.x) / 2,
+      my = (p.y + q.y) / 2;
     d += ` Q${p.x},${p.y} ${i === points.length - 2 ? `${q.x},${q.y}` : `${mx},${my}`}`;
   }
   return d;
