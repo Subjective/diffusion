@@ -25,7 +25,7 @@ for the UI reference.
   server; a signed-in `claude` or `codex` CLI. See [Configuration](#configuration).
 - **git**, and for GitHub PRs either `gh` signed in (`gh auth status`) or a `GITHUB_TOKEN` (required for private
   repos). Local mode needs neither.
-- **`uv`** (Python 3.12+). **Node 20+** only if you build the UI yourself.
+- **`uv`** (Python 3.12+). **Node 24+** only if you build the UI yourself.
 
 ## Run
 
@@ -164,8 +164,8 @@ Check your provider's terms before using a consumer subscription this way; API k
 ## Develop
 
 ```bash
-make test           # engine: ruff + pytest   |   web: tsc + vitest
-make fmt            # ruff format + autofix
+make test           # engine: ruff + pyright + pytest   |   web: biome + tsc + vitest
+make fmt            # ruff and biome: format + autofix
 cd engine && uv run pytest -m live   # tests that call your configured backend (skipped by default)
 ```
 

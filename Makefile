@@ -7,13 +7,14 @@ install:
 test: test-engine test-web
 
 test-engine:
-	cd engine && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
+	cd engine && uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest -q
 
 test-web:
-	cd web && npm run --silent typecheck && npm run --silent test
+	cd web && npm run --silent lint && npm run --silent typecheck && npm run --silent test
 
 fmt:
 	cd engine && uv run ruff format . && uv run ruff check --fix .
+	cd web && npm run --silent fmt
 
 # Engine on :8787, Vite on :5173 (proxies /api). Open :5173.
 dev:
