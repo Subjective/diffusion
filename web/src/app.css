@@ -130,6 +130,67 @@ tr.flash.f1 td.no {
 .md li + li {
   margin-top: 2px;
 }
+.md button.cite {
+  all: unset;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.md button.cite code {
+  color: var(--brand);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.md button.cite:hover code,
+.md button.cite:focus-visible code {
+  text-decoration-style: solid;
+}
+.md button.cite:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+.ai-body {
+  min-width: 0;
+}
+.shows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.show-chip {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--chip);
+  color: var(--text);
+  font: 12px var(--sans);
+  cursor: pointer;
+  animation: fadeUp 0.25s both;
+}
+.show-chip:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.show-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.show-chip .lbl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.show-chip .loc {
+  font: 11px var(--mono);
+  color: var(--subtle);
+  white-space: nowrap;
+}
 .md-pre {
   margin: 0 0 8px;
   padding: 8px 10px;

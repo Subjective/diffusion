@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .agent import DoneEvent, Runner, ToolEvent, make_runner
-from .chat_agent import ChatDelta, Question, run_turn
+from .chat_agent import ChatDelta, ChatFocus, Question, run_turn
 from .config import Config, load_config
 from .github import GitHubError
 from .guide_agent import GuideDone, GuideError, generate_guide
@@ -205,6 +205,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     "questions": [q.model_dump() for q in req.questions],
                     "answers": {str(q.n): "" for q in req.questions},
                     "tools": [],
+                    "shows": [],
                     "status": "streaming",
                 }
                 chat["turns"].append(record)
@@ -218,6 +219,9 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                         if isinstance(ev, ChatDelta):
                             record["answers"][str(ev.n)] += ev.text
                             yield "delta", {"n": ev.n, "text": ev.text}
+                        elif isinstance(ev, ChatFocus):
+                            record["shows"].append(ev.to_dict())
+                            yield "focus", ev.to_dict()
                         elif isinstance(ev, ToolEvent):
                             record["tools"].append(ev.summary)
                             yield "tool", {"name": ev.name, "summary": ev.summary}

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
 import { useApp } from "../store";
 import type { FileDiff as FD, Guide, Ref } from "../types";
-import { useUI } from "../ui";
+import { markDiffActivity, useUI } from "../ui";
 import { type Dot, FileDiff, type Gutter } from "./FileDiff";
 import { ic } from "./icons";
 
@@ -77,7 +77,15 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
   const allCollapsed = useUI((s) => files.length > 0 && files.every((f) => s.collapsed[f.path]));
 
   return (
-    <section className="diffpane" id="diffPane" ref={pane}>
+    <section
+      className="diffpane"
+      id="diffPane"
+      ref={pane}
+      onWheel={markDiffActivity}
+      onTouchMove={markDiffActivity}
+      onMouseDown={markDiffActivity}
+      onKeyDown={markDiffActivity}
+    >
       <div className="toolbar">
         <span className="grow" />
         <button

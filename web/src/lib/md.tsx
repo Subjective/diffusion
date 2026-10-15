@@ -1,12 +1,21 @@
 // Minimal inline markdown for model text: `code`, **bold**, *em*, line breaks. No HTML passthrough.
-import { Fragment, type ReactNode } from "react";
+import { type ComponentType, createContext, Fragment, type ReactNode, useContext } from "react";
+
+/** Optional renderer for inline code spans (chat uses it to turn `path:line` citations into diff links). */
+export const InlineCodeContext = createContext<ComponentType<{ text: string }> | null>(null);
+
+function InlineCode({ text }: { text: string }) {
+  const Render = useContext(InlineCodeContext);
+  return Render ? <Render text={text} /> : <code>{text}</code>;
+}
 
 const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/g;
 
 export function inline(text: string): ReactNode[] {
   return text.split(INLINE).map((part, i) => {
     if (!part) return null;
-    if (part.startsWith("`") && part.endsWith("`") && part.length > 1) return <code key={i}>{part.slice(1, -1)}</code>;
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 1)
+      return <InlineCode key={i} text={part.slice(1, -1)} />;
     if (part.startsWith("**") && part.endsWith("**")) return <b key={i}>{part.slice(2, -2)}</b>;
     if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return <em key={i}>{part.slice(1, -1)}</em>;
     return <Fragment key={i}>{part}</Fragment>;
