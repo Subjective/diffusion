@@ -86,7 +86,7 @@ A software engineer reviewing a colleague's PR (or their own branch), often one 
   - **Validation:** a validator checks every reference against the hunk table, clamps line ranges, drops invalid refs, and computes coverage.
   - **Chat agent:** a separate session per chat, seeded with the PR, the hunks and the guide, with the same read-only tools. Turns in a chat run one at a time and resume the same session.
 - **Backends**, behind one runner interface and chosen per profile:
-  - `api`: our own agent loop over the Anthropic Messages API or any OpenAI-compatible Chat Completions API (OpenAI, OpenRouter, Gemini, Ollama, vLLM, gateways), with read-only `read_file`/`grep`/`glob` tools.
+  - `api`: a Pydantic AI agent over the Anthropic Messages API or any OpenAI-compatible Chat Completions API (OpenAI, OpenRouter, Gemini, Ollama, vLLM, gateways), with read-only `read_file`/`grep`/`glob` tools.
   - `claude-code`: the Claude Agent SDK, driving the user's Claude Code CLI with its read-only built-in tools.
   - `codex`: `codex exec` in a read-only sandbox; the guide comes back through `--output-schema`.
 - **Web** (React, local): renders the guide, the diff and the chat. It talks to the engine over HTTP and streaming SSE. The built UI ships inside the Python package, so `diffusion serve` needs no Node.

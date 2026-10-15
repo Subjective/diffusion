@@ -2,7 +2,7 @@
 
 A *profile* says how to talk to models:
 
-- ``backend = "api"``: our own agent loop calling a model API directly. ``protocol`` is ``"anthropic"``
+- ``backend = "api"``: a Pydantic AI agent calling a model API directly. ``protocol`` is ``"anthropic"``
   (Messages API) or ``"openai"`` (Chat Completions: OpenAI, OpenRouter, Gemini, Ollama, vLLM, most gateways).
 - ``backend = "claude-code"``: the Claude Agent SDK, using your Claude Code setup and login.
 - ``backend = "codex"``: the Codex CLI (``codex exec``), using your Codex setup and login.

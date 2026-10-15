@@ -16,8 +16,8 @@ for the UI reference.
   an agent with read-only tools that produces the guide. Every reference is validated against the diff. It also
   powers the chat. HTTP + SSE API.
 - **`web/`**: a React UI: the diff, the guide with live links, and the chat.
-- **Backends**: `api` (our own agent loop over the Anthropic or any OpenAI-compatible API), `claude-code` (the
-  Claude Agent SDK and your Claude Code CLI), or `codex` (the Codex CLI).
+- **Backends**: `api` (a [Pydantic AI](https://ai.pydantic.dev) agent over the Anthropic or any
+  OpenAI-compatible API), `claude-code` (the Claude Agent SDK and your Claude Code CLI), or `codex` (the Codex CLI).
 
 ## Prerequisites
 

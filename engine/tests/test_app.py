@@ -251,8 +251,9 @@ async def test_overlapping_turns_serialize_and_both_persist(setup):
 
 async def test_local_target_end_to_end_with_api_backend(tmp_path):
     """Real prepare + real api backend loop (scripted model) + real run_guide, through HTTP."""
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
     from diffusion.backends.api import SessionStore, api_runner
-    from diffusion.backends.providers import Completion, ToolCall, Usage
     from diffusion.pipeline import local_target, prepare
     from diffusion.sample import build_sample_repo
 
@@ -260,28 +261,22 @@ async def test_local_target_end_to_end_with_api_backend(tmp_path):
     build_sample_repo(repo)
     target = local_target(repo, "main", "feature")
 
-    class Model:
-        async def stream(self, system, messages, tools, model):
-            if len(messages) == 1:
-                ids = [
-                    ln.split()[0]
-                    for ln in messages[0]["content"]
-                    .split("## Hunk table")[1]
-                    .split("```")[1]
-                    .strip()
-                    .splitlines()
-                ]
-                step = {"title": "All", "kind": "core", "summary": "s", "refs": [{"hunk": h} for h in ids]}
-                yield Completion(
-                    "", [ToolCall("c1", "submit_guide", {"tldr": "local!", "steps": [step]})], Usage(1, 1)
-                )
-            else:
-                yield Completion("done", [], Usage(1, 1))
+    async def model(messages, info):
+        if len(messages) == 1:
+            prompt = messages[0].parts[-1].content
+            table = prompt.split("## Hunk table")[1].split("```")[1].strip()
+            ids = [ln.split()[0] for ln in table.splitlines()]
+            step = {"title": "All", "kind": "core", "summary": "s", "refs": [{"hunk": h} for h in ids]}
+            yield {0: DeltaToolCall("submit_guide", json.dumps({"tldr": "local!", "steps": [step]}))}
+        else:
+            yield "done"
 
     cfg = Config(
         profile="t", source="t", backend="api", guide_model="m", chat_model="m", cache_dir=tmp_path / "c"
     )
-    runner = api_runner(cfg, provider=Model(), sessions=SessionStore(tmp_path / "s"))
+    runner = api_runner(
+        cfg, model=FunctionModel(stream_function=model), sessions=SessionStore(tmp_path / "s")
+    )
     deps = Deps(cfg, runner, prepare, Store(cfg.cache_dir), Jobs())
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(deps)), base_url="http://t")
 

@@ -1,7 +1,7 @@
 """Backend-neutral agent interface: requests, events, custom tools, and the runner seam.
 
 A *runner* takes an ``AgentRequest`` and yields ``Event``s. Backends (``backends/``) implement it on top of a
-model API (our own loop) or an agent CLI (Claude Code, Codex). Everything else in the engine only sees this.
+model API (Pydantic AI) or an agent CLI (Claude Code, Codex). Everything else in the engine only sees this.
 """
 
 from __future__ import annotations
