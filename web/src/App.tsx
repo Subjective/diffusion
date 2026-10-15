@@ -36,6 +36,7 @@ export function App() {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load a URL restored from storage once, on mount.
   useEffect(() => {
     if (url && !pr) void load();
   }, []);
@@ -124,7 +125,7 @@ export function App() {
         stepTitle: s.title,
         stepKind: s.kind,
         refs: s.refs,
-      }); // prettier-ignore
+      });
     },
     [toggleChat],
   );

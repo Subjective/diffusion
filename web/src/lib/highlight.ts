@@ -63,7 +63,7 @@ const EXT: Record<string, string> = {
   jl: "julia",
   vue: "vue",
   svelte: "svelte",
-}; // prettier-ignore
+};
 
 export function langFor(path: string): string | null {
   const name = path.split("/").pop()!.toLowerCase();

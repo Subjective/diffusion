@@ -63,7 +63,7 @@ export function AskPopup({
         <b>{a.file.split("/").pop()}</b>
         <span>{rangeText(a.start, a.end)}</span>
         <span className="grow" />
-        <button className="icon-btn sm" onClick={onClose} title="Close">
+        <button type="button" className="icon-btn sm" onClick={onClose} title="Close">
           {ic(X, 13)}
         </button>
       </div>
@@ -81,10 +81,10 @@ export function AskPopup({
             }
           }}
         />
-        <button className="icon-btn" title="Queue (⇧↵)" onClick={() => submit(true)}>
+        <button type="button" className="icon-btn" title="Queue (⇧↵)" onClick={() => submit(true)}>
           {ic(ListPlus, 17)}
         </button>
-        <button className="icon-btn solid" title="Ask now (↵)" onClick={() => submit(false)}>
+        <button type="button" className="icon-btn solid" title="Ask now (↵)" onClick={() => submit(false)}>
           {ic(ArrowUp, 16)}
         </button>
       </div>

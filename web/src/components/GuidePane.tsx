@@ -310,6 +310,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
               </div>
               <div className="acts">
                 <button
+                  type="button"
                   className="icon-btn sm check"
                   title={read ? "Mark unread" : "Mark read"}
                   onClick={(e) => {
@@ -321,6 +322,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
                 </button>
                 {onAskStep && (
                   <button
+                    type="button"
                     className="icon-btn sm ask"
                     title="Ask about this step"
                     onClick={(e) => {

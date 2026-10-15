@@ -54,16 +54,17 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
         {ic(MessageCircle, 16)}
         <span className="grow" />
         <button
+          type="button"
           className={`icon-btn sm${historyOpen ? " on" : ""}`}
           title="History"
           onClick={() => setHistoryOpen(!historyOpen)}
         >
           {ic(History, 15)}
         </button>
-        <button className="icon-btn sm" title="New chat" onClick={newChat}>
+        <button type="button" className="icon-btn sm" title="New chat" onClick={newChat}>
           {ic(SquarePen, 15)}
         </button>
-        <button className="icon-btn sm" title="Close" onClick={() => toggleChat(false)}>
+        <button type="button" className="icon-btn sm" title="Close" onClick={() => toggleChat(false)}>
           {ic(X, 15)}
         </button>
       </div>
@@ -159,7 +160,7 @@ function Empty() {
       <div className="big">{ic(Sparkles, 20)}</div>
       <div className="sugg">
         {SUGG.map((s) => (
-          <button key={s.label} onClick={() => ask(s.q)}>
+          <button type="button" key={s.label} onClick={() => ask(s.q)}>
             {ic(s.icon, 14)}
             {s.label}
           </button>
@@ -171,7 +172,7 @@ function Empty() {
 
 export const rangeTxt = (a: number, b: number) => (a === b ? `L${a}` : `L${a}–${b}`);
 export const anchorLabel = (a: Anchor) =>
-  a.step != null ? `Step ${a.step}` : `${a.file.split("/").pop()}:${a.start}${a.end !== a.start ? "–" + a.end : ""}`;
+  a.step != null ? `Step ${a.step}` : `${a.file.split("/").pop()}:${a.start}${a.end !== a.start ? `–${a.end}` : ""}`;
 
 function CtxCard({ a }: { a: Anchor }) {
   if (a.step != null) {
@@ -317,7 +318,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
             {ic(Layers, 13)}
             <span>{staged.length}</span>
             <span className="grow" />
-            <button className="icon-btn sm" title="Clear queue" onClick={clearStaged}>
+            <button type="button" className="icon-btn sm" title="Clear queue" onClick={clearStaged}>
               {ic(Trash2, 14)}
             </button>
           </div>
@@ -334,6 +335,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
               <span className="ref">{q.anchor ? anchorLabel(q.anchor) : ""}</span>
               <span className="qt">{q.text}</span>
               <button
+                type="button"
                 className="icon-btn sm x"
                 title="Remove"
                 onClick={(e) => {
@@ -362,7 +364,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
           onChange={(e) => {
             setText(e.target.value);
             e.target.style.height = "";
-            e.target.style.height = e.target.scrollHeight + "px";
+            e.target.style.height = `${e.target.scrollHeight}px`;
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -372,6 +374,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
           }}
         />
         <button
+          type="button"
           id="chatSend"
           className="icon-btn solid"
           title={staged.length ? `Send ${staged.length}` : "Send (↵)"}

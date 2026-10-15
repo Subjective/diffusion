@@ -65,5 +65,5 @@ export function refLabel(ref: Ref, idx: HunkIndex): string {
   }
   a ??= b;
   b ??= a;
-  return `${name}:${a}${b !== a ? "–" + b : ""}`;
+  return `${name}:${a}${b !== a ? `–${b}` : ""}`;
 }

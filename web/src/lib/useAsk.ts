@@ -4,7 +4,7 @@ import type { AskState } from "../components/AskPopup";
 import { anchorFromRows, rangeText, rowInfo, rowsBetween, selectionRows } from "./selection";
 
 function setSel(rows: HTMLElement[], on: boolean) {
-  rows.forEach((r) => r.classList.toggle("sel", on));
+  for (const r of rows) r.classList.toggle("sel", on);
 }
 
 export function useAsk() {
@@ -21,7 +21,7 @@ export function useAsk() {
   } | null>(null);
 
   const clearSel = () => {
-    document.querySelectorAll<HTMLElement>("tr.sel").forEach((r) => r.classList.remove("sel"));
+    for (const r of document.querySelectorAll<HTMLElement>("tr.sel")) r.classList.remove("sel");
   };
   const open = (rows: HTMLElement[], x: number, y: number) => {
     const info = rows.map(rowInfo).filter((r): r is NonNullable<typeof r> => !!r);
@@ -36,6 +36,7 @@ export function useAsk() {
     setAsk(null);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: listeners attach once; open/close only touch the DOM and state setters.
   useEffect(() => {
     // Listen on the document: the diff pane mounts only after the PR loads.
     const inDiff = (e: Event) => !!(e.target as HTMLElement | null)?.closest?.(".diffpane");

@@ -52,7 +52,7 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
   }
   const m = path.match(/^\/api\/chats\/(\w+)(\/turn)?$/);
   if (m && !m[2]) return new Response(JSON.stringify(chats.get(m[1])));
-  if (m && m[2]) {
+  if (m?.[2]) {
     const body = JSON.parse(String(init!.body));
     turnBodies.push(body);
     const chat = chats.get(m[1])!;

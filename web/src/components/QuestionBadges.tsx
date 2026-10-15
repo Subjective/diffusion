@@ -39,6 +39,7 @@ export function useQuestionBadges(
                     : MessageCircle;
             return (
               <button
+                type="button"
                 key={q.id}
                 className={`qb s-${q.status}${hoverQ === q.id ? " hover" : ""}`}
                 data-q={q.id}

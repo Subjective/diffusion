@@ -114,7 +114,7 @@ export const useUI = create<UI>((set, get) => ({
     if (!keys.length) return;
     set((s) => {
       const collapsed = { ...s.collapsed };
-      files.forEach((f) => (collapsed[f] = false));
+      for (const f of files) collapsed[f] = false;
       const same = step != null && s.pinStep === step && s.pinSub === sub;
       const pinStep = same ? null : step;
       return {

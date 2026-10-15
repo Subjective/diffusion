@@ -10,7 +10,7 @@ const { useApp } = await import("../store");
 
 const rows = (sel: string) => [...document.querySelectorAll<HTMLTableRowElement>(`tr.ln${sel}`)];
 const nums = (sel: string) =>
-  rows(sel).map((r) => `${r.dataset.file!.split("/").pop()}:${r.dataset.new ?? "-" + r.dataset.old}`);
+  rows(sel).map((r) => `${r.dataset.file!.split("/").pop()}:${r.dataset.new ?? `-${r.dataset.old}`}`);
 
 beforeEach(() => localStorage.clear());
 

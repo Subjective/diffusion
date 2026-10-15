@@ -88,9 +88,11 @@ button {
   display: block;
   flex: none;
 }
+/* biome-ignore-start lint/complexity/noImportantStyles: a utility class must beat component display rules. */
 .hidden {
   display: none !important;
 }
+/* biome-ignore-end lint/complexity/noImportantStyles: a utility class must beat component display rules. */
 .grow {
   flex: 1;
 }
@@ -1001,11 +1003,13 @@ tr.ln:hover .ask-btn {
 .ask-btn {
   cursor: grab;
 }
+/* biome-ignore-start lint/complexity/noImportantStyles: while dragging, the cursor must override every element's own. */
 body.dragging,
 body.dragging * {
   cursor: ns-resize !important;
   user-select: none !important;
 }
+/* biome-ignore-end lint/complexity/noImportantStyles: while dragging, the cursor must override every element's own. */
 body.dragging tr.ln:hover .ask-btn {
   display: none;
 }
@@ -1174,11 +1178,13 @@ tr.qd.sel td.mark {
 body.resizing .resizer::after {
   background: var(--hl-bar);
 }
+/* biome-ignore-start lint/complexity/noImportantStyles: while resizing, the cursor must override every element's own. */
 body.resizing,
 body.resizing * {
   cursor: col-resize !important;
   user-select: none !important;
 }
+/* biome-ignore-end lint/complexity/noImportantStyles: while resizing, the cursor must override every element's own. */
 .thread {
   display: flex;
   flex-direction: column;

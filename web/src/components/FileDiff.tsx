@@ -54,6 +54,7 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
         </span>
         <span className="grow" />
         <button
+          type="button"
           className={`icon-btn sm viewed${viewed ? " on" : ""}`}
           title="Viewed"
           onClick={(e) => {
@@ -178,7 +179,7 @@ const DiffRow = memo(function DiffRow({ rk, type, old, nw, text, tokens, dots, e
       <td className="no">{old ?? ""}</td>
       <td className="no">{nw ?? ""}</td>
       <td className="code">
-        <button className="ask-btn" title="Click, or drag to select lines" tabIndex={-1}>
+        <button type="button" className="ask-btn" title="Click, or drag to select lines" tabIndex={-1}>
           {ic(MessageCircle, 12)}
         </button>
         <span className="sg">{sign}</span>

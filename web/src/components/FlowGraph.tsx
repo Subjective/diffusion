@@ -13,7 +13,7 @@ export function FlowGraph() {
   const pinSub = useUI((s) => s.pinSub);
   const link = useStepLinking();
   const layout = useMemo(() => (flow ? layoutFlow(flow.nodes, flow.edges) : null), [flow]);
-  if (!layout || !layout.nodes.length) return null;
+  if (!layout?.nodes.length) return null;
 
   return (
     <div className="flow">

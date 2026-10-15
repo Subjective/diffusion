@@ -182,7 +182,7 @@ export const useChat = create<State>((set, get) => {
 
     reset(pr) {
       if (pr === get().pr) return;
-      ctrls.forEach((c) => c.abort());
+      for (const c of ctrls) c.abort();
       set({ pr, chat: emptyChat(), history: [], historyOpen: false, error: null });
     },
     newChat() {
@@ -280,7 +280,7 @@ function toWire(a: Anchor) {
 export function fromWire(c: WireChat): Chat {
   const questions: Question[] = [];
   let nextN = 1;
-  c.turns.forEach((t, turn) =>
+  c.turns.forEach((t, turn) => {
     t.questions.forEach((q) => {
       const anchor = q.anchor ? ({ ...q.anchor, ...(q.anchor.ui ?? {}) } as Anchor) : null;
       const n = q.n > 0 ? q.n : null;
@@ -294,8 +294,8 @@ export function fromWire(c: WireChat): Chat {
         status: t.status === "error" ? "error" : t.status === "done" ? "answered" : "answered",
         answer: t.answers[String(q.n)] ?? "",
         tools: t.tools,
-      }); // prettier-ignore
-    }),
-  );
+      });
+    });
+  });
   return { key: ++chatSeq, id: c.id, questions, turns: c.turns.length, nextN, busy: false };
 }
