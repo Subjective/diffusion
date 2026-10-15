@@ -122,6 +122,14 @@ tr.flash.f1 td.no {
   margin: 0 0 8px;
   padding-left: 20px;
 }
+.md li > ul,
+.md li > ol,
+.md li > p {
+  margin: 2px 0 0;
+}
+.md li + li {
+  margin-top: 2px;
+}
 .md-pre {
   margin: 0 0 8px;
   padding: 8px 10px;

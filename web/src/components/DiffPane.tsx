@@ -1,4 +1,4 @@
-import { ArrowDownAZ, ChevronsDownUp, EyeOff, FileCode, Route } from "lucide-react";
+import { ArrowDownAZ, ChevronsDownUp, EyeOff, Route } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
 import { useApp } from "../store";
@@ -79,10 +79,6 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
   return (
     <section className="diffpane" id="diffPane" ref={pane}>
       <div className="toolbar">
-        <span className="lbl">
-          {ic(FileCode, 14)}
-          <span>{files.length}</span>
-        </span>
         <span className="grow" />
         <button
           type="button"

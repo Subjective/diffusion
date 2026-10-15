@@ -38,6 +38,7 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
   const msgs = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const sent = chat.questions.filter((q) => q.turn != null);
+  const title = chatTitle(sent);
 
   useEffect(() => {
     const el = msgs.current;
@@ -52,7 +53,9 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
       <Resizer onWidth={onWidth} />
       <div className="chat-h">
         {ic(MessageCircle, 16)}
-        <span className="grow" />
+        <span className={`chat-title${title ? "" : " none"}`} title={title || undefined}>
+          {title || "New chat"}
+        </span>
         <button
           type="button"
           className={`icon-btn sm${historyOpen ? " on" : ""}`}
@@ -93,6 +96,9 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
     </aside>
   );
 }
+
+/** Same rule as the engine's history title: the first question asked. */
+const chatTitle = (sent: Question[]) => [...sent].sort((a, b) => a.turn! - b.turn!)[0]?.text.trim() ?? "";
 
 function groupTurns(qs: Question[]): Question[][] {
   const by = new Map<number, Question[]>();

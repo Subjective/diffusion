@@ -4,6 +4,7 @@ import {
   CircleAlert,
   CircleCheck,
   EyeOff,
+  FileCode,
   GitPullRequest,
   Info,
   Layers,
@@ -142,6 +143,10 @@ function Header() {
           {pr.author.slice(0, 2).toUpperCase()}
         </span>
         <span className="sep" />
+        <span className="meta-files" title={`${pr.changed_files} files changed`}>
+          {ic(FileCode, 14)}
+          {pr.changed_files}
+        </span>
         <span className="n-add">+{pr.additions}</span>
         <span className="n-del">−{pr.deletions}</span>
       </div>
