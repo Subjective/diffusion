@@ -6,8 +6,6 @@ largely done the same way it always has been.
 Diffusion turns pull requests into guided, interactive walkthroughs that help you understand what changed, how it
 works, and why.
 
-![Diffusion reviewing a pull request: the guide on the left, the diff in the middle, and a chat answer linked to the code on the right](docs/screenshot.png)
-
 See [`docs/design.md`](docs/design.md) for the design and [`docs/design/wireframe.html`](docs/design/wireframe.html)
 for the UI reference.
 
@@ -169,7 +167,6 @@ Invalid references are always dropped or retried before you see them, but a weak
 ### Can I use my Claude or ChatGPT subscription?
 
 The `claude-code` and `codex` backends drive your installed CLI with whatever login it has.
-Check your provider's terms before using a consumer subscription this way; API keys are the safe default.
 
 ## Develop
 
