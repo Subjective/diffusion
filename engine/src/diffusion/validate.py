@@ -10,7 +10,6 @@ from .classify import classify
 from .hunks import DiffIndex, Hunk
 from .schema import Flow, Guide, GuideDraft, Issue, Ref, SkipGroup, Step, Substep, Validation
 
-RETRY_THRESHOLD = 0.2
 # A ref is "coarse" if it spans a whole hunk this big (or a range this long). Steps should break these up.
 COARSE_LINES = 25
 
@@ -167,18 +166,16 @@ def _is_coarse(r: Ref, idx: DiffIndex) -> bool:
     return (r.end or r.start) - r.start + 1 > COARSE_LINES
 
 
-def needs_retry(g: Guide) -> bool:
-    return not g.steps or g.validation.invalid_ratio > RETRY_THRESHOLD
-
-
-def retry_feedback(g: Guide, idx: DiffIndex) -> str:
+def feedback(g: Guide) -> str | None:
+    """What the model should fix before its guide is accepted, or None if every reference is clean."""
     lines = [f"- {i.where}: {i.problem}" for i in g.validation.issues]
+    if not g.steps:
+        lines.append("- no steps survived validation")
     if g.uncovered:
         lines.append(f"- uncovered hunks (add them to a step or mark skippable): {', '.join(g.uncovered)}")
+    if not lines:
+        return None
     return (
-        "Your guide had invalid references. Use only hunk IDs and line numbers from the annotated hunks.\n"
+        "Some references don't match the diff. Use only hunk IDs and line numbers from the annotated hunks.\n"
         + "\n".join(lines)
-        + "\n\nHunk table:\n"
-        + idx.table()
-        + "\n\nCall submit_guide again with a corrected guide."
     )

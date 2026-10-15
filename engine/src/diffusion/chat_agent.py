@@ -17,7 +17,7 @@ from importlib.resources import files
 from pydantic import BaseModel, Field
 
 from .agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ToolEvent, ToolSpec
-from .guide_agent import guide_tools
+from .guide_agent import Submissions, guide_tools
 from .hunks import DiffIndex, FileDiff
 from .pipeline import Prepared
 
@@ -254,7 +254,7 @@ async def run_turn(
     max_turns: int = 24,
 ) -> AsyncIterator[ChatDelta | ChatFocus | ToolEvent | DoneEvent]:
     shown: list[dict] = []
-    tools = [t for t in guide_tools(prep.index, []) if t.name == "get_hunk"] + [
+    tools = [t for t in guide_tools(prep.index, Submissions(prep.index)) if t.name == "get_hunk"] + [
         show_code_tool(prep.index, shown)
     ]
     req = AgentRequest(

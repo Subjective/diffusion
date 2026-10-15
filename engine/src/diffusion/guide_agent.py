@@ -13,10 +13,11 @@ from .github import PRMeta
 from .hunks import DiffIndex
 from .repo import Checkout
 from .schema import Guide, GuideDraft
-from .validate import needs_retry, retry_feedback, validate
+from .validate import feedback, validate
 
 SYSTEM_PROMPT = files("diffusion.prompts").joinpath("guide.md").read_text()
 MAX_HUNKS_PER_CALL = 12
+MAX_CORRECTIONS = 2  # times submit_guide sends a guide back for bad references before accepting it as is
 INLINE_DIFF_LINES = 1500  # include annotated hunks in the prompt up to this many diff lines
 
 
@@ -56,7 +57,24 @@ def _inline_hunks(idx: DiffIndex) -> str:
     return "## Annotated hunks\n```\n" + "\n\n".join(h.annotated() for h in hunks) + "\n```\n\n"
 
 
-def guide_tools(idx: DiffIndex, submissions: list[dict]) -> list[ToolSpec]:
+class Submissions:
+    """Every schema-valid guide the model submitted, validated, plus what it was last asked to fix."""
+
+    def __init__(self, idx: DiffIndex):
+        self.idx = idx
+        self.guides: list[Guide] = []
+        self.pending: str | None = None  # feedback on the last guide, while a correction is still owed
+
+    def submit(self, draft: GuideDraft) -> str:
+        guide = validate(draft, self.idx)
+        self.guides.append(guide)
+        self.pending = feedback(guide) if len(self.guides) <= MAX_CORRECTIONS else None
+        if self.pending:
+            return f"rejected: fix these and call submit_guide again with the full guide:\n{self.pending}"
+        return "received"
+
+
+def guide_tools(idx: DiffIndex, submissions: Submissions) -> list[ToolSpec]:
     async def get_hunk(args: dict) -> str:
         ids = args.get("ids") or []
         ids = [ids] if isinstance(ids, str) else ids
@@ -70,11 +88,10 @@ def guide_tools(idx: DiffIndex, submissions: list[dict]) -> list[ToolSpec]:
 
     async def submit_guide(args: dict) -> str:
         try:
-            GuideDraft.model_validate(args)
+            draft = GuideDraft.model_validate(args)
         except ValidationError as e:
             return f"rejected: schema errors, fix and resubmit:\n{e}"
-        submissions.append(args)
-        return "received"
+        return submissions.submit(draft)
 
     return [
         ToolSpec(
@@ -91,7 +108,7 @@ def guide_tools(idx: DiffIndex, submissions: list[dict]) -> list[ToolSpec]:
         ),
         ToolSpec(
             "submit_guide",
-            "Submit the final reviewer's guide. Call exactly once when done.",
+            "Submit the reviewer's guide when done. If it is rejected, fix the problems and submit it again.",
             inline_refs(GuideDraft.model_json_schema(by_alias=True)),
             submit_guide,
             terminal=True,
@@ -107,34 +124,36 @@ async def generate_guide(
     model: str,
     max_turns: int = 40,
 ) -> AsyncIterator[Event | GuideDone]:
-    """Yield agent events, then a final ``GuideDone``. Retries once if references are badly off."""
-    submissions: list[dict] = []
-    tools = guide_tools(idx, submissions)
+    """Yield agent events, then a final ``GuideDone``.
+
+    ``submit_guide`` checks every reference against the diff and sends the guide back with the problems, up
+    to ``MAX_CORRECTIONS`` times. A run that ends with a correction still owed (the model stopped, or the
+    backend can't take tool replies) is resumed with the feedback. The last guide is used as validated.
+    """
+    subs = Submissions(idx)
+    tools = guide_tools(idx, subs)
     prompt = build_prompt(meta, idx)
     session: str | None = None
     turns, cost = 0, 0.0
-    guide: Guide | None = None
 
-    for attempt in (1, 2):
-        before = len(submissions)
+    while True:
+        before = len(subs.guides)
         req = AgentRequest(SYSTEM_PROMPT, prompt, model, checkout.worktree, tools, max_turns, resume=session)
         async for ev in runner(req):
             if isinstance(ev, DoneEvent):
                 session = ev.session_id
                 turns += ev.turns
                 cost += ev.cost_usd or 0.0
+                if ev.is_error and subs.pending:
+                    continue  # the backend surfaced our rejection as an error; resumed below
             yield ev
-        if len(submissions) == before:
-            if guide is not None:
-                break
+        if not subs.guides:
             raise GuideError("agent finished without calling submit_guide")
-        guide = validate(GuideDraft.model_validate(submissions[-1]), idx)
-        if not needs_retry(guide) or attempt == 2:
+        if not subs.pending or len(subs.guides) == before:
             break
-        prompt = retry_feedback(guide, idx)
+        prompt = f"{subs.pending}\n\nSubmit the full corrected guide."
 
-    assert guide is not None
-    yield GuideDone(guide=guide, turns=turns, cost_usd=cost or None, attempts=attempt)
+    yield GuideDone(guide=subs.guides[-1], turns=turns, cost_usd=cost or None, attempts=len(subs.guides))
 
 
 def _title(meta) -> str:

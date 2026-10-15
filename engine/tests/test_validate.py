@@ -2,7 +2,7 @@ import pytest
 
 from diffusion.hunks import parse_diff
 from diffusion.schema import GuideDraft
-from diffusion.validate import needs_retry, retry_feedback, validate
+from diffusion.validate import feedback, validate
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def test_clean_guide_has_full_coverage(idx):
         "docs/guide.md": "rename",
         "assets/logo.png": "binary",
     }
-    assert not needs_retry(g)
+    assert feedback(g) is None
 
 
 def test_unknown_hunk_dropped(idx):
@@ -80,7 +80,7 @@ def test_range_outside_hunk_is_invalid(idx):
     h = idx.by_id[hid(idx, "src/auth/types.ts")]
     g = validate(draft([step({"hunk": h.id, "start": 900, "end": 950})]), idx)
     assert g.steps == []
-    assert needs_retry(g)
+    assert "no steps survived" in (feedback(g) or "")
 
 
 def test_reversed_range_swapped(idx):
@@ -135,11 +135,12 @@ def test_flow_nodes_remapped_and_dangling_dropped(idx):
     assert [(e.source, e.target) for e in g.flow.edges] == [("a", "b")]
 
 
-def test_retry_feedback_lists_issues_and_table(idx):
-    g = validate(draft([step({"hunk": "H99"})]), idx)
-    fb = retry_feedback(g, idx)
+def test_feedback_lists_issues_and_uncovered(idx):
+    s = hid(idx, "src/auth/types.ts")
+    g = validate(draft([step({"hunk": "H99"}, {"hunk": s})]), idx)
+    fb = feedback(g) or ""
     assert "unknown hunk 'H99'" in fb
-    assert idx.table().splitlines()[0] in fb
+    assert "uncovered hunks" in fb and g.uncovered[0] in fb
 
 
 def test_edge_alias_serialises_as_from_to(idx):

@@ -10,7 +10,8 @@ correct: what matters, in what order, and what can be skipped.
   - `get_hunk(ids)`: the annotated diff for one or more hunks (columns: new line, old line, +/-/space, code).
   - File tools to read files, search contents, and list files: explore code outside the diff (callers,
     interfaces, config, tests). Paths are relative to the repository root.
-- `submit_guide(guide)`: call **exactly once** at the end. If it replies `received`, stop; don't resubmit.
+- `submit_guide(guide)`: call it at the end. It checks every reference against the diff; if it replies
+  `rejected`, fix the listed problems and submit the full guide again. Once it replies `received`, stop.
 
 ## How to work
 1. Read the hunks that look central (`get_hunk`), then explore just enough of the surrounding code to
