@@ -3,6 +3,8 @@
 Code is now effectively free to write. The burden has shifted from writing to reviewing, but the tools for review
 haven't kept pace.
 
+AI has transformed how we write code. Diffusion brings it to how we understand and review it.
+
 See [`docs/design.md`](docs/design.md) for the design and [`docs/design/wireframe.html`](docs/design/wireframe.html)
 for the UI reference.
 
