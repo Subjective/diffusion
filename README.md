@@ -6,6 +6,8 @@ largely done the same way it always has been.
 Diffusion turns pull requests into guided, interactive walkthroughs that help you understand what changed, how it
 works, and why.
 
+![Diffusion reviewing a pull request: the guide on the left, the diff in the middle, and a chat answer linked to the code on the right](docs/screenshot.png)
+
 See [`docs/design.md`](docs/design.md) for the design and [`docs/design/wireframe.html`](docs/design/wireframe.html)
 for the UI reference.
 
