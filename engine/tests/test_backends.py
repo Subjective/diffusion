@@ -259,7 +259,7 @@ def test_openrouter_gets_its_own_model(tmp_path):
     from pydantic_ai.models.openrouter import OpenRouterModel
 
     c = cfg(tmp_path, protocol="openai", base_url="https://openrouter.ai/api/v1", api_key="k")
-    assert isinstance(make_model(c, "anthropic/claude-sonnet-4.6")[0], OpenRouterModel)
+    assert isinstance(make_model(c, "anthropic/claude-sonnet-5.5")[0], OpenRouterModel)
     assert not isinstance(
         make_model(cfg(tmp_path, protocol="openai", api_key="k"), "gpt-5")[0], OpenRouterModel
     )
