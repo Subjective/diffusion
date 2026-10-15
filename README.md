@@ -131,7 +131,11 @@ backend = "codex"
 Environment overrides: `DIFFUSION_PROFILE`, `DIFFUSION_GUIDE_MODEL`, `DIFFUSION_CHAT_MODEL`, `DIFFUSION_CLI`,
 `DIFFUSION_CACHE_DIR`, `DIFFUSION_CONFIG`.
 
-**Reusing an existing Claude Code setup.** If Claude Code on your machine already talks to a gateway (base URL and
+## FAQ
+
+### Can I reuse my existing Claude Code setup?
+
+If Claude Code on your machine already talks to a gateway (base URL and
 token in its settings files), point a profile at those files instead of copying secrets:
 
 ```toml
@@ -148,7 +152,9 @@ chat_model = "claude-sonnet-4-6"
 The same `inherit_env_from` works with `backend = "claude-code"`. If your gateway requires a recent Claude Code,
 set `cli_path = "claude"` to use your installed CLI instead of the SDK's bundled one.
 
-**Is my model good enough?** Guides need tool calling, a context window of ~64k tokens or more, and accurate line
+### Is my model good enough?
+
+Guides need tool calling, a context window of ~64k tokens or more, and accurate line
 references. Check any profile against a built-in sample change:
 
 ```bash
@@ -158,7 +164,9 @@ uv run diffusion doctor --profile local --eval
 
 Invalid references are always dropped or retried before you see them, but a weaker model produces thinner guides.
 
-**Subscriptions.** The `claude-code` and `codex` backends drive your installed CLI with whatever login it has.
+### Can I use my Claude or ChatGPT subscription?
+
+The `claude-code` and `codex` backends drive your installed CLI with whatever login it has.
 Check your provider's terms before using a consumer subscription this way; API keys are the safe default.
 
 ## Develop
