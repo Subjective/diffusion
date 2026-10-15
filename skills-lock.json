@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "write-pr-description": {
+      "source": "warpdotdev/common-skills",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/write-pr-description/SKILL.md",
+      "computedHash": "12dcdad5ff5180cf324165deb0c8fad902ae0a79ae9d86b18cf5d347501870cb"
+    }
+  }
+}
