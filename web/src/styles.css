@@ -232,6 +232,11 @@ code {
   display: grid;
   place-items: center;
 }
+.meta-files {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .n-add {
   color: var(--add-fg);
   font-family: var(--mono);
@@ -563,11 +568,6 @@ code {
   color: var(--subtle);
   font-size: 12.5px;
 }
-.toolbar .lbl {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 .files {
   padding: 12px 16px 120px;
 }
@@ -841,6 +841,18 @@ tr.ln:hover .ask-btn {
   gap: 8px;
   padding: 0 8px 0 16px;
   border-bottom: 1px solid var(--border);
+  color: var(--subtle);
+}
+.chat-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.chat-title.none {
   color: var(--subtle);
 }
 .msgs {
