@@ -1,11 +1,6 @@
 # Diffusion
 
-AI has made writing code faster than ever, so more of the work now falls on review. The tools for reviewing
-haven't kept up. Open a large pull request on GitHub and it's often hard to tell what's going on or where to start.
-Not every line matters equally, either: a lot of a diff is routine code you could skip, but you can't tell which
-parts until you've read them.
-
-If AI can speed up writing code, it should be able to speed up reading it too. That's what Diffusion is for.
+AI has made code faster to write than ever before. The burden has shifted from writing code to reviewing it.
 
 See [`docs/design.md`](docs/design.md) for the design and [`docs/design/wireframe.html`](docs/design/wireframe.html)
 for the UI reference.
