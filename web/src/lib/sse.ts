@@ -10,8 +10,7 @@ export class SSEParser {
   push(chunk: string): SSEEvent[] {
     this.buf += chunk.replace(/\r\n/g, "\n");
     const out: SSEEvent[] = [];
-    let i: number;
-    while ((i = this.buf.indexOf("\n\n")) >= 0) {
+    for (let i = this.buf.indexOf("\n\n"); i >= 0; i = this.buf.indexOf("\n\n")) {
       const block = this.buf.slice(0, i);
       this.buf = this.buf.slice(i + 2);
       let event = "message";

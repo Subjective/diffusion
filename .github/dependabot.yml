@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      web:
+        patterns: ["*"]
+        update-types: [minor, patch]  # majors arrive as their own PRs
+
+  - package-ecosystem: uv
+    directory: /engine
+    schedule:
+      interval: weekly
+    groups:
+      engine:
+        patterns: ["*"]
+        update-types: [minor, patch]  # majors arrive as their own PRs
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: [minor, patch]  # majors arrive as their own PRs

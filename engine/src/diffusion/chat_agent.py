@@ -30,7 +30,7 @@ class Anchor(BaseModel):
     side: str = "new"
     code: str = ""
     step: int | None = None
-    ui: dict | None = Field(None, description="Opaque client data; stored, not prompted.")
+    ui: dict | None = Field(default=None, description="Opaque client data; stored, not prompted.")
 
 
 class Question(BaseModel):

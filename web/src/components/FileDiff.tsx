@@ -1,10 +1,10 @@
-import { memo, useEffect, useState, type ReactNode } from "react";
 import { ChevronDown, Circle, CircleCheck, FileCode, MessageCircle } from "lucide-react";
-import { highlightHunk, langFor, type LineTokens } from "../lib/highlight";
+import { memo, type ReactNode, useEffect, useState } from "react";
+import { highlightHunk, type LineTokens, langFor } from "../lib/highlight";
 import { rowKey, rowsOfHunk } from "../lib/refs";
 import type { FileDiff as FD, Hunk } from "../types";
 import { useUI } from "../ui";
-import { SKIP_ICON, ic } from "./icons";
+import { ic, SKIP_ICON } from "./icons";
 
 export interface Dot {
   step: number;
@@ -54,6 +54,7 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
         </span>
         <span className="grow" />
         <button
+          type="button"
           className={`icon-btn sm viewed${viewed ? " on" : ""}`}
           title="Viewed"
           onClick={(e) => {
@@ -69,7 +70,9 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
           {file.binary ? (
             <div className="file-note">Binary file</div>
           ) : !file.hunks.length ? (
-            <div className="file-note">{file.status === "renamed" ? `Renamed from ${file.old_path}` : "No changes"}</div>
+            <div className="file-note">
+              {file.status === "renamed" ? `Renamed from ${file.old_path}` : "No changes"}
+            </div>
           ) : (
             <table className="diff">
               <tbody>
@@ -147,10 +150,19 @@ const DiffRow = memo(function DiffRow({ rk, type, old, nw, text, tokens, dots, e
   const hl = useUI((s) => s.hoverRows.has(rk));
   const pin = useUI((s) => s.pinRows.has(rk));
   const flashN = useUI((s) => (s.flash.keys.has(rk) ? s.flash.n : 0));
-  const cls = ["ln", type, extra && "qd", hl && "hl", pin && "pin", flashN && `flash f${flashN % 2}`].filter(Boolean).join(" ");
+  const cls = ["ln", type, extra && "qd", hl && "hl", pin && "pin", flashN && `flash f${flashN % 2}`]
+    .filter(Boolean)
+    .join(" ");
   const sign = type === "add" ? "+" : type === "del" ? "−" : "";
   return (
-    <tr className={cls} data-rk={rk} data-file={file} data-pos={pos} data-new={nw ?? undefined} data-old={old ?? undefined}>
+    <tr
+      className={cls}
+      data-rk={rk}
+      data-file={file}
+      data-pos={pos}
+      data-new={nw ?? undefined}
+      data-old={old ?? undefined}
+    >
       <td className="mark">
         {dots?.map((d) => (
           <span
@@ -167,12 +179,22 @@ const DiffRow = memo(function DiffRow({ rk, type, old, nw, text, tokens, dots, e
       <td className="no">{old ?? ""}</td>
       <td className="no">{nw ?? ""}</td>
       <td className="code">
-        <button className="ask-btn" title="Click, or drag to select lines" tabIndex={-1}>
+        <button type="button" className="ask-btn" title="Click, or drag to select lines" tabIndex={-1}>
           {ic(MessageCircle, 12)}
         </button>
         <span className="sg">{sign}</span>
         <span className="src">
-          {tokens ? tokens.map((t, i) => (t.color ? <span key={i} style={{ color: t.color }}>{t.content}</span> : t.content)) : text || " "}
+          {tokens
+            ? tokens.map((t, i) =>
+                t.color ? (
+                  <span key={i} style={{ color: t.color }}>
+                    {t.content}
+                  </span>
+                ) : (
+                  t.content
+                ),
+              )
+            : text || " "}
         </span>
         {extra}
       </td>

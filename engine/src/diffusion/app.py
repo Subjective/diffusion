@@ -196,6 +196,9 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             # One turn per chat at a time: a turn resumes the session the previous one produced.
             async with lock:
                 chat = deps.store.load_chat(key, chat_id)  # fresh: an earlier turn may have just saved
+                if chat is None:  # deleted while this turn waited for the lock
+                    yield "error", {"message": "chat not found"}
+                    return
                 record = {
                     "at": time.time(),
                     "head_sha": prep.meta.head_sha,

@@ -36,10 +36,10 @@ export function TopBar() {
         )}
       </form>
       <div className="top-r">
-        <button className="icon-btn" title="Theme" onClick={toggleTheme}>
+        <button type="button" className="icon-btn" title="Theme" onClick={toggleTheme}>
           {ic(theme === "dark" ? Sun : Moon, 17)}
         </button>
-        <button className={`icon-btn${chatOpen ? " on" : ""}`} title="Chat" onClick={() => toggleChat()}>
+        <button type="button" className={`icon-btn${chatOpen ? " on" : ""}`} title="Chat" onClick={() => toggleChat()}>
           {ic(PanelRight, 16)}
         </button>
       </div>

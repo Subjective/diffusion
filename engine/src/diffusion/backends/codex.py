@@ -19,6 +19,7 @@ import os
 import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ToolEvent, ToolSpec
 from ..config import Config
@@ -27,7 +28,7 @@ from ..config import Config
 def strict_schema(schema: dict) -> dict:
     """OpenAI structured outputs need every property required and no extra keys; optional → nullable."""
 
-    def walk(node, is_props=False):
+    def walk(node: Any, is_props: bool = False) -> Any:
         if isinstance(node, list):
             return [walk(x) for x in node]
         if not isinstance(node, dict):
@@ -52,7 +53,7 @@ def strict_schema(schema: dict) -> dict:
     return walk(schema)
 
 
-def drop_nulls(value):
+def drop_nulls(value: Any) -> Any:
     """Undo strict-mode nullables: ``null`` means "omitted", so let defaults apply."""
     if isinstance(value, dict):
         return {k: drop_nulls(v) for k, v in value.items() if v is not None}

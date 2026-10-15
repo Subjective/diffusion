@@ -54,7 +54,8 @@ export function refLabel(ref: Ref, idx: HunkIndex): string {
   const h = idx.byId.get(ref.hunk);
   if (!h) return ref.hunk;
   const name = h.file.split("/").pop();
-  let a = ref.start, b = ref.end;
+  let a = ref.start,
+    b = ref.end;
   if (a == null && b == null) {
     const r = idx.rows.get(h.id) ?? [];
     const nums = r.map((x) => (ref.side === "old" ? x.old : x.new)).filter((n): n is number => n != null);
@@ -64,5 +65,5 @@ export function refLabel(ref: Ref, idx: HunkIndex): string {
   }
   a ??= b;
   b ??= a;
-  return `${name}:${a}${b !== a ? "–" + b : ""}`;
+  return `${name}:${a}${b !== a ? `–${b}` : ""}`;
 }

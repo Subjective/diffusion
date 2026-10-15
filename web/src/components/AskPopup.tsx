@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
 import { ArrowUp, FileCode, ListPlus, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { Anchor } from "../chat";
 import { rangeText } from "../lib/selection";
 import { ic } from "./icons";
@@ -10,7 +10,12 @@ export interface AskState {
   y: number;
 }
 
-export function AskPopup({ state, onClose, onAsk, onStage }: {
+export function AskPopup({
+  state,
+  onClose,
+  onAsk,
+  onStage,
+}: {
   state: AskState | null;
   onClose: () => void;
   onAsk: (text: string, a: Anchor) => void;
@@ -49,13 +54,16 @@ export function AskPopup({ state, onClose, onAsk, onStage }: {
   };
 
   return (
-    <div className="ask-pop" style={{ left: Math.min(state.x, innerWidth - 376), top: Math.min(state.y + 12, innerHeight - 120) }}>
+    <div
+      className="ask-pop"
+      style={{ left: Math.min(state.x, innerWidth - 376), top: Math.min(state.y + 12, innerHeight - 120) }}
+    >
       <div className="ask-ctx">
         {ic(FileCode, 13)}
         <b>{a.file.split("/").pop()}</b>
         <span>{rangeText(a.start, a.end)}</span>
         <span className="grow" />
-        <button className="icon-btn sm" onClick={onClose} title="Close">
+        <button type="button" className="icon-btn sm" onClick={onClose} title="Close">
           {ic(X, 13)}
         </button>
       </div>
@@ -73,10 +81,10 @@ export function AskPopup({ state, onClose, onAsk, onStage }: {
             }
           }}
         />
-        <button className="icon-btn" title="Queue (⇧↵)" onClick={() => submit(true)}>
+        <button type="button" className="icon-btn" title="Queue (⇧↵)" onClick={() => submit(true)}>
           {ic(ListPlus, 17)}
         </button>
-        <button className="icon-btn solid" title="Ask now (↵)" onClick={() => submit(false)}>
+        <button type="button" className="icon-btn solid" title="Ask now (↵)" onClick={() => submit(false)}>
           {ic(ArrowUp, 16)}
         </button>
       </div>

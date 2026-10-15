@@ -57,7 +57,15 @@ export const useUI = create<UI>((set, get) => ({
     const saved = storage.get(`rv-ui:${prKey}`, { viewed: {}, readSteps: {} });
     const collapsed = { ...defaultsCollapsed };
     for (const [p, v] of Object.entries(saved.viewed)) if (v) collapsed[p] = true;
-    set({ prKey, collapsed, viewed: saved.viewed, readSteps: saved.readSteps, pinRows: new Set(), pinStep: null, pinSub: null });
+    set({
+      prKey,
+      collapsed,
+      viewed: saved.viewed,
+      readSteps: saved.readSteps,
+      pinRows: new Set(),
+      pinStep: null,
+      pinSub: null,
+    });
   },
   toggleCollapsed(path, value) {
     set((s) => ({ collapsed: { ...s.collapsed, [path]: value ?? !s.collapsed[path] } }));
@@ -93,7 +101,12 @@ export const useUI = create<UI>((set, get) => ({
 
   setHover(keys, step = null, sub = null) {
     const s = get();
-    if (s.hoverStep === step && s.hoverSub === sub && keys.length === s.hoverRows.size && keys.every((k) => s.hoverRows.has(k)))
+    if (
+      s.hoverStep === step &&
+      s.hoverSub === sub &&
+      keys.length === s.hoverRows.size &&
+      keys.every((k) => s.hoverRows.has(k))
+    )
       return;
     set({ hoverRows: new Set(keys), hoverStep: step, hoverSub: sub });
   },
@@ -101,7 +114,7 @@ export const useUI = create<UI>((set, get) => ({
     if (!keys.length) return;
     set((s) => {
       const collapsed = { ...s.collapsed };
-      files.forEach((f) => (collapsed[f] = false));
+      for (const f of files) collapsed[f] = false;
       const same = step != null && s.pinStep === step && s.pinSub === sub;
       const pinStep = same ? null : step;
       return {

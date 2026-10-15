@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from ..agent import (
     AgentRequest,
@@ -23,6 +24,9 @@ from ..agent import (
     within,
 )
 from ..config import Config
+
+if TYPE_CHECKING:
+    from claude_agent_sdk.types import HookContext, HookInput, HookJSONOutput
 
 READ_TOOLS = ["Read", "Grep", "Glob"]
 DENY_TOOLS = [
@@ -76,8 +80,9 @@ def claude_code_runner(cfg: Config) -> Runner:
 
             return tool(spec.name, spec.description, spec.schema)(handler)
 
-        async def guard(inp, _tool_use_id, _ctx):
-            reason = sandbox_decision(inp["tool_name"], inp.get("tool_input") or {}, req.cwd)
+        async def guard(inp: HookInput, _tool_use_id: str | None, _ctx: HookContext) -> HookJSONOutput:
+            tool_input: dict[str, Any] = inp.get("tool_input") or {}
+            reason = sandbox_decision(inp.get("tool_name", ""), tool_input, req.cwd)
             if reason is None:
                 return {}
             return {

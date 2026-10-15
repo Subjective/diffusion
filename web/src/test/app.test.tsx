@@ -9,7 +9,8 @@ const { App } = await import("../App");
 const { useApp } = await import("../store");
 
 const rows = (sel: string) => [...document.querySelectorAll<HTMLTableRowElement>(`tr.ln${sel}`)];
-const nums = (sel: string) => rows(sel).map((r) => `${r.dataset.file!.split("/").pop()}:${r.dataset.new ?? "-" + r.dataset.old}`);
+const nums = (sel: string) =>
+  rows(sel).map((r) => `${r.dataset.file!.split("/").pop()}:${r.dataset.new ?? `-${r.dataset.old}`}`);
 
 beforeEach(() => localStorage.clear());
 
@@ -28,7 +29,13 @@ test("renders guide, diff in guide order, skippable collapsed", async () => {
   expect(document.querySelector(".tldr code")!.textContent).toBe("tokens");
   expect(document.querySelector(".note.warn")!.textContent).toBe("No retry on 5xx");
   // gutter dots at first row of each ref
-  expect([...document.querySelectorAll("td.mark .dot")].map((d) => d.textContent)).toEqual(["1", "3.2", "3.2", "3.1", "2"]);
+  expect([...document.querySelectorAll("td.mark .dot")].map((d) => d.textContent)).toEqual([
+    "1",
+    "3.2",
+    "3.2",
+    "3.1",
+    "2",
+  ]);
 });
 
 test("hovering a step highlights exactly its lines; leaving clears", async () => {
@@ -60,7 +67,9 @@ test("viewed collapses; skippable row expands lockfile; gutter dot focuses step"
   fireEvent.click(types.querySelector(".viewed")!);
   expect(types.classList.contains("collapsed")).toBe(true);
   fireEvent.click(document.querySelector(".skip-row")!);
-  await waitFor(() => expect(document.querySelector('.file[data-path="package-lock.json"]')!.classList.contains("collapsed")).toBe(false));
+  await waitFor(() =>
+    expect(document.querySelector('.file[data-path="package-lock.json"]')!.classList.contains("collapsed")).toBe(false),
+  );
   fireEvent.click(document.querySelector('td.mark .dot[data-step="2"]')!);
   expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
   fireEvent.click(document.querySelector(".step .check")!);

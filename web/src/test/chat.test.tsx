@@ -6,11 +6,17 @@ vi.mock("../lib/highlight", () => ({ langFor: () => null, highlightHunk: async (
 vi.mock("../api", () => ({ fetchPR: vi.fn(async () => payload), streamGuide: vi.fn() }));
 
 // Minimal fake engine for /api/chats*
-type Turn = { questions: { n: number; text: string; anchor: unknown }[]; answers: Record<string, string>; tools: string[]; status: string };
+type Turn = {
+  questions: { n: number; text: string; anchor: unknown }[];
+  answers: Record<string, string>;
+  tools: string[];
+  status: string;
+};
 const chats = new Map<string, { id: string; turns: Turn[]; updated_at: number }>();
 let release: (() => void) | null = null;
 const turnBodies: { questions: { n: number; text: string }[] }[] = [];
-const sse = (events: [string, unknown][]) => events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join("");
+const sse = (events: [string, unknown][]) =>
+  events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join("");
 
 function streamBody(chunks: string[], gate?: Promise<void>) {
   const enc = new TextEncoder();
@@ -33,15 +39,20 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     return new Response(JSON.stringify({ id }), { status: 200 });
   }
   if (path === "/api/chats") {
-    const list = [...chats.values()].filter((c) => c.turns.length).map((c) => ({
-      id: c.id, title: c.turns[0].questions[0].text, questions: c.turns.reduce((n, t) => n + t.questions.length, 0),
-      anchored: 0, updated_at: c.updated_at,
-    }));
+    const list = [...chats.values()]
+      .filter((c) => c.turns.length)
+      .map((c) => ({
+        id: c.id,
+        title: c.turns[0].questions[0].text,
+        questions: c.turns.reduce((n, t) => n + t.questions.length, 0),
+        anchored: 0,
+        updated_at: c.updated_at,
+      }));
     return new Response(JSON.stringify(list));
   }
   const m = path.match(/^\/api\/chats\/(\w+)(\/turn)?$/);
   if (m && !m[2]) return new Response(JSON.stringify(chats.get(m[1])));
-  if (m && m[2]) {
+  if (m?.[2]) {
     const body = JSON.parse(String(init!.body));
     turnBodies.push(body);
     const chat = chats.get(m[1])!;
@@ -49,9 +60,12 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     chat.turns.push({ questions: body.questions, answers, tools: ["Grep x"], status: "done" });
     const gate = new Promise<void>((r) => (release = r));
     const deltas = body.questions.map((q: { n: number }) => sse([["delta", { n: q.n, text: `answer ${q.n}` }]]));
-    return new Response(streamBody([sse([["tool", { name: "Grep", summary: "Grep x" }]]), ...deltas, sse([["done", {}]])], gate), {
-      headers: { "content-type": "text/event-stream" },
-    });
+    return new Response(
+      streamBody([sse([["tool", { name: "Grep", summary: "Grep x" }]]), ...deltas, sse([["done", {}]])], gate),
+      {
+        headers: { "content-type": "text/event-stream" },
+      },
+    );
   }
   return new Response("{}", { status: 404 });
 }) as never;
@@ -185,8 +199,17 @@ test("questions asked mid-answer wait, then go out together as one turn", async 
 
   await act(async () => release!()); // first answer finishes → waiting batch sends
   await waitFor(() => expect(turnBodies).toHaveLength(2));
-  expect(turnBodies[1].questions.map((q) => [q.n, q.text])).toEqual([[1, "second?"], [2, "third?"]]);
+  expect(turnBodies[1].questions.map((q) => [q.n, q.text])).toEqual([
+    [1, "second?"],
+    [2, "third?"],
+  ]);
   expect(document.querySelector(".msg.user.waiting")).toBeNull();
   await act(async () => release!());
-  await waitFor(() => expect([...document.querySelectorAll(".ans-t")].map((a) => a.textContent)).toEqual(["answer 0", "answer 1", "answer 2"]));
+  await waitFor(() =>
+    expect([...document.querySelectorAll(".ans-t")].map((a) => a.textContent)).toEqual([
+      "answer 0",
+      "answer 1",
+      "answer 2",
+    ]),
+  );
 });

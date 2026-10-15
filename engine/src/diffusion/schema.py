@@ -21,11 +21,13 @@ Side = Literal["new", "old"]
 
 class Ref(BaseModel):
     hunk: str = Field(description="Hunk ID from the hunk table, e.g. 'H3'.")
-    side: Side = Field("new", description="'new' for added/context lines, 'old' for deleted-only ranges.")
-    start: int | None = Field(
-        None, description="First line (on `side`) within the hunk; omit for whole hunk."
+    side: Side = Field(
+        default="new", description="'new' for added/context lines, 'old' for deleted-only ranges."
     )
-    end: int | None = Field(None, description="Last line (inclusive); omit for whole hunk.")
+    start: int | None = Field(
+        default=None, description="First line (on `side`) within the hunk; omit for whole hunk."
+    )
+    end: int | None = Field(default=None, description="Last line (inclusive); omit for whole hunk.")
 
 
 class ContextItem(BaseModel):
@@ -61,13 +63,15 @@ class FlowNode(BaseModel):
     id: str = Field(description="Short unique id, e.g. 'refresh'.")
     label: str = Field(description="Function/component name, e.g. 'refresh()'.")
     step: int = Field(description="1-based index of the step this node belongs to.")
-    substep: int | None = Field(None, description="1-based substep index within the step, if specific.")
+    substep: int | None = Field(
+        default=None, description="1-based substep index within the step, if specific."
+    )
 
 
 class FlowEdge(BaseModel):
     source: str = Field(alias="from")
     target: str = Field(alias="to")
-    label: str | None = Field(None, description="≤ 2 words, e.g. 'timer', 'ok'.")
+    label: str | None = Field(default=None, description="≤ 2 words, e.g. 'timer', 'ok'.")
     kind: Literal["normal", "error"] = "normal"
 
     model_config = {"populate_by_name": True}

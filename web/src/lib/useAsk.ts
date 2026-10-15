@@ -4,15 +4,24 @@ import type { AskState } from "../components/AskPopup";
 import { anchorFromRows, rangeText, rowInfo, rowsBetween, selectionRows } from "./selection";
 
 function setSel(rows: HTMLElement[], on: boolean) {
-  rows.forEach((r) => r.classList.toggle("sel", on));
+  for (const r of rows) r.classList.toggle("sel", on);
 }
 
 export function useAsk() {
   const [ask, setAsk] = useState<AskState | null>(null);
-  const drag = useRef<{ origin: HTMLElement; all: HTMLElement[]; end: HTMLElement; tip: HTMLElement; sel: HTMLElement[]; x: number; y: number; timer: number } | null>(null);
+  const drag = useRef<{
+    origin: HTMLElement;
+    all: HTMLElement[];
+    end: HTMLElement;
+    tip: HTMLElement;
+    sel: HTMLElement[];
+    x: number;
+    y: number;
+    timer: number;
+  } | null>(null);
 
   const clearSel = () => {
-    document.querySelectorAll<HTMLElement>("tr.sel").forEach((r) => r.classList.remove("sel"));
+    for (const r of document.querySelectorAll<HTMLElement>("tr.sel")) r.classList.remove("sel");
   };
   const open = (rows: HTMLElement[], x: number, y: number) => {
     const info = rows.map(rowInfo).filter((r): r is NonNullable<typeof r> => !!r);
@@ -27,6 +36,7 @@ export function useAsk() {
     setAsk(null);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: listeners attach once; open/close only touch the DOM and state setters.
   useEffect(() => {
     // Listen on the document: the diff pane mounts only after the PR loads.
     const inDiff = (e: Event) => !!(e.target as HTMLElement | null)?.closest?.(".diffpane");
@@ -78,7 +88,16 @@ export function useAsk() {
       const origin = btn.closest<HTMLElement>("tr.ln")!;
       const table = origin.closest("table")!;
       const tip = document.body.appendChild(Object.assign(document.createElement("div"), { className: "drag-tip" }));
-      drag.current = { origin, all: [...table.querySelectorAll<HTMLElement>("tr.ln")], end: origin, tip, sel: [], x: e.clientX, y: e.clientY, timer: 0 };
+      drag.current = {
+        origin,
+        all: [...table.querySelectorAll<HTMLElement>("tr.ln")],
+        end: origin,
+        tip,
+        sel: [],
+        x: e.clientX,
+        y: e.clientY,
+        timer: 0,
+      };
       document.body.classList.add("dragging");
       origin.classList.add("drag-origin");
       paint(e.clientX, e.clientY);

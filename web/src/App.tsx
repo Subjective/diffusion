@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { CircleAlert, GitPullRequest } from "lucide-react";
-import { useApp } from "./store";
-import { useChat, type Question } from "./chat";
-import { TopBar } from "./components/TopBar";
-import { ic } from "./components/icons";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import { type Question, useChat } from "./chat";
+import { AskPopup } from "./components/AskPopup";
+import { type ChatLinkProps, ChatPanel } from "./components/ChatPanel";
 import { DiffPane } from "./components/DiffPane";
 import { GuidePane } from "./components/GuidePane";
-import { ChatPanel, type ChatLinkProps } from "./components/ChatPanel";
-import { usePaneWidths } from "./lib/panes";
-import { AskPopup } from "./components/AskPopup";
+import { ic } from "./components/icons";
 import { useQuestionBadges } from "./components/QuestionBadges";
-import { useAsk } from "./lib/useAsk";
+import { TopBar } from "./components/TopBar";
 import { refsTarget, useHunkIndex, useStepLinking } from "./lib/linking";
-import { rowKey, type HunkIndex } from "./lib/refs";
+import { usePaneWidths } from "./lib/panes";
+import { type HunkIndex, rowKey } from "./lib/refs";
+import { useAsk } from "./lib/useAsk";
+import { useApp } from "./store";
 import type { Step } from "./types";
 import { useUI } from "./ui";
 
@@ -36,6 +36,7 @@ export function App() {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load a URL restored from storage once, on mount.
   useEffect(() => {
     if (url && !pr) void load();
   }, []);
@@ -45,7 +46,12 @@ export function App() {
   useEffect(() => {
     if (!pr) return;
     const skip = new Set([...files.filter((f) => f.skip).map((f) => f.path), ...(skippable?.map((s) => s.file) ?? [])]);
-    useUI.getState().init(`${pr.owner}/${pr.repo}#${pr.number}@${pr.head_sha.slice(0, 12)}`, Object.fromEntries([...skip].map((p) => [p, true])));
+    useUI
+      .getState()
+      .init(
+        `${pr.owner}/${pr.repo}#${pr.number}@${pr.head_sha.slice(0, 12)}`,
+        Object.fromEntries([...skip].map((p) => [p, true])),
+      );
     useChat.getState().reset(pr.url);
   }, [pr, files, skippable]);
 
@@ -58,7 +64,8 @@ export function App() {
     const id = el ? Number(el.dataset.step) : null;
     const sub = el?.dataset.sub ? Number(el.dataset.sub) : null;
     const ui = useUI.getState();
-    if ((id !== ui.hoverStep || sub !== ui.hoverSub) && (id != null || (e.target as HTMLElement).closest(".diffpane"))) link.hover(id, sub);
+    if ((id !== ui.hoverStep || sub !== ui.hoverSub) && (id != null || (e.target as HTMLElement).closest(".diffpane")))
+      link.hover(id, sub);
   };
   const onClick = (e: React.MouseEvent) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>(".diffpane [data-step]");
@@ -94,7 +101,9 @@ export function App() {
       toggleChat(true);
       setFlashQ((f) => ({ id, n: (f?.n ?? 0) + 1 }));
       requestAnimationFrame(() =>
-        document.querySelector(`[data-ans="${id}"], .q-row[data-q="${id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }),
+        document
+          .querySelector(`[data-ans="${id}"], .q-row[data-q="${id}"]`)
+          ?.scrollIntoView({ block: "center", behavior: "smooth" }),
       );
     },
     [toggleChat],
@@ -107,9 +116,16 @@ export function App() {
     (s: Step) => {
       toggleChat(true);
       useChat.getState().ask(`Walk me through step ${s.id}.`, {
-        file: "", start: 0, end: 0, side: "new", code: "",
-        step: s.id, stepTitle: s.title, stepKind: s.kind, refs: s.refs,
-      });  // prettier-ignore
+        file: "",
+        start: 0,
+        end: 0,
+        side: "new",
+        code: "",
+        step: s.id,
+        stepTitle: s.title,
+        stepKind: s.kind,
+        refs: s.refs,
+      });
     },
     [toggleChat],
   );
@@ -124,7 +140,9 @@ export function App() {
       )}
       {!pr ? (
         <main className="landing">
-          <div className="landing-i">{loading ? <span className="spin">{ic(GitPullRequest, 22)}</span> : ic(GitPullRequest, 22)}</div>
+          <div className="landing-i">
+            {loading ? <span className="spin">{ic(GitPullRequest, 22)}</span> : ic(GitPullRequest, 22)}
+          </div>
         </main>
       ) : (
         <main

@@ -17,14 +17,15 @@ export function usePaneWidths(chatOpen: boolean) {
   const [guide, setGuide] = useState(() => storage.get("rv-guide-w", GUIDE_W));
   const [chat, setChat] = useState(() => storage.get("rv-chat-w", CHAT_W));
   const effChat = chatOpen ? chat : 0;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refit only on toggle/resize; render clamps to the live widths.
   useEffect(() => {
-    const fit = () => {
+    const refit = () => {
       setGuide((g) => clampGuideW(g, chatOpen ? clampChatW(chat, MIN_GUIDE) : 0));
       setChat((c) => clampChatW(c, MIN_GUIDE));
     };
-    fit();
-    addEventListener("resize", fit);
-    return () => removeEventListener("resize", fit);
+    refit();
+    addEventListener("resize", refit);
+    return () => removeEventListener("resize", refit);
   }, [chatOpen]);
   return {
     guide: clampGuideW(guide, effChat),
@@ -35,7 +36,12 @@ export function usePaneWidths(chatOpen: boolean) {
 }
 
 /** Drag handler for a pane edge. `toWidth` maps the pointer x to a desired width. */
-export function startResize(e: React.MouseEvent, toWidth: (x: number) => number, apply: (w: number) => void, key: string) {
+export function startResize(
+  e: React.MouseEvent,
+  toWidth: (x: number) => number,
+  apply: (w: number) => void,
+  key: string,
+) {
   if (e.button !== 0) return;
   e.preventDefault();
   document.body.classList.add("resizing");

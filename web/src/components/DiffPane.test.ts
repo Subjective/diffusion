@@ -1,9 +1,24 @@
-import { guideOrder } from "./DiffPane";
 import type { FileDiff, Guide } from "../types";
+import { guideOrder } from "./DiffPane";
 
 const f = (path: string, hunks: string[], skip: FileDiff["skip"] = null): FileDiff => ({
-  path, old_path: null, status: "modified", binary: false, additions: 1, deletions: 0, skip,
-  hunks: hunks.map((id) => ({ id, file: path, old_start: 1, old_len: 1, new_start: 1, new_len: 1, symbol: "", lines: [] })),
+  path,
+  old_path: null,
+  status: "modified",
+  binary: false,
+  additions: 1,
+  deletions: 0,
+  skip,
+  hunks: hunks.map((id) => ({
+    id,
+    file: path,
+    old_start: 1,
+    old_len: 1,
+    new_start: 1,
+    new_len: 1,
+    symbol: "",
+    lines: [],
+  })),
 });
 
 test("guide order: step order first, then unreferenced, then skippable", () => {

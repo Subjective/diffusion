@@ -1,6 +1,6 @@
 // Chat state: one active chat at a time; each chat owns its questions, anchors, queue, and thread.
 import { create } from "zustand";
-import { postSSE, errorText } from "./lib/sse";
+import { errorText, postSSE } from "./lib/sse";
 import type { Ref } from "./types";
 
 export interface Anchor {
@@ -90,7 +90,13 @@ export const useChat = create<State>((set, get) => {
   async function ensureChat(): Promise<string> {
     const { chat, pr } = get();
     if (chat.id) return chat.id;
-    const c = await json<{ id: string }>(await fetch("/api/chats", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: pr }) }));
+    const c = await json<{ id: string }>(
+      await fetch("/api/chats", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: pr }),
+      }),
+    );
     set((s) => ({ chat: { ...s.chat, id: c.id } }));
     return c.id;
   }
@@ -176,7 +182,7 @@ export const useChat = create<State>((set, get) => {
 
     reset(pr) {
       if (pr === get().pr) return;
-      ctrls.forEach((c) => c.abort());
+      for (const c of ctrls) c.abort();
       set({ pr, chat: emptyChat(), history: [], historyOpen: false, error: null });
     },
     newChat() {
@@ -204,7 +210,16 @@ export const useChat = create<State>((set, get) => {
     },
 
     stage(text, anchor) {
-      const q: Question = { id: qid(), n: get().chat.nextN, text, anchor, status: "staged", answer: "", tools: [], turn: null };
+      const q: Question = {
+        id: qid(),
+        n: get().chat.nextN,
+        text,
+        anchor,
+        status: "staged",
+        answer: "",
+        tools: [],
+        turn: null,
+      };
       set((s) => ({ chat: { ...s.chat, questions: [...s.chat.questions, q], nextN: s.chat.nextN + 1 } }));
       return q;
     },
@@ -222,7 +237,17 @@ export const useChat = create<State>((set, get) => {
     sendStaged(extra) {
       const staged = get().chat.questions.filter((q) => q.status === "staged");
       const qs = [...staged];
-      if (extra?.trim()) qs.push({ id: qid(), n: null, text: extra.trim(), anchor: null, status: "pending", answer: "", tools: [], turn: null });
+      if (extra?.trim())
+        qs.push({
+          id: qid(),
+          n: null,
+          text: extra.trim(),
+          anchor: null,
+          status: "pending",
+          answer: "",
+          tools: [],
+          turn: null,
+        });
       void send(qs);
     },
   };
@@ -255,17 +280,22 @@ function toWire(a: Anchor) {
 export function fromWire(c: WireChat): Chat {
   const questions: Question[] = [];
   let nextN = 1;
-  c.turns.forEach((t, turn) =>
+  c.turns.forEach((t, turn) => {
     t.questions.forEach((q) => {
       const anchor = q.anchor ? ({ ...q.anchor, ...(q.anchor.ui ?? {}) } as Anchor) : null;
       const n = q.n > 0 ? q.n : null;
       if (n) nextN = Math.max(nextN, n + 1);
       questions.push({
-        id: qid(), n, text: q.text, anchor, turn,
+        id: qid(),
+        n,
+        text: q.text,
+        anchor,
+        turn,
         status: t.status === "error" ? "error" : t.status === "done" ? "answered" : "answered",
-        answer: t.answers[String(q.n)] ?? "", tools: t.tools,
-      });  // prettier-ignore
-    }),
-  );
+        answer: t.answers[String(q.n)] ?? "",
+        tools: t.tools,
+      });
+    });
+  });
   return { key: ++chatSeq, id: c.id, questions, turns: c.turns.length, nextN, busy: false };
 }

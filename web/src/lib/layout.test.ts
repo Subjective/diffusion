@@ -28,6 +28,17 @@ test("layout ranks nodes top-to-bottom and routes edges", () => {
 });
 
 test("edge path", () => {
-  expect(edgePath([{ x: 0, y: 0 }, { x: 0, y: 10 }])).toBe("M0,0 L0,10");
-  expect(edgePath([{ x: 0, y: 0 }, { x: 5, y: 5 }, { x: 10, y: 10 }])).toMatch(/^M0,0 Q5,5 10,10$/);
+  expect(
+    edgePath([
+      { x: 0, y: 0 },
+      { x: 0, y: 10 },
+    ]),
+  ).toBe("M0,0 L0,10");
+  expect(
+    edgePath([
+      { x: 0, y: 0 },
+      { x: 5, y: 5 },
+      { x: 10, y: 10 },
+    ]),
+  ).toMatch(/^M0,0 Q5,5 10,10$/);
 });

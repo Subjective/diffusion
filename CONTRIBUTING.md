@@ -4,11 +4,11 @@ Thanks for helping. Bug reports, model/backend compatibility results, and pull r
 
 ## Setup
 
-You need `git`, [`uv`](https://docs.astral.sh/uv/) (Python 3.12+), and Node 20+.
+You need `git`, [`uv`](https://docs.astral.sh/uv/) (Python 3.12+), and Node 24+ (pinned in `.node-version`).
 
 ```bash
 make install        # engine deps (uv sync) + web deps (npm install)
-make test           # what CI runs: ruff + pytest, tsc + vitest
+make test           # what CI runs: ruff + pyright + pytest, biome + tsc + vitest
 make dev            # engine on :8787 with auto-reload, Vite on :5173 (open this one)
 ```
 

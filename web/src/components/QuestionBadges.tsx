@@ -1,13 +1,17 @@
-import { Clock, LoaderCircle, ListPlus, MessageCircle } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
-import { useChat } from "../chat";
+import { Clock, ListPlus, LoaderCircle, MessageCircle } from "lucide-react";
+import { type ReactNode, useMemo } from "react";
 import { questionRows } from "../App";
+import { useChat } from "../chat";
 import { useHunkIndex } from "../lib/linking";
 import { rowKey } from "../lib/refs";
 import { ic } from "./icons";
 
 /** Row-key → badge node for anchored questions in the active chat (queued → answering → answered). */
-export function useQuestionBadges(hoverQ: string | null, onHoverQ: (id: string | null) => void, revealQ: (id: string) => void): Map<string, ReactNode> {
+export function useQuestionBadges(
+  hoverQ: string | null,
+  onHoverQ: (id: string | null) => void,
+  revealQ: (id: string) => void,
+): Map<string, ReactNode> {
   const questions = useChat((s) => s.chat.questions);
   const idx = useHunkIndex();
   return useMemo(() => {
@@ -26,9 +30,16 @@ export function useQuestionBadges(hoverQ: string | null, onHoverQ: (id: string |
         <span className="qbs" key={k}>
           {qs.map((q) => {
             const icon =
-              q.status === "pending" ? LoaderCircle : q.status === "staged" ? ListPlus : q.status === "waiting" ? Clock : MessageCircle;
+              q.status === "pending"
+                ? LoaderCircle
+                : q.status === "staged"
+                  ? ListPlus
+                  : q.status === "waiting"
+                    ? Clock
+                    : MessageCircle;
             return (
               <button
+                type="button"
                 key={q.id}
                 className={`qb s-${q.status}${hoverQ === q.id ? " hover" : ""}`}
                 data-q={q.id}

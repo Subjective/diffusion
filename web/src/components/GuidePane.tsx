@@ -1,19 +1,32 @@
-import { useEffect } from "react";
 import {
-  Check, Circle, CircleAlert, CircleCheck, EyeOff, GitPullRequest, Info, Layers, ListOrdered, LoaderCircle,
-  MessageCircle, ShieldCheck, Sparkles, Workflow, Zap, type LucideIcon,
+  Check,
+  Circle,
+  CircleAlert,
+  CircleCheck,
+  EyeOff,
+  GitPullRequest,
+  Info,
+  Layers,
+  ListOrdered,
+  LoaderCircle,
+  type LucideIcon,
+  MessageCircle,
+  ShieldCheck,
+  Sparkles,
+  Workflow,
+  Zap,
 } from "lucide-react";
+import { useEffect } from "react";
+import { readingOrder, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { inline } from "../lib/md";
+import { GUIDE_W, startResize } from "../lib/panes";
 import { refLabel } from "../lib/refs";
-import { readingOrder, useHunkIndex, useStepLinking } from "../lib/linking";
+import { storage } from "../lib/storage";
 import { useApp } from "../store";
 import type { Stage, Step } from "../types";
 import { useUI } from "../ui";
-import { CONTEXT_ICON, SKIP_ICON, STEP_ICON, ic } from "./icons";
 import { FlowGraph } from "./FlowGraph";
-import { GUIDE_W, startResize } from "../lib/panes";
-import { storage } from "../lib/storage";
-import { refsTarget } from "../lib/linking";
+import { CONTEXT_ICON, ic, SKIP_ICON, STEP_ICON } from "./icons";
 
 export interface GuidePaneProps {
   onAskStep?: (step: Step) => void;
@@ -80,7 +93,9 @@ function Notes() {
   const context = useApp((s) => s.guide!.context);
   const idx = useHunkIndex();
   if (!context.length) return null;
-  const items = [...context].sort((a, b) => Number(b.icon === "risk" || b.icon === "security") - Number(a.icon === "risk" || a.icon === "security"));
+  const items = [...context].sort(
+    (a, b) => Number(b.icon === "risk" || b.icon === "security") - Number(a.icon === "risk" || a.icon === "security"),
+  );
   return (
     <section className="sec">
       <div className="sec-h">{ic(Info, 13)}Notes</div>
@@ -217,11 +232,22 @@ function Steps({ onAskStep }: GuidePaneProps) {
           const read = !!readSteps[s.id];
           const Kind = STEP_ICON[s.kind] ?? Circle;
           const subs = s.substeps ?? [];
-          const cls = ["step", read && "done", hoverStep === s.id && hoverSub == null && "hover", pinStep === s.id && "active"]
+          const cls = [
+            "step",
+            read && "done",
+            hoverStep === s.id && hoverSub == null && "hover",
+            pinStep === s.id && "active",
+          ]
             .filter(Boolean)
             .join(" ");
           return (
-            <div key={s.id} className={cls} data-step={s.id} onMouseEnter={() => link.hover(s.id)} onClick={() => link.focus(s.id)}>
+            <div
+              key={s.id}
+              className={cls}
+              data-step={s.id}
+              onMouseEnter={() => link.hover(s.id)}
+              onClick={() => link.focus(s.id)}
+            >
               <div className="num">{read ? ic(Check, 12) : s.id}</div>
               <div>
                 <div className="t">
@@ -232,7 +258,11 @@ function Steps({ onAskStep }: GuidePaneProps) {
                 {subs.length ? (
                   <ol className="subs" onMouseLeave={() => link.hover(s.id)}>
                     {subs.map((b) => {
-                      const scls = ["sub", hoverStep === s.id && hoverSub === b.id && "hover", pinStep === s.id && pinSub === b.id && "active"]
+                      const scls = [
+                        "sub",
+                        hoverStep === s.id && hoverSub === b.id && "hover",
+                        pinStep === s.id && pinSub === b.id && "active",
+                      ]
                         .filter(Boolean)
                         .join(" ");
                       return (
@@ -280,6 +310,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
               </div>
               <div className="acts">
                 <button
+                  type="button"
                   className="icon-btn sm check"
                   title={read ? "Mark unread" : "Mark read"}
                   onClick={(e) => {
@@ -291,6 +322,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
                 </button>
                 {onAskStep && (
                   <button
+                    type="button"
                     className="icon-btn sm ask"
                     title="Ask about this step"
                     onClick={(e) => {
@@ -316,7 +348,9 @@ function useOpenFile() {
     if (ui.hideSkip) ui.toggleHideSkip();
     ui.toggleCollapsed(path, false);
     requestAnimationFrame(() =>
-      document.querySelector(`.file[data-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }),
+      document
+        .querySelector(`.file[data-path="${CSS.escape(path)}"]`)
+        ?.scrollIntoView({ block: "start", behavior: "smooth" }),
     );
   };
 }
@@ -368,7 +402,11 @@ function Uncovered() {
             onMouseLeave={() => useUI.getState().setHover([])}
             onClick={() => {
               const rows = idx.rows.get(id) ?? [];
-              if (h) useUI.getState().focus(rows.map((r) => `${r.file}:${r.pos}`), [h.file]);
+              if (h)
+                useUI.getState().focus(
+                  rows.map((r) => `${r.file}:${r.pos}`),
+                  [h.file],
+                );
             }}
           >
             {ic(CircleAlert, 13)}

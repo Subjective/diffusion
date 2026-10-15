@@ -25,15 +25,26 @@ export function Markdown({ text }: { text: string }) {
       i++;
       while (i < lines.length && !lines[i].startsWith("```")) body.push(lines[i++]);
       i++;
-      blocks.push(<pre key={blocks.length} className="md-pre">{body.join("\n")}</pre>);
+      blocks.push(
+        <pre key={blocks.length} className="md-pre">
+          {body.join("\n")}
+        </pre>,
+      );
       continue;
     }
     if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
       const ordered = /^\s*\d+\./.test(line);
       const items: string[] = [];
-      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""));
+      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i]))
+        items.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""));
       const L = ordered ? "ol" : "ul";
-      blocks.push(<L key={blocks.length}>{items.map((t, k) => <li key={k}>{inline(t)}</li>)}</L>);
+      blocks.push(
+        <L key={blocks.length}>
+          {items.map((t, k) => (
+            <li key={k}>{inline(t)}</li>
+          ))}
+        </L>,
+      );
       continue;
     }
     if (!line.trim()) {
@@ -41,9 +52,18 @@ export function Markdown({ text }: { text: string }) {
       continue;
     }
     const para: string[] = [];
-    while (i < lines.length && lines[i].trim() && !lines[i].startsWith("```") && !/^\s*([-*]|\d+\.)\s+/.test(lines[i])) para.push(lines[i++]);
+    while (i < lines.length && lines[i].trim() && !lines[i].startsWith("```") && !/^\s*([-*]|\d+\.)\s+/.test(lines[i]))
+      para.push(lines[i++]);
     const head = para[0].match(/^#{1,6}\s+(.*)/);
-    blocks.push(head ? <p key={blocks.length}><b>{inline(head[1])}</b></p> : <p key={blocks.length}>{inline(para.join(" "))}</p>);
+    blocks.push(
+      head ? (
+        <p key={blocks.length}>
+          <b>{inline(head[1])}</b>
+        </p>
+      ) : (
+        <p key={blocks.length}>{inline(para.join(" "))}</p>
+      ),
+    );
   }
   return <div className="md">{blocks}</div>;
 }

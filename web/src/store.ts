@@ -30,7 +30,12 @@ interface State {
   generate(force?: boolean): Promise<void>;
 }
 
-const initialStages = (): Record<Stage, StageStatus> => ({ fetch: "pending", hunks: "pending", explore: "pending", validate: "pending" });
+const initialStages = (): Record<Stage, StageStatus> => ({
+  fetch: "pending",
+  hunks: "pending",
+  explore: "pending",
+  validate: "pending",
+});
 let abort: AbortController | null = null;
 
 const urlParam = () => new URLSearchParams(location.search).get("pr") ?? "";

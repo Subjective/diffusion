@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef } from "react";
 import { ArrowDownAZ, ChevronsDownUp, EyeOff, FileCode, Route } from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
 import { useApp } from "../store";
 import type { FileDiff as FD, Guide, Ref } from "../types";
 import { useUI } from "../ui";
-import { FileDiff, type Dot, type Gutter } from "./FileDiff";
+import { type Dot, FileDiff, type Gutter } from "./FileDiff";
 import { ic } from "./icons";
 
 /** Files in guide order: by first step that references them, then unreferenced, then skippable. */
@@ -12,15 +12,18 @@ export function guideOrder(files: FD[], guide: Guide | null): FD[] {
   if (!guide) return files;
   const hunkFile = new Map(files.flatMap((f) => f.hunks.map((h) => [h.id, f.path] as const)));
   const rank = new Map<string, number>();
-  guide.steps.forEach((s, i) =>
-    s.refs.forEach((r) => {
+  guide.steps.forEach((s, i) => {
+    for (const r of s.refs) {
       const p = hunkFile.get(r.hunk);
       if (p && !rank.has(p)) rank.set(p, i);
-    }),
-  );
+    }
+  });
   const skip = new Set(guide.skippable.map((s) => s.file));
   const score = (f: FD) => rank.get(f.path) ?? (skip.has(f.path) || f.skip ? 2000 : 1000);
-  return files.map((f, i) => [f, i] as const).sort((a, b) => score(a[0]) - score(b[0]) || a[1] - b[1]).map(([f]) => f);
+  return files
+    .map((f, i) => [f, i] as const)
+    .sort((a, b) => score(a[0]) - score(b[0]) || a[1] - b[1])
+    .map(([f]) => f);
 }
 
 export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
@@ -50,7 +53,7 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
     };
     for (const s of guide?.steps ?? []) {
       // Steps with substeps mark each substep (1.1, 1.2…); others mark the step.
-      if (s.substeps?.length) s.substeps.forEach((b) => mark(b.refs, { step: s.id, sub: b.id }));
+      if (s.substeps?.length) for (const b of s.substeps) mark(b.refs, { step: s.id, sub: b.id });
       else mark(s.refs, { step: s.id, sub: null });
     }
     return { dots, fileSteps };
@@ -82,22 +85,38 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
         </span>
         <span className="grow" />
         <button
+          type="button"
           className="icon-btn sm on"
           title={order === "guide" ? "Order: guide" : "Order: A–Z"}
           onClick={() => setOrder(order === "guide" ? "alpha" : "guide")}
         >
           {ic(order === "guide" ? Route : ArrowDownAZ, 15)}
         </button>
-        <button className={`icon-btn sm${hideSkip ? " on" : ""}`} title="Hide skippable" onClick={toggleHideSkip}>
+        <button
+          type="button"
+          className={`icon-btn sm${hideSkip ? " on" : ""}`}
+          title="Hide skippable"
+          onClick={toggleHideSkip}
+        >
           {ic(EyeOff, 15)}
         </button>
-        <button className="icon-btn sm" title={allCollapsed ? "Expand all" : "Collapse all"} onClick={() => collapseAll(!allCollapsed, [...skipFiles])}>
+        <button
+          type="button"
+          className="icon-btn sm"
+          title={allCollapsed ? "Expand all" : "Collapse all"}
+          onClick={() => collapseAll(!allCollapsed, [...skipFiles])}
+        >
           {ic(ChevronsDownUp, 15)}
         </button>
       </div>
       <div className={`files${hideSkip ? " hide-skip" : ""}`}>
         {ordered.map((f) => (
-          <FileDiff key={f.path} file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f} steps={fileSteps.get(f.path) ?? []} gutter={gutter} />
+          <FileDiff
+            key={f.path}
+            file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
+            steps={fileSteps.get(f.path) ?? []}
+            gutter={gutter}
+          />
         ))}
       </div>
     </section>
