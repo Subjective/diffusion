@@ -1,9 +1,10 @@
 # Diffusion
 
-Code is now effectively free to write. The burden has shifted from writing to reviewing, but the tools for review
-haven't kept pace.
+AI has made it cheaper than ever to write code, but that's only shifted the burden to reviewing it, which is still
+largely done the same way it always has been.
 
-AI has transformed how we write code. Diffusion brings it to how we understand and review it.
+Diffusion turns pull requests into guided, interactive walkthroughs that help you understand what changed, how it
+works, and why.
 
 See [`docs/design.md`](docs/design.md) for the design and [`docs/design/wireframe.html`](docs/design/wireframe.html)
 for the UI reference.
