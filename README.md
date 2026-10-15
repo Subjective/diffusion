@@ -1,10 +1,11 @@
 # Diffusion
 
-A local tool that turns a pull request, or any local branch, into a **guided, linked walkthrough**: a TL;DR,
-notes you can't see in the diff, a flow diagram, and an ordered set of steps and substeps, each linked to the
-exact diff lines. A code-anchored AI chat answers questions about specific lines. It runs on your machine and
-works with the model access you already have: an Anthropic or OpenAI key, OpenRouter, a gateway, a local model,
-or your Claude Code / Codex setup.
+AI has made writing code faster than ever, so more of the work now falls on review. The tools for reviewing
+haven't kept up. Open a large pull request on GitHub and it's often hard to tell what's going on or where to start.
+Not every line matters equally, either: a lot of a diff is routine code you could skip, but you can't tell which
+parts until you've read them.
+
+If AI can speed up writing code, it should be able to speed up reading it too. That's what Diffusion is for.
 
 See [`docs/design.md`](docs/design.md) for the design and [`docs/design/wireframe.html`](docs/design/wireframe.html)
 for the UI reference.
