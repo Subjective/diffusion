@@ -7,9 +7,9 @@ import os
 import re
 import shutil
 import subprocess
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
+
+import httpx
 
 _PR_URL = re.compile(
     r"^(?:https?://)?(?P<host>[^/\s]+)/(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+)/pull/(?P<number>\d+)"
@@ -129,26 +129,34 @@ def _api_base(host: str) -> str:
     return "https://api.github.com" if host == "github.com" else f"https://{host}/api/v3"
 
 
-def _get(url: str, token: str | None):
-    req = urllib.request.Request(
-        url, headers={"Accept": "application/vnd.github+json", "User-Agent": "diffusion-review"}
-    )
+def _client(host: str, token: str | None, transport: httpx.BaseTransport | None = None) -> httpx.Client:
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "diffusion-review"}
     if token:
-        req.add_header("Authorization", f"Bearer {token}")
+        headers["Authorization"] = f"Bearer {token}"
+    return httpx.Client(
+        base_url=_api_base(host),
+        headers=headers,
+        timeout=30,
+        transport=transport or httpx.HTTPTransport(retries=2),  # retries connection failures only
+    )
+
+
+def _get(client: httpx.Client, path: str, token: str | None):
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.load(r)
-    except urllib.error.HTTPError as e:
-        hint = " (private repo? set GITHUB_TOKEN)" if e.code in (401, 403, 404) and not token else ""
-        raise GitHubError(f"GitHub API {e.code} for {url}{hint}") from e
-    except urllib.error.URLError as e:
-        raise GitHubError(f"GitHub API unreachable: {e.reason}") from e
+        r = client.get(path)
+    except httpx.TransportError as e:
+        raise GitHubError(f"GitHub API unreachable: {e}") from e
+    if r.is_error:
+        hint = " (private repo? set GITHUB_TOKEN)" if r.status_code in (401, 403, 404) and not token else ""
+        raise GitHubError(f"GitHub API {r.status_code} for {r.url}{hint}")
+    return r.json()
 
 
-def _fetch_meta_rest(ref: PRRef, token: str | None) -> PRMeta:
-    base = f"{_api_base(ref.host)}/repos/{ref.slug}/pulls/{ref.number}"
-    pr = _get(base, token)
-    commits = _get(f"{base}/commits?per_page=100", token)
+def _fetch_meta_rest(ref: PRRef, token: str | None, transport: httpx.BaseTransport | None = None) -> PRMeta:
+    base = f"/repos/{ref.slug}/pulls/{ref.number}"
+    with _client(ref.host, token, transport) as client:
+        pr = _get(client, base, token)
+        commits = _get(client, f"{base}/commits?per_page=100", token)
     return meta_from_json(
         ref,
         {

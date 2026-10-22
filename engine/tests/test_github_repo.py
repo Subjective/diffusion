@@ -1,9 +1,10 @@
 import json
 import stat
 
+import httpx
 import pytest
 
-from diffusion.github import GitHubError, PRRef, fetch_meta, parse_pr_url
+from diffusion.github import GitHubError, PRRef, _fetch_meta_rest, fetch_meta, parse_pr_url
 from diffusion.repo import RepoCache
 
 
@@ -79,3 +80,59 @@ def test_checkout_is_idempotent_and_reuses_clone(upstream, tmp_path):
 def test_file_at_head(checkout):
     assert checkout.file_at_head("src/auth/types.ts").count("expiresAt") == 1
     assert checkout.file_at_head("src/legacy.ts") is None
+
+
+def _api(routes: dict[str, httpx.Response], seen: list[httpx.Request]) -> httpx.MockTransport:
+    def handle(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return routes.get(req.url.path) or httpx.Response(404)
+
+    return httpx.MockTransport(handle)
+
+
+def test_rest_fetch_meta():
+    pr = {
+        "title": "Add refresh",
+        "body": None,
+        "user": {"login": "jy"},
+        "base": {"ref": "main", "sha": "b" * 40},
+        "head": {"ref": "feature", "sha": "h" * 40},
+        "additions": 3,
+        "deletions": 1,
+        "changed_files": 2,
+    }
+    commits = [{"sha": "c" * 40, "commit": {"message": "Refresh tokens\n\nDetails"}}]
+    seen: list[httpx.Request] = []
+    api = _api(
+        {
+            "/api/v3/repos/acme/web/pulls/7": httpx.Response(200, json=pr),
+            "/api/v3/repos/acme/web/pulls/7/commits": httpx.Response(200, json=commits),
+        },
+        seen,
+    )
+    meta = _fetch_meta_rest(PRRef("ghe.acme.dev", "acme", "web", 7), "tok", api)
+    assert (meta.title, meta.body, meta.author, meta.head_ref, meta.changed_files) == (
+        "Add refresh",
+        "",
+        "jy",
+        "feature",
+        2,
+    )
+    assert meta.commits == [{"sha": "c" * 12, "headline": "Refresh tokens"}]
+    assert seen[0].url.host == "ghe.acme.dev"
+    assert seen[0].headers["Authorization"] == "Bearer tok"
+    assert seen[1].url.params["per_page"] == "100"
+
+
+def test_rest_errors_hint_at_token_when_unauthenticated():
+    api = _api({}, [])
+    with pytest.raises(GitHubError, match=r"404 .*set GITHUB_TOKEN"):
+        _fetch_meta_rest(PRRef("github.com", "acme", "web", 7), None, api)
+
+
+def test_rest_unreachable():
+    def fail(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route", request=req)
+
+    with pytest.raises(GitHubError, match="unreachable"):
+        _fetch_meta_rest(PRRef("github.com", "acme", "web", 7), None, httpx.MockTransport(fail))
