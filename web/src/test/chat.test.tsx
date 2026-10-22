@@ -263,7 +263,7 @@ test("answers link citations to diff rows; show_code chips focus the diff, auto-
   expect(useUI.getState().flash.n).toBe(flashN);
   fireEvent.click(document.querySelector(".show-chip")!); // the chip still works on demand
   expect(useUI.getState().flash.n).toBe(flashN + 1);
-  expect(useUI.getState().scrollTo?.key).toBe("src/auth/session.ts:6");
+  expect(useUI.getState().scrollTo?.keys[0]).toBe("src/auth/session.ts:6");
 
   // shows persist with the chat
   fireEvent.click(screen.getByTitle("New chat"));

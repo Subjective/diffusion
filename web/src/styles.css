@@ -554,6 +554,30 @@ code {
   overflow: auto;
   position: relative;
 }
+.diffwrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+.scroll-marks {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: 5;
+  pointer-events: none;
+}
+.scroll-marks span {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  border-radius: 2px;
+  background: var(--hl-bar);
+  opacity: 0.85;
+}
 .toolbar {
   position: sticky;
   top: 0;
