@@ -2,7 +2,7 @@
 
 A *profile* says how to talk to models:
 
-- ``backend = "api"``: our own agent loop calling a model API directly. ``protocol`` is ``"anthropic"``
+- ``backend = "api"``: a Pydantic AI agent calling a model API directly. ``protocol`` is ``"anthropic"``
   (Messages API) or ``"openai"`` (Chat Completions: OpenAI, OpenRouter, Gemini, Ollama, vLLM, most gateways).
 - ``backend = "claude-code"``: the Claude Agent SDK, using your Claude Code setup and login.
 - ``backend = "codex"``: the Codex CLI (``codex exec``), using your Codex setup and login.
@@ -16,8 +16,8 @@ Profiles live in ``~/.config/diffusion/config.toml`` (or ``$DIFFUSION_CONFIG``):
     protocol = "openai"
     base_url = "https://openrouter.ai/api/v1"
     api_key_env = "OPENROUTER_API_KEY"
-    guide_model = "anthropic/claude-opus-4.6"
-    chat_model = "anthropic/claude-sonnet-4.6"
+    guide_model = "anthropic/claude-opus-5.5"
+    chat_model = "anthropic/claude-sonnet-5.5"
 
 With no config file a profile is auto-detected from the environment; ``diffusion doctor`` shows what was chosen.
 """
@@ -39,7 +39,7 @@ Protocol = Literal["anthropic", "openai"]
 AuthStyle = Literal["x-api-key", "bearer"]
 
 DEFAULT_MODELS: dict[tuple[str, str | None], tuple[str, str]] = {
-    ("api", "anthropic"): ("claude-opus-4-6", "claude-sonnet-4-6"),
+    ("api", "anthropic"): ("claude-opus-5-5", "claude-sonnet-5-5"),
     ("api", "openai"): ("gpt-5", "gpt-5-mini"),
     ("claude-code", None): ("opus", "sonnet"),
     ("codex", None): ("", ""),  # empty = Codex's configured default model
@@ -172,8 +172,8 @@ def _autodetect(environ: dict[str, str]) -> tuple[str, dict]:
             "protocol": "openai",
             "base_url": "https://openrouter.ai/api/v1",
             "api_key_env": "OPENROUTER_API_KEY",
-            "guide_model": "anthropic/claude-opus-4.6",
-            "chat_model": "anthropic/claude-sonnet-4.6",
+            "guide_model": "anthropic/claude-opus-5.5",
+            "chat_model": "anthropic/claude-sonnet-5.5",
         }
     if environ.get("OPENAI_API_KEY"):
         return "OPENAI_API_KEY", {

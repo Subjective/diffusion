@@ -16,8 +16,8 @@ for the UI reference.
   an agent with read-only tools that produces the guide. Every reference is validated against the diff. It also
   powers the chat. HTTP + SSE API.
 - **`web/`**: a React UI: the diff, the guide with live links, and the chat.
-- **Backends**: `api` (our own agent loop over the Anthropic or any OpenAI-compatible API), `claude-code` (the
-  Claude Agent SDK and your Claude Code CLI), or `codex` (the Codex CLI).
+- **Backends**: `api` (a [Pydantic AI](https://ai.pydantic.dev) agent over the Anthropic or any
+  OpenAI-compatible API), `claude-code` (the Claude Agent SDK and your Claude Code CLI), or `codex` (the Codex CLI).
 
 ## Prerequisites
 
@@ -84,8 +84,8 @@ backend = "api"
 protocol = "openai"
 base_url = "https://openrouter.ai/api/v1"
 api_key_env = "OPENROUTER_API_KEY"
-guide_model = "anthropic/claude-opus-4.6"    # a strong model for guides
-chat_model = "anthropic/claude-sonnet-4.6"   # a faster one for chat
+guide_model = "anthropic/claude-opus-5.5"    # a strong model for guides
+chat_model = "anthropic/claude-sonnet-5.5"   # a faster one for chat
 
 [profiles.local]
 backend = "api"
@@ -145,8 +145,8 @@ protocol = "anthropic"
 auth = "bearer"
 api_key_env = "ANTHROPIC_AUTH_TOKEN"
 inherit_env_from = ["~/.claude/settings.json", "/etc/claude-code/managed-settings.json"]
-guide_model = "claude-opus-4-6"
-chat_model = "claude-sonnet-4-6"
+guide_model = "claude-opus-5-5"
+chat_model = "claude-sonnet-5-5"
 ```
 
 The same `inherit_env_from` works with `backend = "claude-code"`. If your gateway requires a recent Claude Code,

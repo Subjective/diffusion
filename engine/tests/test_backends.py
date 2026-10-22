@@ -2,20 +2,24 @@ import json
 import stat
 from pathlib import Path
 
+import httpx2
 import pytest
+from pydantic_ai import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    RetryPromptPart,
+    TextPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+from pydantic_ai.usage import RequestUsage
 
 from diffusion.agent import AgentRequest, DoneEvent, SandboxError, TextEvent, ToolEvent, ToolSpec, within
-from diffusion.backends.api import SessionStore, api_runner
+from diffusion.backends.api import SessionStore, _cost, api_runner, make_model
 from diffusion.backends.claude_code import sandbox_decision, tool_names_note
 from diffusion.backends.codex import build_args, codex_runner, strict_schema
-from diffusion.backends.providers import (
-    AnthropicProvider,
-    Completion,
-    OpenAIProvider,
-    TextDelta,
-    ToolCall,
-    Usage,
-)
 from diffusion.backends.tools import glob, grep, read_file
 from diffusion.config import Config
 
@@ -76,23 +80,28 @@ def test_grep_and_glob(repo):
 # ---------- api backend loop ----------
 
 
-class FakeProvider:
-    """Scripted model: each call pops the next list of (text, tool_calls)."""
+class Scripted:
+    """A model that plays back a script: each request pops the next (text, [(tool, args), ...])."""
 
     def __init__(self, *script):
         self.script = list(script)
-        self.calls = []
+        self.requests: list[list[ModelMessage]] = []
+        self.model = FunctionModel(stream_function=self.stream)
 
-    async def stream(self, system, messages, tools, model):
-        self.calls.append(
-            {"system": system, "messages": json.loads(json.dumps(messages)), "tools": [t.name for t in tools]}
-        )
+    async def stream(self, messages, info):
+        self.requests.append(list(messages))
+        self.tools = [t.name for t in info.function_tools]
         text, calls = self.script.pop(0)
         for i in range(0, len(text), 3):
-            yield TextDelta(text[i : i + 3])
-        yield Completion(
-            text, [ToolCall(f"c{i}", n, a) for i, (n, a) in enumerate(calls)], Usage(10, 5, cost_usd=0.01)
-        )
+            yield text[i : i + 3]
+        for i, (name, args) in enumerate(calls):
+            yield {i: DeltaToolCall(name, json.dumps(args), tool_call_id=f"c{len(self.requests)}{i}")}
+
+
+def returns(messages: list[ModelMessage]) -> list:
+    last = messages[-1]
+    assert isinstance(last, ModelRequest)
+    return [p for p in last.parts if isinstance(p, ToolReturnPart | RetryPromptPart)]
 
 
 async def collect(gen):
@@ -106,17 +115,17 @@ async def test_loop_runs_tools_until_terminal(tmp_path, repo):
         got.append(args)
         return "received"
 
-    prov = FakeProvider(
+    m = Scripted(
         ("Looking.", [("grep", {"pattern": "refresh"}), ("read_file", {"path": "../secret.txt"})]),
         ("", [("nope", {}), ("submit", {"x": 1})]),
         ("never reached", []),
     )
-    run = api_runner(cfg(tmp_path), provider=prov, sessions=SessionStore(tmp_path / "s"))
+    run = api_runner(cfg(tmp_path), model=m.model, sessions=SessionStore(tmp_path / "s"))
     tools = [ToolSpec("submit", "d", {"type": "object"}, submit, terminal=True)]
     evs = await collect(run(AgentRequest("sys", "go", "m", repo, tools, include_partial=True)))
 
     assert got == [{"x": 1}]
-    assert len(prov.script) == 1  # stopped after terminal tool accepted
+    assert len(m.script) == 1  # stopped after terminal tool accepted
     assert "".join(e.text for e in evs if isinstance(e, TextEvent)) == "Looking."
     assert [e.summary for e in evs if isinstance(e, ToolEvent)] == [
         "Grep refresh",
@@ -124,81 +133,136 @@ async def test_loop_runs_tools_until_terminal(tmp_path, repo):
         "nope",
         "submit",
     ]
-    results = prov.calls[1]["messages"][-1]["results"]
+    grep_out, secret = returns(m.requests[1])
+    assert "src/a.py" in grep_out.content
     assert (
-        "src/a.py" in results[0]["content"] and results[1]["is_error"] and "outside" in results[1]["content"]
+        isinstance(secret, ToolReturnPart) and secret.outcome == "failed" and "outside" in str(secret.content)
     )
-    assert prov.calls[0]["tools"][:3] == ["read_file", "grep", "glob"]
+    assert m.tools[:3] == ["read_file", "grep", "glob"]
     done = evs[-1]
-    assert (
-        isinstance(done, DoneEvent)
-        and not done.is_error
-        and done.turns == 2
-        and done.cost_usd == pytest.approx(0.02)
-    )
+    assert isinstance(done, DoneEvent) and not done.is_error and done.turns == 2
+
+
+async def test_rejected_terminal_tool_keeps_going(tmp_path, repo):
+    replies = iter(["rejected: fix it", "received"])
+
+    async def submit(args):
+        return next(replies)
+
+    m = Scripted(("", [("submit", {})]), ("", [("submit", {})]), ("never reached", []))
+    run = api_runner(cfg(tmp_path), model=m.model, sessions=SessionStore(tmp_path / "s"))
+    tools = [ToolSpec("submit", "d", {"type": "object"}, submit, terminal=True)]
+    done = (await collect(run(AgentRequest("s", "p", "m", repo, tools))))[-1]
+    assert not done.is_error and done.turns == 2 and returns(m.requests[1])[0].content == "rejected: fix it"
+
+
+async def test_resume_after_terminal_tool_keeps_its_result(tmp_path, repo):
+    async def submit(args):
+        return "received"
+
+    m = Scripted(("", [("submit", {})]), ("again", []))
+    run = api_runner(cfg(tmp_path), model=m.model, sessions=SessionStore(tmp_path / "s"))
+    tools = [ToolSpec("submit", "d", {"type": "object"}, submit, terminal=True)]
+    d1 = (await collect(run(AgentRequest("s", "p", "m", repo, tools))))[-1]
+    d2 = (await collect(run(AgentRequest("s", "retry", "m", repo, tools, resume=d1.session_id))))[-1]
+    assert not d2.is_error and d2.result == "again"
+    tail = [type(p).__name__ for p in m.requests[1][-1].parts]
+    assert tail == ["ToolReturnPart", "UserPromptPart"]
 
 
 async def test_resume_continues_conversation(tmp_path, repo):
     store = SessionStore(tmp_path / "s")
-    prov = FakeProvider(("first", []), ("second", []))
-    run = api_runner(cfg(tmp_path), provider=prov, sessions=store)
+    m = Scripted(("first", []), ("second", []))
+    run = api_runner(cfg(tmp_path), model=m.model, sessions=store)
     d1 = (await collect(run(AgentRequest("sys", "q1", "m", repo))))[-1]
     d2 = (await collect(run(AgentRequest("sys", "q2", "m", repo, resume=d1.session_id))))[-1]
     assert d2.session_id == d1.session_id and d2.result == "second"
-    roles = [m["role"] for m in prov.calls[1]["messages"]]
-    assert roles == ["user", "assistant", "user"] and prov.calls[1]["messages"][0]["content"] == "q1"
+    kinds = [type(msg).__name__ for msg in m.requests[1]]
+    assert kinds == ["ModelRequest", "ModelResponse", "ModelRequest"]
+    first = m.requests[1][0].parts[-1]
+    assert isinstance(first, UserPromptPart) and first.content == "q1"
 
 
-async def test_max_turns_and_provider_errors(tmp_path, repo):
-    prov = FakeProvider(*[("", [("glob", {"pattern": "*"})])] * 3)
-    run = api_runner(cfg(tmp_path), provider=prov, sessions=SessionStore(tmp_path / "s"))
+async def test_max_turns_and_model_errors(tmp_path, repo):
+    m = Scripted(*[("", [("glob", {"pattern": "*"})])] * 3)
+    run = api_runner(cfg(tmp_path), model=m.model, sessions=SessionStore(tmp_path / "s"))
     done = (await collect(run(AgentRequest("s", "p", "m", repo, max_turns=2))))[-1]
-    assert done.is_error and "2 turns" in done.result
+    assert done.is_error and "2 turns" in done.result and done.turns == 2
 
-    class Boom:
-        async def stream(self, system, messages, tools, model):
-            raise RuntimeError("401 bad key")
-            yield  # pragma: no cover
+    async def boom(messages, info):
+        raise RuntimeError("401 bad key")
+        yield ""  # pragma: no cover
 
-    run = api_runner(cfg(tmp_path), provider=Boom(), sessions=SessionStore(tmp_path / "s"))
+    run = api_runner(
+        cfg(tmp_path), model=FunctionModel(stream_function=boom), sessions=SessionStore(tmp_path / "s")
+    )
     done = (await collect(run(AgentRequest("s", "p", "m", repo))))[-1]
     assert done.is_error and "401 bad key" in done.result
 
 
-# ---------- provider wire formats ----------
-
-CONVO = [
-    {"role": "user", "content": "hi"},
-    {
-        "role": "assistant",
-        "content": "",
-        "tool_calls": [{"id": "t1", "name": "grep", "args": {"pattern": "x"}}],
-    },
-    {"role": "tool", "results": [{"id": "t1", "content": "out", "is_error": False}]},
-    {"role": "user", "content": "follow-up"},
-]
-
-
-def test_anthropic_wire_merges_roles_and_caches_tail():
-    wire = AnthropicProvider.to_wire(CONVO)
-    assert [m["role"] for m in wire] == ["user", "assistant", "user"]
-    assert wire[1]["content"][0] == {
-        "type": "tool_use",
-        "id": "t1",
-        "name": "grep",
-        "input": {"pattern": "x"},
-    }
-    tail = wire[2]["content"]
-    assert tail[0]["type"] == "tool_result" and tail[1]["text"] == "follow-up"
-    assert tail[-1]["cache_control"] == {"type": "ephemeral"}
+def test_cost_prefers_reported_then_prices():
+    reported = ModelResponse([TextPart("x")], model_name="anything", provider_details={"cost": 0.25})
+    priced = ModelResponse(
+        [TextPart("x")],
+        usage=RequestUsage(input_tokens=100_000),
+        model_name="claude-sonnet-4-5",
+        provider_name="anthropic",
+    )
+    unknown = ModelResponse([TextPart("x")], model_name="my-local-model")
+    assert _cost([unknown]) is None
+    assert _cost([reported, unknown]) == pytest.approx(0.25)
+    assert _cost([priced]) == pytest.approx(0.3)
 
 
-def test_openai_wire_format():
-    wire = OpenAIProvider.to_wire("sys", CONVO)
-    assert wire[0] == {"role": "system", "content": "sys"}
-    assert wire[2]["tool_calls"][0]["function"] == {"name": "grep", "arguments": '{"pattern": "x"}'}
-    assert wire[3] == {"role": "tool", "tool_call_id": "t1", "content": "out"}
-    assert wire[4] == {"role": "user", "content": "follow-up"}
+# ---------- api backend wire format (requests captured before they leave) ----------
+
+
+def capture(requests: list) -> httpx2.AsyncClient:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(400, json={"error": {"type": "invalid_request_error", "message": "captured"}})
+
+    return httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+
+
+async def test_anthropic_request_caches_and_authenticates(tmp_path, repo):
+    sent: list[httpx2.Request] = []
+    c = cfg(tmp_path, protocol="anthropic", base_url="https://gw.example", api_key="tok", auth="bearer")
+    run = api_runner(c, http_client=capture(sent), sessions=SessionStore(tmp_path / "s"))
+    done = (await collect(run(AgentRequest("SYS", "hi", "claude-x", repo))))[-1]
+    assert done.is_error and "captured" in done.result
+
+    req = sent[0]
+    body = json.loads(req.content)
+    assert req.url.host == "gw.example" and req.headers["authorization"] == "Bearer tok"
+    assert body["model"] == "claude-x" and body["max_tokens"] == 16000 and body["stream"] is True
+    assert body["system"][-1]["text"] == "SYS" and body["system"][-1]["cache_control"]["type"] == "ephemeral"
+    assert [t["name"] for t in body["tools"]] == ["read_file", "grep", "glob"]
+    assert body["tools"][-1]["cache_control"]["type"] == "ephemeral"
+    assert body["messages"][-1]["content"][-1]["cache_control"]["type"] == "ephemeral"
+
+
+async def test_openai_compatible_request(tmp_path, repo):
+    sent: list[httpx2.Request] = []
+    c = cfg(
+        tmp_path, protocol="openai", base_url="http://localhost:11434/v1", api_key=None, headers={"X-A": "1"}
+    )
+    run = api_runner(c, http_client=capture(sent), sessions=SessionStore(tmp_path / "s"))
+    await collect(run(AgentRequest("SYS", "hi", "llama", repo)))
+    body = json.loads(sent[0].content)
+    assert sent[0].url.path == "/v1/chat/completions" and sent[0].headers["x-a"] == "1"
+    assert body["messages"][0] == {"role": "system", "content": "SYS"}
+    assert body["messages"][1]["role"] == "user" and body["tools"][0]["function"]["name"] == "read_file"
+
+
+def test_openrouter_gets_its_own_model(tmp_path):
+    from pydantic_ai.models.openrouter import OpenRouterModel
+
+    c = cfg(tmp_path, protocol="openai", base_url="https://openrouter.ai/api/v1", api_key="k")
+    assert isinstance(make_model(c, "anthropic/claude-sonnet-5.5")[0], OpenRouterModel)
+    assert not isinstance(
+        make_model(cfg(tmp_path, protocol="openai", api_key="k"), "gpt-5")[0], OpenRouterModel
+    )
 
 
 # ---------- claude-code sandbox hook ----------
