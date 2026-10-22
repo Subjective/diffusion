@@ -2,6 +2,7 @@ import { vi } from "vitest";
 
 // jsdom gaps
 Element.prototype.scrollIntoView = vi.fn();
+Element.prototype.scrollTo = vi.fn();
 globalThis.matchMedia ??= ((q: string) => ({
   matches: false,
   media: q,

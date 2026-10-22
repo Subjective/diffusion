@@ -1,5 +1,6 @@
 import { ArrowDownAZ, ChevronsDownUp, EyeOff, Route } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
 import { useApp } from "../store";
 import type { FileDiff as FD, Guide, Ref } from "../types";
@@ -29,7 +30,7 @@ export function guideOrder(files: FD[], guide: Guide | null): FD[] {
 export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
   const { files, guide } = useApp();
   const { order, setOrder, hideSkip, toggleHideSkip, collapseAll, scrollTo } = useUI();
-  const pane = useRef<HTMLElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
 
   const idx = useMemo(() => indexFiles(files), [files]);
   const skipFiles = useMemo(
@@ -68,8 +69,19 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
     if (!scrollTo) return;
     // wait a frame for expanded files to render
     requestAnimationFrame(() => {
-      const el = pane.current?.querySelector(`tr[data-rk="${CSS.escape(scrollTo.key)}"]`);
-      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+      const p = scroller.current;
+      const first = p?.querySelector<HTMLElement>(`tr[data-rk="${CSS.escape(scrollTo.keys[0])}"]`);
+      if (!p || !first) return;
+      const file = first.closest<HTMLElement>(".file");
+      const header = file?.querySelector<HTMLElement>(".file-h")?.offsetHeight ?? 0;
+      const top = focusScrollTop(
+        measureRows(p, scrollTo.keys),
+        file?.dataset.path ?? "",
+        p.clientHeight,
+        header,
+        2 * first.offsetHeight,
+      );
+      p.scrollTo({ top, behavior: "smooth" });
     });
   }, [scrollTo]);
 
@@ -80,7 +92,6 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
     <section
       className="diffpane"
       id="diffPane"
-      ref={pane}
       onWheel={markDiffActivity}
       onTouchMove={markDiffActivity}
       onMouseDown={markDiffActivity}
@@ -113,16 +124,54 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
           {ic(ChevronsDownUp, 15)}
         </button>
       </div>
-      <div className={`files${hideSkip ? " hide-skip" : ""}`}>
-        {ordered.map((f) => (
-          <FileDiff
-            key={f.path}
-            file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
-            steps={fileSteps.get(f.path) ?? []}
-            gutter={gutter}
-          />
-        ))}
+      <div className="diffwrap">
+        <div className="diff-scroll" ref={scroller}>
+          <div className={`files${hideSkip ? " hide-skip" : ""}`}>
+            {ordered.map((f) => (
+              <FileDiff
+                key={f.path}
+                file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
+                steps={fileSteps.get(f.path) ?? []}
+                gutter={gutter}
+              />
+            ))}
+          </div>
+        </div>
+        <ScrollMarks pane={scroller} />
       </div>
     </section>
+  );
+}
+
+/** Ticks on the scrollbar for the hovered lines (else the pinned ones), so highlights off screen (or in other files) are easy to find. */
+function ScrollMarks({ pane }: { pane: RefObject<HTMLElement | null> }) {
+  const pin = useUI((s) => s.pinRows);
+  const hover = useUI((s) => s.hoverRows);
+  const [marks, setMarks] = useState<{ top: number; height: number }[]>([]);
+
+  useEffect(() => {
+    const p = pane.current;
+    if (!p) return;
+    const measure = () => {
+      const h = p.scrollHeight;
+      const spans = h > p.clientHeight ? mergeSpans(measureRows(p, hover.size ? hover : pin), 24) : [];
+      setMarks(spans.map((s) => ({ top: s.top / h, height: (s.bottom - s.top) / h })));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(p);
+    const files = p.querySelector(".files");
+    if (files) ro.observe(files);
+    return () => ro.disconnect();
+  }, [pane, pin, hover]);
+
+  if (!marks.length) return null;
+  return (
+    <div className="scroll-marks" aria-hidden>
+      {marks.map((m) => (
+        <span key={m.top} style={{ top: `${m.top * 100}%`, height: `max(3px, ${m.height * 100}%)` }} />
+      ))}
+    </div>
   );
 }

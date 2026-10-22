@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { readingOrder, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
-import { inline } from "../lib/md";
+import { Inline } from "../lib/md";
 import { GUIDE_W, startResize } from "../lib/panes";
 import { refLabel } from "../lib/refs";
 import { storage } from "../lib/storage";
@@ -69,7 +69,9 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
           <Header />
           <section className="sec">
             <div className="sec-h">{ic(Zap, 13)}TL;DR</div>
-            <p className="tldr">{inline(guide.tldr)}</p>
+            <p className="tldr">
+              <Inline text={guide.tldr} />
+            </p>
           </section>
           <Notes />
           {guide.flow.nodes.length > 0 && (
@@ -113,7 +115,9 @@ function Notes() {
               onClick={() => t?.keys.length && useUI.getState().focus(t.keys, t.files)}
             >
               {ic(CONTEXT_ICON[c.icon] ?? Info, 14)}
-              <span>{inline(c.text)}</span>
+              <span>
+                <Inline text={c.text} />
+              </span>
             </li>
           );
         })}
@@ -259,7 +263,9 @@ function Steps({ onAskStep }: GuidePaneProps) {
                   {ic(Kind, 14)}
                   {s.title}
                 </div>
-                <div className="s">{inline(s.summary)}</div>
+                <div className="s">
+                  <Inline text={s.summary} />
+                </div>
                 {subs.length ? (
                   <ol className="subs" onMouseLeave={() => link.hover(s.id)}>
                     {subs.map((b) => {
@@ -290,7 +296,9 @@ function Steps({ onAskStep }: GuidePaneProps) {
                           </span>
                           <div>
                             <div className="sub-t">{b.title}</div>
-                            <div className="sub-s">{inline(b.summary)}</div>
+                            <div className="sub-s">
+                              <Inline text={b.summary} />
+                            </div>
                             <div className="refs">
                               {b.refs.map((r, i) => (
                                 <span key={i} className="ref">

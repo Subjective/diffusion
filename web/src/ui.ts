@@ -22,7 +22,7 @@ interface UI {
   hoverRows: Set<string>; // rowKey
   pinRows: Set<string>;
   flash: { keys: Set<string>; n: number };
-  scrollTo: { key: string; n: number } | null;
+  scrollTo: { keys: string[]; n: number } | null;
   hoverStep: number | null;
   hoverSub: number | null;
   pinStep: number | null;
@@ -131,7 +131,7 @@ export const useUI = create<UI>((set, get) => ({
         pinSub: same ? null : sub,
         pinRows: step == null ? s.pinRows : pinStep == null ? new Set() : new Set(keys),
         flash: { keys: new Set(keys), n: s.flash.n + 1 },
-        scrollTo: { key: keys[0], n: (s.scrollTo?.n ?? 0) + 1 },
+        scrollTo: { keys, n: (s.scrollTo?.n ?? 0) + 1 },
       };
     });
   },

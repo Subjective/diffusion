@@ -1,5 +1,8 @@
-// Minimal inline markdown for model text: `code`, **bold**, *em*, line breaks. No HTML passthrough.
-import { type ComponentType, createContext, Fragment, type ReactNode, useContext } from "react";
+// Markdown for model text, via react-markdown + GFM. Raw HTML is never rendered.
+import type { Element, ElementContent } from "hast";
+import { type ComponentType, createContext, Fragment, useContext } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 /** Optional renderer for inline code spans (chat uses it to turn `path:line` citations into diff links). */
 export const InlineCodeContext = createContext<ComponentType<{ text: string }> | null>(null);
@@ -9,104 +12,41 @@ function InlineCode({ text }: { text: string }) {
   return Render ? <Render text={text} /> : <code>{text}</code>;
 }
 
-const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/g;
+const textOf = (n: ElementContent | Element): string =>
+  n.type === "text" ? n.value : "children" in n ? n.children.map(textOf).join("") : "";
 
-export function inline(text: string): ReactNode[] {
-  return text.split(INLINE).map((part, i) => {
-    if (!part) return null;
-    if (part.startsWith("`") && part.endsWith("`") && part.length > 1)
-      return <InlineCode key={i} text={part.slice(1, -1)} />;
-    if (part.startsWith("**") && part.endsWith("**")) return <b key={i}>{part.slice(2, -2)}</b>;
-    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return <em key={i}>{part.slice(1, -1)}</em>;
-    return <Fragment key={i}>{part}</Fragment>;
-  });
-}
+const BLOCK: Components = {
+  // Fenced code renders as plain preformatted text; `code` below only ever sees inline spans.
+  pre: ({ node }) => <pre className="md-pre">{node ? textOf(node).replace(/\n$/, "") : null}</pre>,
+  code: ({ children }) => <InlineCode text={String(children)} />,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+};
 
-const ITEM = /^(\s*)([-*]|\d+\.)\s+(.*)$/;
-const indent = (l: string) => l.length - l.trimStart().length;
+const plugins = [remarkGfm];
 
-/** Block markdown: paragraphs, nested bullet/numbered lists, fenced code, headings (as bold). */
+/** Block markdown: paragraphs, headings, nested lists, fenced code, links, tables, blockquotes. */
 export function Markdown({ text }: { text: string }) {
-  return <div className="md">{blocks(text.replace(/\r\n/g, "\n").split("\n"))}</div>;
+  return (
+    <div className="md">
+      <ReactMarkdown remarkPlugins={plugins} components={BLOCK}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
-function blocks(lines: string[]): ReactNode[] {
-  const out: ReactNode[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (line.trimStart().startsWith("```")) {
-      const body: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].trimStart().startsWith("```")) body.push(lines[i++]);
-      i++;
-      out.push(
-        <pre key={out.length} className="md-pre">
-          {body.join("\n")}
-        </pre>,
-      );
-      continue;
-    }
-    const m = line.match(ITEM);
-    if (m) {
-      const base = m[1].length;
-      const ordered = /\d/.test(m[2]);
-      const items: { text: string; sub: string[] }[] = [];
-      while (i < lines.length) {
-        const im = lines[i].match(ITEM);
-        if (!im || im[1].length !== base || /\d/.test(im[2]) !== ordered) break;
-        const sub: string[] = [];
-        i++;
-        // Deeper-indented lines (sub-lists, continuations) belong to this item, even across blank lines.
-        for (let j = i; j < lines.length; j++) {
-          if (!lines[j].trim()) continue;
-          if (indent(lines[j]) <= base) break;
-          sub.push(...lines.slice(i, j + 1));
-          i = j + 1;
-        }
-        items.push({ text: im[3], sub });
-        // A blank line between items doesn't end the list (the model writes "1. …\n\n2. …").
-        let j = i;
-        while (j < lines.length && !lines[j].trim()) j++;
-        const nm = lines[j]?.match(ITEM);
-        if (nm && nm[1].length === base && /\d/.test(nm[2]) === ordered) i = j;
-      }
-      const n = ordered ? parseInt(m[2], 10) : 1;
-      const L = ordered ? "ol" : "ul";
-      out.push(
-        <L key={out.length} start={n !== 1 ? n : undefined}>
-          {items.map((it, k) => (
-            <li key={k}>
-              {inline(it.text)}
-              {it.sub.length > 0 && blocks(dedent(it.sub))}
-            </li>
-          ))}
-        </L>,
-      );
-      continue;
-    }
-    if (!line.trim()) {
-      i++;
-      continue;
-    }
-    const para: string[] = [];
-    while (i < lines.length && lines[i].trim() && !lines[i].trimStart().startsWith("```") && !ITEM.test(lines[i]))
-      para.push(lines[i++].trim());
-    const head = para[0].match(/^#{1,6}\s+(.*)/);
-    out.push(
-      head ? (
-        <p key={out.length}>
-          <b>{inline(head[1])}</b>
-        </p>
-      ) : (
-        <p key={out.length}>{inline(para.join(" "))}</p>
-      ),
-    );
-  }
-  return out;
-}
+const INLINE: Components = { ...BLOCK, p: ({ children }) => <Fragment>{children}</Fragment> };
+const INLINE_TAGS = ["p", "code", "strong", "em", "del", "a"];
 
-function dedent(lines: string[]): string[] {
-  const d = Math.min(...lines.filter((l) => l.trim()).map(indent));
-  return lines.map((l) => l.slice(d));
+/** One line of markdown inside an existing element: inline formatting only, no wrapping paragraph. */
+export function Inline({ text }: { text: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={plugins} components={INLINE} allowedElements={INLINE_TAGS} unwrapDisallowed>
+      {text}
+    </ReactMarkdown>
+  );
 }
