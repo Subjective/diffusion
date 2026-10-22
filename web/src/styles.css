@@ -551,13 +551,19 @@ code {
 
 /* ---------- diff pane ---------- */
 .diffpane {
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   position: relative;
 }
+.diff-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
 .toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 4;
+  flex: none;
   height: 44px;
   display: flex;
   align-items: center;
@@ -583,7 +589,7 @@ code {
 }
 .file-h {
   position: sticky;
-  top: 44px;
+  top: 0;
   z-index: 3;
   height: 40px;
   display: flex;

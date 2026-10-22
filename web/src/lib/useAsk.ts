@@ -40,7 +40,7 @@ export function useAsk() {
   useEffect(() => {
     // Listen on the document: the diff pane mounts only after the PR loads.
     const inDiff = (e: Event) => !!(e.target as HTMLElement | null)?.closest?.(".diffpane");
-    const pane = () => document.querySelector<HTMLElement>(".diffpane");
+    const pane = () => document.querySelector<HTMLElement>(".diff-scroll");
 
     const paint = (x: number, y: number) => {
       const d = drag.current!;
@@ -62,7 +62,7 @@ export function useAsk() {
       const p = pane();
       if (!d || !p) return;
       const b = p.getBoundingClientRect();
-      const dy = d.y < b.top + 110 ? -14 : d.y > b.bottom - 40 ? 14 : 0;
+      const dy = d.y < b.top + 66 ? -14 : d.y > b.bottom - 40 ? 14 : 0;
       if (dy) {
         p.scrollTop += dy;
         paint(d.x, d.y);

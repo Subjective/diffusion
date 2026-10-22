@@ -113,15 +113,17 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
           {ic(ChevronsDownUp, 15)}
         </button>
       </div>
-      <div className={`files${hideSkip ? " hide-skip" : ""}`}>
-        {ordered.map((f) => (
-          <FileDiff
-            key={f.path}
-            file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
-            steps={fileSteps.get(f.path) ?? []}
-            gutter={gutter}
-          />
-        ))}
+      <div className="diff-scroll">
+        <div className={`files${hideSkip ? " hide-skip" : ""}`}>
+          {ordered.map((f) => (
+            <FileDiff
+              key={f.path}
+              file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
+              steps={fileSteps.get(f.path) ?? []}
+              gutter={gutter}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );
