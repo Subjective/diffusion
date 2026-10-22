@@ -30,7 +30,7 @@ export function guideOrder(files: FD[], guide: Guide | null): FD[] {
 export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
   const { files, guide } = useApp();
   const { order, setOrder, hideSkip, toggleHideSkip, collapseAll, scrollTo } = useUI();
-  const pane = useRef<HTMLElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
 
   const idx = useMemo(() => indexFiles(files), [files]);
   const skipFiles = useMemo(
@@ -69,13 +69,11 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
     if (!scrollTo) return;
     // wait a frame for expanded files to render
     requestAnimationFrame(() => {
-      const p = pane.current;
+      const p = scroller.current;
       const first = p?.querySelector<HTMLElement>(`tr[data-rk="${CSS.escape(scrollTo.keys[0])}"]`);
       if (!p || !first) return;
       const file = first.closest<HTMLElement>(".file");
-      const header =
-        (p.querySelector<HTMLElement>(".toolbar")?.offsetHeight ?? 0) +
-        (file?.querySelector<HTMLElement>(".file-h")?.offsetHeight ?? 0);
+      const header = file?.querySelector<HTMLElement>(".file-h")?.offsetHeight ?? 0;
       const top = focusScrollTop(
         measureRows(p, scrollTo.keys),
         file?.dataset.path ?? "",
@@ -91,56 +89,57 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
   const allCollapsed = useUI((s) => files.length > 0 && files.every((f) => s.collapsed[f.path]));
 
   return (
-    <div className="diffwrap">
-      <section
-        className="diffpane"
-        id="diffPane"
-        ref={pane}
-        onWheel={markDiffActivity}
-        onTouchMove={markDiffActivity}
-        onMouseDown={markDiffActivity}
-        onKeyDown={markDiffActivity}
-      >
-        <div className="toolbar">
-          <span className="grow" />
-          <button
-            type="button"
-            className="icon-btn sm on"
-            title={order === "guide" ? "Order: guide" : "Order: A–Z"}
-            onClick={() => setOrder(order === "guide" ? "alpha" : "guide")}
-          >
-            {ic(order === "guide" ? Route : ArrowDownAZ, 15)}
-          </button>
-          <button
-            type="button"
-            className={`icon-btn sm${hideSkip ? " on" : ""}`}
-            title="Hide skippable"
-            onClick={toggleHideSkip}
-          >
-            {ic(EyeOff, 15)}
-          </button>
-          <button
-            type="button"
-            className="icon-btn sm"
-            title={allCollapsed ? "Expand all" : "Collapse all"}
-            onClick={() => collapseAll(!allCollapsed, [...skipFiles])}
-          >
-            {ic(ChevronsDownUp, 15)}
-          </button>
+    <section
+      className="diffpane"
+      id="diffPane"
+      onWheel={markDiffActivity}
+      onTouchMove={markDiffActivity}
+      onMouseDown={markDiffActivity}
+      onKeyDown={markDiffActivity}
+    >
+      <div className="toolbar">
+        <span className="grow" />
+        <button
+          type="button"
+          className="icon-btn sm on"
+          title={order === "guide" ? "Order: guide" : "Order: A–Z"}
+          onClick={() => setOrder(order === "guide" ? "alpha" : "guide")}
+        >
+          {ic(order === "guide" ? Route : ArrowDownAZ, 15)}
+        </button>
+        <button
+          type="button"
+          className={`icon-btn sm${hideSkip ? " on" : ""}`}
+          title="Hide skippable"
+          onClick={toggleHideSkip}
+        >
+          {ic(EyeOff, 15)}
+        </button>
+        <button
+          type="button"
+          className="icon-btn sm"
+          title={allCollapsed ? "Expand all" : "Collapse all"}
+          onClick={() => collapseAll(!allCollapsed, [...skipFiles])}
+        >
+          {ic(ChevronsDownUp, 15)}
+        </button>
+      </div>
+      <div className="diffwrap">
+        <div className="diff-scroll" ref={scroller}>
+          <div className={`files${hideSkip ? " hide-skip" : ""}`}>
+            {ordered.map((f) => (
+              <FileDiff
+                key={f.path}
+                file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
+                steps={fileSteps.get(f.path) ?? []}
+                gutter={gutter}
+              />
+            ))}
+          </div>
         </div>
-        <div className={`files${hideSkip ? " hide-skip" : ""}`}>
-          {ordered.map((f) => (
-            <FileDiff
-              key={f.path}
-              file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
-              steps={fileSteps.get(f.path) ?? []}
-              gutter={gutter}
-            />
-          ))}
-        </div>
-      </section>
-      <ScrollMarks pane={pane} />
-    </div>
+        <ScrollMarks pane={scroller} />
+      </div>
+    </section>
   );
 }
 
