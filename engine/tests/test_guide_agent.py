@@ -4,7 +4,7 @@ import pytest
 
 from diffusion.agent import DoneEvent, ToolEvent, inline_refs
 from diffusion.github import PRMeta, PRRef
-from diffusion.guide_agent import GuideDone, GuideError, build_prompt, generate_guide
+from diffusion.guide_agent import MAX_CORRECTIONS, GuideDone, GuideError, build_prompt, generate_guide
 from diffusion.hunks import parse_diff
 from diffusion.schema import GuideDraft
 
@@ -37,11 +37,14 @@ def code_hunks(idx):
 
 
 class FakeRunner:
-    """Scripted agent: each call submits the next payload via the real submit_guide tool."""
+    """Scripted agent: each call submits its payloads in turn via the real submit_guide tool, stopping once
+    one is received, like a model that reads the tool's reply. ``None`` submits nothing."""
 
-    def __init__(self, *payloads):
-        self.payloads = list(payloads)
+    def __init__(self, *runs, error_on_reject=False):
+        self.runs = [r if isinstance(r, list) else [r] for r in runs]
         self.requests = []
+        self.replies = []
+        self.error_on_reject = error_on_reject  # like Codex, which ends the run on a rejected final output
 
     async def __call__(self, req):
         self.requests.append(req)
@@ -49,10 +52,16 @@ class FakeRunner:
         text = await tools["get_hunk"].handler({"ids": ["H1", "h99"]})
         assert "[H1]" in text and "[h99] unknown hunk" in text
         yield ToolEvent("mcp__diffusion__get_hunk", "Hunk H1")
-        payload = self.payloads.pop(0)
-        if payload is not None:
-            self.last_reply = await tools["submit_guide"].handler(payload)
-        yield DoneEvent(turns=3, cost_usd=0.01, is_error=False, session_id="sess-1")
+        reply = ""
+        for p in self.runs.pop(0):
+            if p is None:
+                break
+            reply = await tools["submit_guide"].handler(p)
+            self.replies.append(reply)
+            if reply == "received" or self.error_on_reject:
+                break
+        error = self.error_on_reject and reply.startswith("rejected")
+        yield DoneEvent(turns=3, cost_usd=0.01, is_error=error, session_id="sess-1", result=reply)
 
 
 def payload(refs):
@@ -91,11 +100,35 @@ async def test_happy_path(meta, checkout, idx):
     assert req.cwd == checkout.worktree and req.model == "m" and req.resume is None
 
 
-async def test_retry_on_bad_refs_resumes_session(meta, checkout, idx):
-    bad = payload([{"hunk": "H90"}, {"hunk": "H91"}, {"hunk": code_hunks(idx)[0]}])
-    good = payload([{"hunk": h} for h in code_hunks(idx)])
-    runner = FakeRunner(bad, good)
+def bad(idx):
+    return payload([{"hunk": "H90"}, {"hunk": code_hunks(idx)[0]}])
+
+
+def good(idx):
+    return payload([{"hunk": h} for h in code_hunks(idx)])
+
+
+async def test_bad_refs_are_sent_back_within_the_run(meta, checkout, idx):
+    runner = FakeRunner([bad(idx), good(idx)])
     done = (await collect(generate_guide(meta, checkout, idx, runner, "m")))[-1]
+    assert done.attempts == 2 and done.guide.validation.invalid_refs == 0
+    assert len(runner.requests) == 1
+    assert runner.replies[0].startswith("rejected") and "unknown hunk 'H90'" in runner.replies[0]
+    assert "uncovered hunks" in runner.replies[0]
+
+
+async def test_accepts_as_is_after_max_corrections(meta, checkout, idx):
+    runner = FakeRunner([bad(idx)] * (MAX_CORRECTIONS + 2))
+    done = (await collect(generate_guide(meta, checkout, idx, runner, "m")))[-1]
+    assert done.attempts == MAX_CORRECTIONS + 1 and runner.replies[-1] == "received"
+    assert done.guide.validation.invalid_refs == 1  # validator dropped what the model never fixed
+
+
+async def test_run_ending_with_correction_owed_is_resumed(meta, checkout, idx):
+    runner = FakeRunner(bad(idx), good(idx), error_on_reject=True)
+    evs = await collect(generate_guide(meta, checkout, idx, runner, "m"))
+    assert not any(isinstance(e, DoneEvent) and e.is_error for e in evs)
+    done = evs[-1]
     assert done.attempts == 2 and done.guide.validation.invalid_refs == 0
     assert runner.requests[1].resume == "sess-1"
     assert "unknown hunk 'H90'" in runner.requests[1].prompt
@@ -105,7 +138,7 @@ async def test_schema_errors_are_reported_back(meta, checkout, idx):
     runner = FakeRunner({"tldr": "t", "steps": []})
     with pytest.raises(GuideError):
         await collect(generate_guide(meta, checkout, idx, runner, "m"))
-    assert runner.last_reply.startswith("rejected")
+    assert runner.replies[0].startswith("rejected: schema")
 
 
 async def test_no_submission_raises(meta, checkout, idx):
@@ -113,10 +146,10 @@ async def test_no_submission_raises(meta, checkout, idx):
         await collect(generate_guide(meta, checkout, idx, FakeRunner(None), "m"))
 
 
-async def test_keeps_first_guide_if_retry_does_not_submit(meta, checkout, idx):
-    bad = payload([{"hunk": "H90"}, {"hunk": "H91"}, {"hunk": code_hunks(idx)[0]}])
-    done = (await collect(generate_guide(meta, checkout, idx, FakeRunner(bad, None), "m")))[-1]
-    assert done.guide.validation.invalid_refs == 2
+async def test_keeps_last_guide_if_resume_does_not_submit(meta, checkout, idx):
+    runner = FakeRunner(bad(idx), None, error_on_reject=True)
+    done = (await collect(generate_guide(meta, checkout, idx, runner, "m")))[-1]
+    assert done.guide.validation.invalid_refs == 1 and len(runner.requests) == 2
 
 
 @pytest.mark.live
