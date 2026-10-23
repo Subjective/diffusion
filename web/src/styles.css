@@ -527,9 +527,6 @@ code {
 .gen-row.cur .dot-i {
   border-color: var(--subtle);
 }
-.gen-row.done .dot-i {
-  color: var(--brand);
-}
 .gen-row .spin {
   margin-left: auto;
   animation: spin 0.8s linear infinite;

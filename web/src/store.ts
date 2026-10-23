@@ -1,9 +1,8 @@
 import { create } from "zustand";
 import { fetchPR, streamGuide } from "./api";
 import { storage } from "./lib/storage";
-import type { FileDiff, Guide, PRMeta, Stage } from "./types";
+import type { FileDiff, Guide, PRMeta } from "./types";
 
-export type StageStatus = "pending" | "active" | "done";
 export interface ToolActivity {
   name: string;
   summary: string;
@@ -20,7 +19,6 @@ interface State {
   files: FileDiff[];
   guide: Guide | null;
   generating: boolean;
-  stages: Record<Stage, StageStatus>;
   tools: ToolActivity[];
 
   setUrl(url: string): void;
@@ -30,11 +28,6 @@ interface State {
   generate(force?: boolean): Promise<void>;
 }
 
-const initialStages = (): Record<Stage, StageStatus> => ({
-  fetch: "pending",
-  hunks: "pending",
-  explore: "pending",
-});
 let abort: AbortController | null = null;
 
 const urlParam = () => new URLSearchParams(location.search).get("pr") ?? "";
@@ -50,7 +43,6 @@ export const useApp = create<State>((set, get) => ({
   files: [],
   guide: null,
   generating: false,
-  stages: initialStages(),
   tools: [],
 
   setUrl: (url) => set({ url }),
@@ -69,7 +61,7 @@ export const useApp = create<State>((set, get) => ({
     url = (url ?? get().url).trim();
     if (!url) return;
     abort?.abort();
-    set({ url, loading: true, error: null, guide: null, generating: false, stages: initialStages(), tools: [] });
+    set({ url, loading: true, error: null, guide: null, generating: false, tools: [] });
     storage.set("rv-url", url);
     const q = new URLSearchParams(location.search);
     q.set("pr", url);
@@ -87,23 +79,14 @@ export const useApp = create<State>((set, get) => ({
     const { url } = get();
     abort?.abort();
     abort = new AbortController();
-    set({ generating: true, error: null, stages: { ...initialStages(), fetch: "active" }, tools: [] });
+    set({ generating: true, error: null, tools: [] });
     try {
       await streamGuide(
         url,
         force,
         ({ event, data }) => {
           const d = data as Record<string, unknown>;
-          if (event === "stage") {
-            const stage = d.stage as Stage;
-            set((s) => {
-              const stages = { ...s.stages, [stage]: d.status as StageStatus };
-              const order: Stage[] = ["fetch", "hunks", "explore"];
-              const next = order[order.indexOf(stage) + 1];
-              if (d.status === "done" && next && stages[next] === "pending") stages[next] = "active";
-              return { stages };
-            });
-          } else if (event === "tool") {
+          if (event === "tool") {
             set((s) => ({ tools: [...s.tools, d as unknown as ToolActivity] }));
           } else if (event === "guide") {
             set({ guide: d as unknown as Guide, generating: false });

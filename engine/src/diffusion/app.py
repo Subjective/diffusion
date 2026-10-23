@@ -266,12 +266,6 @@ def _web_dist() -> Path | None:
 
 async def run_guide(deps: Deps, prep: Prepared, emit: Emit) -> None:
     t0 = time.monotonic()
-    emit("stage", {"stage": "fetch", "status": "done"})
-    emit(
-        "stage",
-        {"stage": "hunks", "status": "done", "files": len(prep.index.files), "hunks": len(prep.index.hunks)},
-    )
-    emit("stage", {"stage": "explore", "status": "active"})
     done: GuideDone | None = None
     async for ev in generate_guide(
         prep.meta, prep.checkout, prep.index, deps.runner, deps.cfg.guide_model, deps.cfg.max_turns
@@ -283,7 +277,6 @@ async def run_guide(deps: Deps, prep: Prepared, emit: Emit) -> None:
         elif isinstance(ev, GuideDone):
             done = ev
     assert done is not None
-    emit("stage", {"stage": "explore", "status": "done"})
     record = {
         **done.guide.model_dump(by_alias=True),
         "meta": {

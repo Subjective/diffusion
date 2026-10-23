@@ -100,7 +100,6 @@ async def test_guide_stream_order_reattach_and_cache(setup):
     a, b = await first, await second
 
     names = [e for e, _ in a]
-    assert names[:3] == ["stage", "stage", "stage"]
     assert "tool" in names and names[-1] == "guide"
     assert a == b
     assert runner.calls == 1

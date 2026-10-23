@@ -7,10 +7,8 @@ import {
   FileCode,
   GitPullRequest,
   Info,
-  Layers,
   ListOrdered,
   LoaderCircle,
-  type LucideIcon,
   MessageCircle,
   Sparkles,
   Workflow,
@@ -23,7 +21,7 @@ import { GUIDE_W, startResize } from "../lib/panes";
 import { refLabel } from "../lib/refs";
 import { storage } from "../lib/storage";
 import { useApp } from "../store";
-import type { Stage, Step } from "../types";
+import type { Step } from "../types";
 import { useUI } from "../ui";
 import { FlowGraph } from "./FlowGraph";
 import { CONTEXT_ICON, ic, SKIP_ICON, STEP_ICON } from "./icons";
@@ -157,27 +155,16 @@ function Header() {
   );
 }
 
-const PIPE: [Stage, LucideIcon, string][] = [
-  ["fetch", GitPullRequest, "Fetch PR"],
-  ["hunks", Layers, "Split hunks"],
-  ["explore", Sparkles, "Read & plan"],
-];
-
 function Generating() {
-  const { stages, tools } = useApp();
+  const tools = useApp((s) => s.tools);
   const recent = tools.slice(-6);
   return (
     <div className="gen">
-      {PIPE.map(([stage, Icon, label]) => {
-        const st = stages[stage];
-        return (
-          <div key={stage} className={`gen-row${st === "done" ? " done" : st === "active" ? " cur" : ""}`}>
-            <span className="dot-i">{ic(st === "done" ? Check : Icon, 15)}</span>
-            {label}
-            {st === "active" && <span className="spin">{ic(LoaderCircle, 15)}</span>}
-          </div>
-        );
-      })}
+      <div className="gen-row cur">
+        <span className="dot-i">{ic(Sparkles, 15)}</span>
+        Read & plan
+        <span className="spin">{ic(LoaderCircle, 15)}</span>
+      </div>
       {recent.length > 0 && (
         <div className="tool-log">
           {recent.map((t, i) => (
