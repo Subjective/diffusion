@@ -106,4 +106,4 @@ export interface PRPayload {
   guide: Guide | null;
 }
 
-export type Stage = "fetch" | "hunks" | "explore" | "validate";
+export type Stage = "fetch" | "hunks" | "explore";

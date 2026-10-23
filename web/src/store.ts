@@ -34,7 +34,6 @@ const initialStages = (): Record<Stage, StageStatus> => ({
   fetch: "pending",
   hunks: "pending",
   explore: "pending",
-  validate: "pending",
 });
 let abort: AbortController | null = null;
 
@@ -99,7 +98,7 @@ export const useApp = create<State>((set, get) => ({
             const stage = d.stage as Stage;
             set((s) => {
               const stages = { ...s.stages, [stage]: d.status as StageStatus };
-              const order: Stage[] = ["fetch", "hunks", "explore", "validate"];
+              const order: Stage[] = ["fetch", "hunks", "explore"];
               const next = order[order.indexOf(stage) + 1];
               if (d.status === "done" && next && stages[next] === "pending") stages[next] = "active";
               return { stages };

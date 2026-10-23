@@ -284,7 +284,6 @@ async def run_guide(deps: Deps, prep: Prepared, emit: Emit) -> None:
             done = ev
     assert done is not None
     emit("stage", {"stage": "explore", "status": "done"})
-    emit("stage", {"stage": "validate", "status": "done"})
     record = {
         **done.guide.model_dump(by_alias=True),
         "meta": {

@@ -12,7 +12,6 @@ import {
   LoaderCircle,
   type LucideIcon,
   MessageCircle,
-  ShieldCheck,
   Sparkles,
   Workflow,
   Zap,
@@ -162,7 +161,6 @@ const PIPE: [Stage, LucideIcon, string][] = [
   ["fetch", GitPullRequest, "Fetch PR"],
   ["hunks", Layers, "Split hunks"],
   ["explore", Sparkles, "Read & plan"],
-  ["validate", ShieldCheck, "Validate refs"],
 ];
 
 function Generating() {
