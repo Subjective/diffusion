@@ -178,3 +178,23 @@ def test_secrets_never_shown(home):
     )
     assert "sk-secret-value" not in repr(api) and "sk-secret-value" not in str(api.describe())
     assert mask("sk-secret-value").startswith("sk-s…")
+
+
+def test_pinned_backend_beats_api_keys_and_config_default(home):
+    write_cfg(home, PROFILES)
+    keys = {"ANTHROPIC_API_KEY": "a", "OPENROUTER_API_KEY": "r"}
+    cfg = load_config(env(home, **keys), backend="claude-code")
+    assert (cfg.backend, cfg.profile, cfg.api_key) == ("claude-code", "claude-code", None)
+    assert "pinned" in cfg.source
+    assert load_config(env(home, DIFFUSION_BACKEND="codex", **keys)).backend == "codex"
+
+
+def test_named_profile_beats_pinned_backend(home):
+    write_cfg(home, PROFILES)
+    cfg = load_config(env(home, OPENROUTER_API_KEY="r"), profile="or", backend="claude-code")
+    assert (cfg.profile, cfg.backend) == ("or", "api")
+
+
+def test_only_cli_backends_can_be_pinned(home):
+    with pytest.raises(ConfigError, match="Can't pin backend 'api'"):
+        load_config(env(home, ANTHROPIC_API_KEY="a"), backend="api")

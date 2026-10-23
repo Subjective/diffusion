@@ -12,6 +12,7 @@ from diffusion.sample import build_sample_repo
 
 DIFFUSION_ENV = (
     "DIFFUSION_CONFIG", "DIFFUSION_PROFILE", "DIFFUSION_CACHE_DIR", "DIFFUSION_CLI", "DIFFUSION_GUIDE_MODEL", "DIFFUSION_CHAT_MODEL",
+    "DIFFUSION_BACKEND",
 )  # fmt: skip
 
 
