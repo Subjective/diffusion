@@ -1374,3 +1374,23 @@ tr.gap td.exp {
   color: var(--hl-bar);
   background: var(--hl);
 }
+tr.gap {
+  cursor: pointer;
+}
+tr.gap.err {
+  cursor: default;
+}
+.exp-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  color: var(--subtle);
+  font: inherit;
+}
+tr.gap:not(.err):hover .exp-all {
+  color: var(--hl-bar);
+}
+tr.gap .sym {
+  margin-left: 16px;
+}

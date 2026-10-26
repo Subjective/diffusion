@@ -220,7 +220,8 @@ interface GapProps {
   hunk?: Hunk;
 }
 
-/** Revealed lines below the previous hunk, the expander (with the next hunk's header), then lines above the next hunk. */
+/** Revealed lines below the previous hunk, the expander, then lines above the next hunk. The row opens the whole
+ *  gap; on long gaps, arrows reveal 20 lines at a time from either side. */
 function GapRows({ gap, index, count, rev, text, error, onExpand, path, gutter, hunk }: GapProps) {
   const shown = shownLines(gap, text ? rev : NONE, text?.lines.length ?? null);
   const lead = index === 0;
@@ -230,29 +231,46 @@ function GapRows({ gap, index, count, rev, text, error, onExpand, path, gutter, 
     return lead && hunk ? <HunkHeader hunk={hunk} /> : null;
 
   const ctx = (n: number) => <ContextRow key={n} n={n} delta={gap.delta} path={path} text={text} gutter={gutter} />;
-  const btn = (dir: Dir, icon: typeof ChevronUp, title: string) => (
-    <button type="button" className="exp-btn" title={title} onClick={() => onExpand(index, dir)}>
+  const hidden = shown.hidden;
+  const label = hidden == null ? "" : `${hidden}${tail ? " more" : ""} line${hidden === 1 ? "" : "s"}`;
+  const step = (dir: Dir, icon: typeof ChevronUp) => (
+    <button
+      type="button"
+      className="exp-btn"
+      title={`Show ${STEP} lines`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onExpand(index, dir);
+      }}
+    >
       {ic(icon, 15)}
     </button>
   );
-  const hidden = shown.hidden;
-  const lines = hidden == null ? "" : ` (${hidden} line${hidden === 1 ? "" : "s"})`;
   return (
     <>
       {shown.top.map(ctx)}
       {hidden !== 0 && (
-        <tr className="hh gap" data-hunk={hunk?.id}>
-          <td colSpan={3} className="exp" title={error ?? undefined}>
-            {error ? null : hidden != null && hidden <= STEP ? (
-              btn("all", UnfoldVertical, `Show hidden lines${lines}`)
-            ) : (
+        <tr
+          className={`hh gap${error ? " err" : ""}`}
+          data-hunk={hunk?.id}
+          title={error ?? undefined}
+          onClick={error ? undefined : () => onExpand(index, "all")}
+        >
+          <td colSpan={3} className="exp">
+            {!error && (hidden == null || hidden > STEP) && (
               <>
-                {!lead && btn("down", ChevronDown, `Show ${STEP} more lines${lines}`)}
-                {!tail && btn("up", ChevronUp, `Show ${STEP} more lines${lines}`)}
+                {!lead && step("down", ChevronDown)}
+                {!tail && step("up", ChevronUp)}
               </>
             )}
           </td>
-          <td>{hunk && headerText(hunk)}</td>
+          <td>
+            <button type="button" className="exp-all" title="Show all" disabled={!!error}>
+              {ic(UnfoldVertical, 14)}
+              {label}
+            </button>
+            {hunk?.symbol && <span className="sym">{hunk.symbol}</span>}
+          </td>
         </tr>
       )}
       {shown.bottom.map(ctx)}

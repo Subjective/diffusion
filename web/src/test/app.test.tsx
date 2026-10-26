@@ -137,8 +137,10 @@ test("expanding a gap fetches the file and reveals numbered context rows", async
   await waitFor(() => expect(ctxNums().length).toBe(before + 20));
   expect(ctxNums().slice(-20)[0]).toBe("6/9");
   expect(file().querySelector('tr[data-rk="src/auth/session.ts:28"] .src')!.textContent).toBe("line 28");
-  // 12 lines left: one click shows them all and the expander goes away
-  fireEvent.click(file().querySelector("tr.gap .exp-btn")!);
+  // 12 lines left: no more arrows; the row itself opens the rest and goes away
+  expect(file().querySelector("tr.gap .exp-btn")).toBeNull();
+  expect(file().querySelector("tr.gap .exp-all")!.textContent).toBe("12 more lines");
+  fireEvent.click(file().querySelector("tr.gap")!);
   await waitFor(() => expect(ctxNums().at(-1)).toBe("37/40"));
   expect(file().querySelectorAll("tr.gap")).toHaveLength(0);
 });
