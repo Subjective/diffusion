@@ -15,6 +15,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect } from "react";
+import { describeActivity } from "../lib/activity";
 import { readingOrder, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { Inline } from "../lib/md";
 import { GUIDE_W, startResize } from "../lib/panes";
@@ -156,24 +157,19 @@ function Header() {
 }
 
 function Generating() {
-  const tools = useApp((s) => s.tools);
-  const recent = tools.slice(-6);
+  const now = useApp((s) => describeActivity(s.tools, s.files));
   return (
     <div className="gen">
       <div className="gen-row cur">
         <span className="dot-i">{ic(Sparkles, 15)}</span>
-        Read & plan
+        <span className="gen-text">
+          Read & plan
+          <span key={now} className="gen-now">
+            {now}
+          </span>
+        </span>
         <span className="spin">{ic(LoaderCircle, 15)}</span>
       </div>
-      {recent.length > 0 && (
-        <div className="tool-log">
-          {recent.map((t, i) => (
-            <span key={tools.length - recent.length + i} className="tool-chip">
-              {t.summary}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
