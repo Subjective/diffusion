@@ -2,8 +2,16 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { payload } from "./fixture";
 
-vi.mock("../lib/highlight", () => ({ langFor: () => null, highlightHunk: async () => new Map() }));
-vi.mock("../api", () => ({ fetchPR: vi.fn(async () => payload), streamGuide: vi.fn() }));
+vi.mock("../lib/highlight", () => ({
+  langFor: () => null,
+  highlightHunk: async () => new Map(),
+  highlightLines: async () => [],
+}));
+vi.mock("../api", () => ({
+  fetchPR: vi.fn(async () => payload),
+  streamGuide: vi.fn(),
+  fetchFile: vi.fn(async () => Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")),
+}));
 
 const { App } = await import("../App");
 const { useApp } = await import("../store");
@@ -115,4 +123,35 @@ test("notes with refs link to lines", async () => {
   expect(nums(".hl")).toEqual(["session.ts:6", "session.ts:7"]);
   fireEvent.click(note);
   expect(document.querySelectorAll("tr.ln.flash").length).toBe(2);
+});
+
+test("expanding a gap fetches the file and reveals numbered context rows", async () => {
+  await mount();
+  const file = () => document.querySelector<HTMLElement>('.file[data-path="src/auth/session.ts"]')!;
+  const ctxNums = () =>
+    [...file().querySelectorAll<HTMLElement>("tr.ln.ctx")].map((r) => `${r.dataset.old}/${r.dataset.new}`);
+  const before = ctxNums().length;
+  // the hunk starts at line 1, so the only expander is the one after it
+  expect(file().querySelectorAll("tr.gap")).toHaveLength(1);
+  fireEvent.click(file().querySelector("tr.gap .exp-btn")!);
+  await waitFor(() => expect(ctxNums().length).toBe(before + 20));
+  expect(ctxNums().slice(-20)[0]).toBe("6/9");
+  expect(file().querySelector('tr[data-rk="src/auth/session.ts:28"] .src')!.textContent).toBe("line 28");
+  // 12 lines left: one click shows them all and the expander goes away
+  fireEvent.click(file().querySelector("tr.gap .exp-btn")!);
+  await waitFor(() => expect(ctxNums().at(-1)).toBe("37/40"));
+  expect(file().querySelectorAll("tr.gap")).toHaveLength(0);
+});
+
+test("full file toggle shows every line, then folds back to the hunks", async () => {
+  await mount();
+  const file = () => document.querySelector<HTMLElement>('.file[data-path="src/auth/types.ts"]')!;
+  const toggle = () =>
+    file().querySelector<HTMLElement>(
+      '.file-h button[title="Show full file"], .file-h button[title="Show changes only"]',
+    )!;
+  fireEvent.click(toggle());
+  await waitFor(() => expect(file().querySelectorAll("tr.ln")).toHaveLength(40));
+  fireEvent.click(toggle());
+  expect(file().querySelectorAll("tr.ln")).toHaveLength(3);
 });
