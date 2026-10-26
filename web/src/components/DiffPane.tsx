@@ -1,5 +1,6 @@
 import { ArrowDownAZ, ChevronsDownUp, EyeOff, Route } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { backStack, wordAtPoint } from "../lib/definition";
 import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
 import { useApp } from "../store";
@@ -85,6 +86,37 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
     });
   }, [scrollTo]);
 
+  // Go to definition: ⌘/Ctrl-click a name. Holding the key underlines names; ⌘[ returns from a jump.
+  useEffect(() => {
+    const mod = (e: KeyboardEvent) => document.body.classList.toggle("nav-mod", e.metaKey || e.ctrlKey);
+    const onKey = (e: KeyboardEvent) => {
+      mod(e);
+      if ((e.metaKey || e.ctrlKey) && e.key === "[" && backStack.length) {
+        e.preventDefault();
+        scroller.current?.scrollTo({ top: backStack.pop(), behavior: "smooth" });
+      }
+    };
+    const off = () => document.body.classList.remove("nav-mod");
+    addEventListener("keydown", onKey);
+    addEventListener("keyup", mod);
+    addEventListener("blur", off);
+    return () => {
+      removeEventListener("keydown", onKey);
+      removeEventListener("keyup", mod);
+      removeEventListener("blur", off);
+    };
+  }, []);
+  const onNavClick = (e: React.MouseEvent) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const row = (e.target as HTMLElement).closest<HTMLElement>("tr.ln");
+    if (!row || !(e.target as HTMLElement).closest(".src")) return;
+    const symbol = wordAtPoint(e.clientX, e.clientY) ?? (e.target as HTMLElement).textContent?.trim();
+    if (!symbol || !/^[A-Za-z_$][\w$]*$/.test(symbol)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    useUI.getState().setPeek({ rk: row.dataset.rk!, file: row.dataset.file!, symbol });
+  };
+
   const gutter: Gutter = useMemo(() => ({ dots, extras }), [dots, extras]);
   const allCollapsed = useUI((s) => files.length > 0 && files.every((f) => s.collapsed[f.path]));
 
@@ -125,7 +157,7 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
         </button>
       </div>
       <div className="diffwrap">
-        <div className="diff-scroll" ref={scroller}>
+        <div className="diff-scroll" ref={scroller} onClickCapture={onNavClick}>
           <div className={`files${hideSkip ? " hide-skip" : ""}`}>
             {ordered.map((f) => (
               <FileDiff

@@ -27,6 +27,8 @@ interface UI {
   hoverSub: number | null;
   pinStep: number | null;
   pinSub: number | null;
+  /** Go-to-definition preview under a row. */
+  peek: Peek | null;
 
   init(prKey: string, defaultsCollapsed: Record<string, boolean>): void;
   toggleCollapsed(path: string, value?: boolean): void;
@@ -39,6 +41,13 @@ interface UI {
   setHover(keys: string[], step?: number | null, sub?: number | null): void;
   focus(keys: string[], files: string[], step?: number | null, sub?: number | null): void;
   clearPin(): void;
+  setPeek(p: Peek | null): void;
+}
+
+export interface Peek {
+  rk: string;
+  file: string;
+  symbol: string;
 }
 
 const persist = (k: string, s: Pick<UI, "viewed" | "readSteps">) =>
@@ -59,6 +68,7 @@ export const useUI = create<UI>((set, get) => ({
   hoverSub: null,
   pinStep: null,
   pinSub: null,
+  peek: null,
 
   init(prKey, defaultsCollapsed) {
     const saved = storage.get(`rv-ui:${prKey}`, { viewed: {}, readSteps: {} });
@@ -136,4 +146,5 @@ export const useUI = create<UI>((set, get) => ({
     });
   },
   clearPin: () => set({ pinStep: null, pinSub: null, pinRows: new Set() }),
+  setPeek: (peek) => set({ peek }),
 }));
