@@ -133,6 +133,27 @@ test("notes with refs link to lines", async () => {
   expect(document.querySelectorAll("tr.ln.flash").length).toBe(2);
 });
 
+test("file list toggles, groups by directory, and opens a picked file", async () => {
+  await mount();
+  expect(document.querySelector(".rail")).toBeNull();
+  fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
+  const rail = document.querySelector(".rail")!;
+  expect([...rail.querySelectorAll(".rail-dir")].map((d) => d.textContent)).toEqual(["src/auth/"]);
+  expect([...rail.querySelectorAll(".rail-f")].map((f) => f.querySelector(".nm")!.textContent)).toEqual([
+    "package-lock.json",
+    "session.ts",
+    "types.ts",
+  ]);
+  expect(rail.querySelector('[data-path="package-lock.json"]')!.classList.contains("skip")).toBe(true);
+  // picking a collapsed file opens it and marks it current
+  fireEvent.click(rail.querySelector('[data-path="package-lock.json"]')!);
+  await waitFor(() =>
+    expect(rail.querySelector('[data-path="package-lock.json"]')!.classList.contains("on")).toBe(true),
+  );
+  expect(document.querySelector('.file[data-path="package-lock.json"]')!.classList.contains("collapsed")).toBe(false);
+  expect(localStorage.getItem("rv-rail")).toBe("true");
+});
+
 test("expanding a gap fetches the file and reveals numbered context rows", async () => {
   await mount();
   const file = () => document.querySelector<HTMLElement>('.file[data-path="src/auth/session.ts"]')!;

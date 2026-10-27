@@ -1381,6 +1381,95 @@ body.resizing * {
   background: transparent;
 }
 
+/* ---------- file rail ---------- */
+.diffpane {
+  container-type: inline-size;
+}
+.diffpane .toolbar {
+  padding-left: 12px;
+}
+.diff-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.diff-body > .diffwrap {
+  flex: 1;
+  min-width: 0;
+}
+.rail {
+  flex: none;
+  width: 220px;
+  overflow-y: auto;
+  padding: 8px 8px 16px;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 13px;
+}
+.rail-g + .rail-g {
+  margin-top: 6px;
+}
+.rail-dir {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  color: var(--subtle);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rail-dir span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail-f {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: left;
+}
+.rail-f.nested {
+  padding-left: 27px;
+}
+.rail-f:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.rail-f.on {
+  background: var(--chip);
+  color: var(--text);
+  font-weight: 500;
+}
+.rail-f.viewed .nm,
+.rail-f.skip .nm {
+  color: var(--subtle);
+}
+.rail-f .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail-f .dot.sm {
+  flex: none;
+}
+/* Narrow diff: the rail floats over the code instead of squeezing it. */
+@container (max-width: 600px) {
+  .rail {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 5;
+    box-shadow: var(--shadow);
+  }
+}
+
 /* ---------- expand context ---------- */
 tr.gap td {
   padding-top: 0;
