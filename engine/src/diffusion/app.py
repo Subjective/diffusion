@@ -26,6 +26,7 @@ from .jobs import Emit, Jobs
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
+from .symbols import NAME, SymbolIndex
 
 PrepareFn = Callable[[Config, str], Prepared]
 MAX_FILE_CHARS = 2_000_000
@@ -95,6 +96,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
 
     _prepared: dict[str, Prepared] = {}
     chat_locks: dict[str, asyncio.Lock] = {}
+    symbols: dict[Path, SymbolIndex] = {}
+    symbol_locks: dict[Path, asyncio.Lock] = {}
 
     async def get_prepared(url: str, refresh: bool = False) -> Prepared:
         try:
@@ -161,6 +164,25 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         if len(text) > MAX_FILE_CHARS:
             raise HTTPException(413, f"{path} is too large to show in full")
         return {"path": path, "text": text}
+
+    @app.get("/api/definition")
+    async def definition(url: str, symbol: str, path: str) -> dict:
+        """Where `symbol` is defined at the PR head, nearest to `path` first, with each definition's source."""
+        if not NAME.match(symbol):
+            raise HTTPException(400, "Not a name")
+        prep = await get_prepared(url)
+        root = prep.checkout.worktree
+        async with symbol_locks.setdefault(root, asyncio.Lock()):
+            if root not in symbols:
+                symbols[root] = await asyncio.to_thread(SymbolIndex, root)
+        index = symbols[root]
+        found = index.lookup(symbol, path)
+        return {
+            "symbol": symbol,
+            "matches": [
+                {"path": m.path, "line": m.line, "end": m.end, "text": index.snippet(m)} for m in found
+            ],
+        }
 
     # ---------- chats ----------
 
