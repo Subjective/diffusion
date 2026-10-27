@@ -2,7 +2,11 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { vi } from "vitest";
 import { payload } from "./fixture";
 
-vi.mock("../lib/highlight", () => ({ langFor: () => null, highlightHunk: async () => new Map() }));
+vi.mock("../lib/highlight", () => ({
+  langFor: () => null,
+  highlightHunk: async () => new Map(),
+  highlightLines: async () => [],
+}));
 vi.mock("../api", () => ({ fetchPR: vi.fn(async () => payload), streamGuide: vi.fn() }));
 
 // Minimal fake engine for /api/chats*

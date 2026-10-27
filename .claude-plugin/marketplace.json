@@ -1,0 +1,16 @@
+{
+  "name": "diffusion",
+  "owner": {
+    "name": "Subjective"
+  },
+  "metadata": {
+    "description": "Diffusion: guided, linked review walkthroughs of pull requests."
+  },
+  "plugins": [
+    {
+      "name": "diffusion",
+      "source": "./plugins/diffusion",
+      "description": "Open a guided, linked review of a pull request or branch in Diffusion, running on your Claude Code login."
+    }
+  ]
+}

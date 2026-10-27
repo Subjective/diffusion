@@ -527,8 +527,31 @@ code {
 .gen-row.cur .dot-i {
   border-color: var(--subtle);
 }
-.gen-row.done .dot-i {
-  color: var(--brand);
+.gen-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.gen-now {
+  font-size: 12px;
+  color: transparent;
+  background: linear-gradient(90deg, var(--subtle) 40%, var(--text) 50%, var(--subtle) 60%) 0 0 / 300% 100%;
+  background-clip: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation:
+    fadeUp 0.25s both,
+    shimmer 2.4s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
 }
 .gen-row .spin {
   margin-left: auto;
@@ -565,16 +588,23 @@ code {
   grid-template-rows: minmax(0, 1fr);
 }
 .diff-scroll {
+  position: relative;
+  z-index: 1;
   min-height: 0;
   overflow: auto;
 }
+/* Opaque, so a mark under the thumb (a highlight already in view) gives way to it. */
+.diff-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(var(--border-strong), var(--border-strong)) var(--bg);
+  background-clip: content-box;
+}
+/* Sits under the scroller's transparent track, so the native thumb draws on top of the marks. */
 .scroll-marks {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
   width: 10px;
-  z-index: 5;
   pointer-events: none;
 }
 .scroll-marks span {
@@ -1438,4 +1468,48 @@ body.resizing * {
     z-index: 5;
     box-shadow: var(--shadow);
   }
+}
+
+/* ---------- expand context ---------- */
+tr.gap td {
+  padding-top: 0;
+  padding-bottom: 0;
+  height: 26px;
+  vertical-align: middle;
+}
+tr.gap td.exp {
+  padding: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+.exp-btn {
+  width: 36px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--muted);
+}
+.exp-btn:hover {
+  color: var(--hl-bar);
+  background: var(--hl);
+}
+tr.gap {
+  cursor: pointer;
+}
+tr.gap.err {
+  cursor: default;
+}
+.exp-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  color: var(--subtle);
+  font: inherit;
+}
+tr.gap:not(.err):hover .exp-all {
+  color: var(--hl-bar);
+}
+tr.gap .sym {
+  margin-left: 16px;
 }

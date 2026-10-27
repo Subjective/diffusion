@@ -1,7 +1,18 @@
-import { ChevronDown, Circle, CircleCheck, FileCode, MessageCircle } from "lucide-react";
-import { memo, type ReactNode, useEffect, useState } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Circle,
+  CircleCheck,
+  FileCode,
+  FoldVertical,
+  MessageCircle,
+  UnfoldVertical,
+} from "lucide-react";
+import { Fragment, memo, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type Gap, gapsOf, type Reveal, STEP, shownLines } from "../lib/expand";
 import { highlightHunk, type LineTokens, langFor } from "../lib/highlight";
 import { rowKey, rowsOfHunk } from "../lib/refs";
+import { type FileLines, useFileLines } from "../lib/useFileLines";
 import type { FileDiff as FD, Hunk } from "../types";
 import { useUI } from "../ui";
 import { ic, SKIP_ICON } from "./icons";
@@ -32,6 +43,36 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
   const dir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/") + 1) : "";
   const base = file.path.slice(dir.length);
   const Lead = file.skip ? SKIP_ICON[file.skip] : FileCode;
+  const lang = langFor(file.path);
+
+  // Unchanged lines around hunks, fetched on first expand. `full` shows every gap in full.
+  const expandable = !file.binary && file.status !== "deleted" && file.hunks.length > 0;
+  const gaps = useMemo(() => gapsOf(file.hunks), [file.hunks]);
+  const [reveal, setReveal] = useState<Record<number, Reveal>>({});
+  const [full, setFull] = useState(false);
+  const text = useFileLines(file.path, lang);
+  const revealOf = (i: number): Reveal => (full ? ALL : (reveal[i] ?? NONE));
+  const expand = (i: number, dir: Dir) => {
+    text.request();
+    setReveal((r) => {
+      const cur = r[i] ?? NONE;
+      const next =
+        dir === "all" ? ALL : dir === "down" ? { ...cur, top: cur.top + STEP } : { ...cur, bottom: cur.bottom + STEP };
+      return { ...r, [i]: next };
+    });
+  };
+  const gapProps = (i: number) => ({
+    gap: gaps[i],
+    index: i,
+    count: gaps.length,
+    rev: revealOf(i),
+    text: text.file,
+    error: text.error,
+    onExpand: expand,
+    path: file.path,
+    gutter,
+  });
+  const hasHidden = gaps.some((g) => g.end == null || g.end >= g.start);
 
   return (
     <section className={`file${file.skip ? " skip" : ""}${collapsed ? " collapsed" : ""}`} data-path={file.path}>
@@ -53,6 +94,21 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
           ))}
         </span>
         <span className="grow" />
+        {expandable && hasHidden && (
+          <button
+            type="button"
+            className={`icon-btn sm${full ? " on" : ""}`}
+            title={full ? "Show changes only" : "Show full file"}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (full) setReveal({});
+              else text.request();
+              setFull(!full);
+            }}
+          >
+            {ic(full ? FoldVertical : UnfoldVertical, 15)}
+          </button>
+        )}
         <button
           type="button"
           className={`icon-btn sm viewed${viewed ? " on" : ""}`}
@@ -76,9 +132,13 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
           ) : (
             <table className="diff">
               <tbody>
-                {file.hunks.map((h) => (
-                  <HunkRows key={h.id} hunk={h} lang={langFor(file.path)} gutter={gutter} />
+                {file.hunks.map((h, i) => (
+                  <Fragment key={h.id}>
+                    {expandable ? <GapRows {...gapProps(i)} hunk={h} /> : <HunkHeader hunk={h} />}
+                    <HunkRows hunk={h} lang={lang} gutter={gutter} />
+                  </Fragment>
                 ))}
+                {expandable && <GapRows {...gapProps(gaps.length - 1)} />}
               </tbody>
             </table>
           )}
@@ -105,11 +165,6 @@ function HunkRows({ hunk, lang, gutter }: { hunk: Hunk; lang: string | null; gut
   const rows = rowsOfHunk(hunk);
   return (
     <>
-      <tr className="hh" data-hunk={hunk.id}>
-        <td colSpan={4}>
-          @@ -{hunk.old_start},{hunk.old_len} +{hunk.new_start},{hunk.new_len} @@ <span>{hunk.symbol}</span>
-        </td>
-      </tr>
       {hunk.lines.map((ln, i) => {
         const r = rows[i];
         const key = rowKey(hunk.file, r.pos);
@@ -130,6 +185,126 @@ function HunkRows({ hunk, lang, gutter }: { hunk: Hunk; lang: string | null; gut
         );
       })}
     </>
+  );
+}
+
+const NONE: Reveal = { top: 0, bottom: 0 };
+const ALL: Reveal = { top: Number.POSITIVE_INFINITY, bottom: 0 };
+type Dir = "up" | "down" | "all";
+
+const headerText = (h: Hunk) => (
+  <>
+    @@ -{h.old_start},{h.old_len} +{h.new_start},{h.new_len} @@ <span>{h.symbol}</span>
+  </>
+);
+
+function HunkHeader({ hunk }: { hunk: Hunk }) {
+  return (
+    <tr className="hh" data-hunk={hunk.id}>
+      <td colSpan={4}>{headerText(hunk)}</td>
+    </tr>
+  );
+}
+
+interface GapProps {
+  gap: Gap;
+  index: number;
+  count: number;
+  rev: Reveal;
+  text: FileLines | null;
+  error: string | null;
+  onExpand(i: number, dir: Dir): void;
+  path: string;
+  gutter: Gutter;
+  /** The hunk after this gap; absent for the trailing gap. */
+  hunk?: Hunk;
+}
+
+/** Revealed lines below the previous hunk, the expander, then lines above the next hunk. The row opens the whole
+ *  gap; on long gaps, arrows reveal 20 lines at a time from either side. */
+function GapRows({ gap, index, count, rev, text, error, onExpand, path, gutter, hunk }: GapProps) {
+  const shown = shownLines(gap, text ? rev : NONE, text?.lines.length ?? null);
+  const lead = index === 0;
+  const tail = index === count - 1;
+  // Nothing hidden: hunks run together. A file's first hunk keeps its header for orientation.
+  if (shown.hidden === 0 && gap.end != null && gap.end < gap.start)
+    return lead && hunk ? <HunkHeader hunk={hunk} /> : null;
+
+  const ctx = (n: number) => <ContextRow key={n} n={n} delta={gap.delta} path={path} text={text} gutter={gutter} />;
+  const hidden = shown.hidden;
+  const label = hidden == null ? "" : `${hidden}${tail ? " more" : ""} line${hidden === 1 ? "" : "s"}`;
+  const step = (dir: Dir, icon: typeof ChevronUp) => (
+    <button
+      type="button"
+      className="exp-btn"
+      title={`Show ${STEP} lines`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onExpand(index, dir);
+      }}
+    >
+      {ic(icon, 15)}
+    </button>
+  );
+  return (
+    <>
+      {shown.top.map(ctx)}
+      {hidden !== 0 && (
+        <tr
+          className={`hh gap${error ? " err" : ""}`}
+          data-hunk={hunk?.id}
+          title={error ?? undefined}
+          onClick={error ? undefined : () => onExpand(index, "all")}
+        >
+          <td colSpan={3} className="exp">
+            {!error && (hidden == null || hidden > STEP) && (
+              <>
+                {!lead && step("down", ChevronDown)}
+                {!tail && step("up", ChevronUp)}
+              </>
+            )}
+          </td>
+          <td>
+            <button type="button" className="exp-all" title="Show all" disabled={!!error}>
+              {ic(UnfoldVertical, 14)}
+              {label}
+            </button>
+            {hunk?.symbol && <span className="sym">{hunk.symbol}</span>}
+          </td>
+        </tr>
+      )}
+      {shown.bottom.map(ctx)}
+    </>
+  );
+}
+
+function ContextRow({
+  n,
+  delta,
+  path,
+  text,
+  gutter,
+}: {
+  n: number;
+  delta: number;
+  path: string;
+  text: FileLines | null;
+  gutter: Gutter;
+}) {
+  const key = rowKey(path, n);
+  return (
+    <DiffRow
+      rk={key}
+      type="ctx"
+      old={n + delta}
+      nw={n}
+      text={text?.lines[n - 1] ?? ""}
+      tokens={text?.tokens[n - 1]}
+      dots={gutter.dots.get(key)}
+      extra={gutter.extras?.get(key)}
+      file={path}
+      pos={n}
+    />
   );
 }
 

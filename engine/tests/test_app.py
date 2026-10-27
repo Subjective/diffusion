@@ -79,6 +79,16 @@ async def test_pr_endpoint_returns_files_and_hunks(setup):
     assert by["src/auth/session.ts"]["hunks"][0]["id"].startswith("H")
 
 
+async def test_file_endpoint_serves_changed_files_at_head(setup):
+    client, *_ = setup
+    r = await client.get("/api/file", params={"url": URL, "path": "src/auth/types.ts"})
+    assert r.status_code == 200
+    assert r.json()["text"].count("expiresAt") == 1
+    # only files in the diff are served
+    r = await client.get("/api/file", params={"url": URL, "path": "README.md"})
+    assert r.status_code == 404
+
+
 async def test_bad_url_is_400(setup):
     client, *_ = setup
     r = await client.get("/api/pr", params={"url": "nope"})
@@ -100,7 +110,6 @@ async def test_guide_stream_order_reattach_and_cache(setup):
     a, b = await first, await second
 
     names = [e for e, _ in a]
-    assert names[:3] == ["stage", "stage", "stage"]
     assert "tool" in names and names[-1] == "guide"
     assert a == b
     assert runner.calls == 1

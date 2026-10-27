@@ -38,7 +38,7 @@ A software engineer reviewing a colleague's PR (or their own branch), often one 
 
 ## 4. Core flows
 
-1. **Generate.** Paste a PR URL, or `local:<repo>#<base>..<head>` for a local branch, and press generate. Progress shows the stages (fetch → split into hunks → read & plan → validate), and the guide replaces it when ready. Reloading the page reconnects to a job that's still running. The same PR at the same head SHA loads from the cache.
+1. **Generate.** Paste a PR URL, or `local:<repo>#<base>..<head>` for a local branch, and press generate. Progress shows the files the model is reading, and the guide replaces it when ready. Reloading the page reconnects to a job that's still running. The same PR at the same head SHA loads from the cache.
 2. **Read by steps.** Read the TL;DR and notes, scan the flow graph, then work through the steps in order. Larger steps break into substeps, each a specific piece of logic that may span several files or line ranges. Hovering a step or substep highlights its lines (a step highlights all of its substeps'). Clicking one scrolls there, expands any collapsed file, and pins the highlight. `j`/`k` walk steps and substeps in reading order. Steps can be marked read, with progress shown as `n/N`.
 3. **Skip noise.** Skippable files (lockfiles, snapshots, generated code, renames) are listed separately and collapsed in the diff, and can be hidden entirely.
 4. **Ask about lines.** Select text in the diff, or press and drag a line's bubble icon across several lines, then type a question in the popup.
