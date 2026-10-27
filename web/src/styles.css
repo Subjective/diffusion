@@ -565,16 +565,23 @@ code {
   grid-template-rows: minmax(0, 1fr);
 }
 .diff-scroll {
+  position: relative;
+  z-index: 1;
   min-height: 0;
   overflow: auto;
 }
+/* Opaque, so a mark under the thumb (a highlight already in view) gives way to it. */
+.diff-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(var(--border-strong), var(--border-strong)) var(--bg);
+  background-clip: content-box;
+}
+/* Sits under the scroller's transparent track, so the native thumb draws on top of the marks. */
 .scroll-marks {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
   width: 10px;
-  z-index: 5;
   pointer-events: none;
 }
 .scroll-marks span {
