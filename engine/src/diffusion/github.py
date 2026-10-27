@@ -7,7 +7,9 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.request
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -129,6 +131,15 @@ def _api_base(host: str) -> str:
     return "https://api.github.com" if host == "github.com" else f"https://{host}/api/v3"
 
 
+def _proxy_for(url: str) -> str | None:
+    """The proxy the environment sets for ``url`` (``HTTPS_PROXY``, minus ``NO_PROXY`` hosts). httpx ignores
+    these variables once it's given its own transport, so we pass the proxy to the transport ourselves."""
+    host = urlsplit(url).hostname or ""
+    if urllib.request.proxy_bypass(host):
+        return None
+    return urllib.request.getproxies().get(urlsplit(url).scheme)
+
+
 def _client(host: str, token: str | None, transport: httpx.BaseTransport | None = None) -> httpx.Client:
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "diffusion-review"}
     if token:
@@ -137,7 +148,8 @@ def _client(host: str, token: str | None, transport: httpx.BaseTransport | None 
         base_url=_api_base(host),
         headers=headers,
         timeout=30,
-        transport=transport or httpx.HTTPTransport(retries=2),  # retries connection failures only
+        # Retries connection failures only.
+        transport=transport or httpx.HTTPTransport(retries=2, proxy=_proxy_for(_api_base(host))),
     )
 
 

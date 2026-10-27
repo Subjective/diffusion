@@ -17,6 +17,12 @@ app = typer.Typer(no_args_is_help=True, add_completion=False)
 ProfileOpt = typer.Option(
     None, "--profile", "-p", help="Config profile (default: config file, then auto-detect)."
 )
+BackendOpt = typer.Option(
+    None,
+    "--backend",
+    help="Pin the model backend to claude-code or codex, using that CLI's own login, in place of the "
+    "config default and auto-detection.",
+)
 
 
 @app.callback()
@@ -24,9 +30,9 @@ def main() -> None:
     """Turn a pull request (or a local branch) into a guided, linked review walkthrough."""
 
 
-def _config(profile: str | None) -> Config:
+def _config(profile: str | None, backend: str | None = None) -> Config:
     try:
-        return load_config(profile=profile)
+        return load_config(profile=profile, backend=backend)
     except ConfigError as e:
         typer.secho(str(e), fg="red", err=True)
         raise typer.Exit(1) from e
@@ -207,16 +213,60 @@ def guide(
 def serve(
     port: int = typer.Option(8787, help="Port on 127.0.0.1."),
     profile: str = ProfileOpt,
+    backend: str = BackendOpt,
     reload: bool = typer.Option(False, help="Auto-reload on code changes (dev)."),
 ) -> None:
     """Run the local web UI and API on 127.0.0.1."""
     import uvicorn
 
-    cfg = _config(profile)  # fail fast on bad config
+    cfg = _config(profile, backend)  # fail fast on bad config
     if profile:
         os.environ["DIFFUSION_PROFILE"] = profile
+    if backend:
+        os.environ["DIFFUSION_BACKEND"] = backend
     _err(f"using {cfg.profile} ({cfg.backend}) · http://127.0.0.1:{port}")
     uvicorn.run("diffusion.app:create_app", factory=True, host="127.0.0.1", port=port, reload=reload)
+
+
+@app.command("open")
+def open_(
+    target: str = typer.Argument(
+        None, help="PR URL, or a repository directory (default: current directory)."
+    ),
+    base: str = typer.Option(None, help="Local mode: base ref (default: origin/HEAD, main, or master)."),
+    head: str = typer.Option(None, help="Local mode: head ref (default: HEAD)."),
+    port: int = typer.Option(8787, help="First port to try on 127.0.0.1."),
+    browser: bool = typer.Option(True, help="Open a browser (skipped over SSH or with no display)."),
+    profile: str = ProfileOpt,
+    backend: str = BackendOpt,
+) -> None:
+    """Open a review in the browser, starting the web UI in the background if it isn't running."""
+    import webbrowser
+
+    from .github import GitHubError, parse_pr_url
+    from .launcher import LaunchError, can_open_browser, find_or_start
+
+    cfg = _config(profile, backend)  # fail fast on bad config, before starting anything
+    resolved = resolve_target(target, base, head)
+    if not resolved.startswith("local:"):
+        try:
+            parse_pr_url(resolved)
+        except GitHubError as e:
+            raise typer.BadParameter(str(e)) from e
+    try:
+        server = find_or_start(port, cfg.cache_dir / "logs", backend, profile)
+    except LaunchError as e:
+        typer.secho(str(e), fg="red", err=True)
+        raise typer.Exit(1) from e
+
+    url = server.review_url(resolved)
+    how = f"started in the background (logs: {server.log})" if server.started else "already running"
+    typer.echo(f"Diffusion: {url}")
+    typer.echo(f"Server on port {server.port}, {how}; backend {server.backend}.")
+    if browser and can_open_browser() and webbrowser.open(url):
+        typer.echo("Opened in your browser; the guide starts generating there.")
+    else:
+        typer.echo("Open the link above in a browser; the guide starts generating when the page loads.")
 
 
 if __name__ == "__main__":
