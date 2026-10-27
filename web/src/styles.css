@@ -1380,3 +1380,47 @@ body.resizing * {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ---------- expand context ---------- */
+tr.gap td {
+  padding-top: 0;
+  padding-bottom: 0;
+  height: 26px;
+  vertical-align: middle;
+}
+tr.gap td.exp {
+  padding: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+.exp-btn {
+  width: 36px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--muted);
+}
+.exp-btn:hover {
+  color: var(--hl-bar);
+  background: var(--hl);
+}
+tr.gap {
+  cursor: pointer;
+}
+tr.gap.err {
+  cursor: default;
+}
+.exp-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  color: var(--subtle);
+  font: inherit;
+}
+tr.gap:not(.err):hover .exp-all {
+  color: var(--hl-bar);
+}
+tr.gap .sym {
+  margin-left: 16px;
+}
