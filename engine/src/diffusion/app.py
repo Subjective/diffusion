@@ -28,6 +28,7 @@ from .repo import RepoError
 from .store import Store
 
 PrepareFn = Callable[[Config, str], Prepared]
+MAX_FILE_CHARS = 2_000_000
 
 
 @dataclass
@@ -144,6 +145,22 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             deps.jobs.drop(job_key)
         job = deps.jobs.start(job_key, partial(run_guide, deps, prep))
         return sse_response(job.follow())
+
+    @app.get("/api/file")
+    async def file(url: str, path: str) -> dict:
+        """A changed file at the PR head, so the diff can show lines around and between hunks."""
+        prep = await get_prepared(url)
+        if path not in {f.path for f in prep.index.files}:
+            raise HTTPException(404, f"{path} isn't in this diff")
+        try:
+            text = await asyncio.to_thread(prep.checkout.file_at_head, path)
+        except UnicodeDecodeError as e:
+            raise HTTPException(415, f"{path} isn't text") from e
+        if text is None:
+            raise HTTPException(404, f"{path} doesn't exist at the head commit")
+        if len(text) > MAX_FILE_CHARS:
+            raise HTTPException(413, f"{path} is too large to show in full")
+        return {"path": path, "text": text}
 
     # ---------- chats ----------
 
