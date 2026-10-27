@@ -18,6 +18,7 @@ interface UI {
   readSteps: Record<number, boolean>;
   order: Order;
   hideSkip: boolean;
+  rail: boolean;
 
   hoverRows: Set<string>; // rowKey
   pinRows: Set<string>;
@@ -35,6 +36,7 @@ interface UI {
   toggleRead(step: number): void;
   setOrder(o: Order): void;
   toggleHideSkip(): void;
+  toggleRail(): void;
 
   setHover(keys: string[], step?: number | null, sub?: number | null): void;
   focus(keys: string[], files: string[], step?: number | null, sub?: number | null): void;
@@ -51,6 +53,7 @@ export const useUI = create<UI>((set, get) => ({
   readSteps: {},
   order: storage.get<Order>("rv-order", "guide"),
   hideSkip: false,
+  rail: storage.get("rv-rail", false),
   hoverRows: new Set(),
   pinRows: new Set(),
   flash: { keys: new Set(), n: 0 },
@@ -105,6 +108,11 @@ export const useUI = create<UI>((set, get) => ({
     set({ order });
   },
   toggleHideSkip: () => set((s) => ({ hideSkip: !s.hideSkip })),
+  toggleRail() {
+    const rail = !get().rail;
+    storage.set("rv-rail", rail);
+    set({ rail });
+  },
 
   setHover(keys, step = null, sub = null) {
     const s = get();

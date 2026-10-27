@@ -1,4 +1,4 @@
-import { ArrowDownAZ, ChevronsDownUp, EyeOff, Route } from "lucide-react";
+import { ArrowDownAZ, ChevronsDownUp, EyeOff, PanelLeft, Route } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
@@ -6,6 +6,7 @@ import { useApp } from "../store";
 import type { FileDiff as FD, Guide, Ref } from "../types";
 import { markDiffActivity, useUI } from "../ui";
 import { type Dot, FileDiff, type Gutter } from "./FileDiff";
+import { FileRail, fileInView } from "./FileRail";
 import { ic } from "./icons";
 
 /** Files in guide order: by first step that references them, then unreferenced, then skippable. */
@@ -29,8 +30,9 @@ export function guideOrder(files: FD[], guide: Guide | null): FD[] {
 
 export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
   const { files, guide } = useApp();
-  const { order, setOrder, hideSkip, toggleHideSkip, collapseAll, scrollTo } = useUI();
+  const { order, setOrder, hideSkip, toggleHideSkip, collapseAll, scrollTo, rail, toggleRail } = useUI();
   const scroller = useRef<HTMLDivElement>(null);
+  const [current, setCurrent] = useState<string | null>(null);
 
   const idx = useMemo(() => indexFiles(files), [files]);
   const skipFiles = useMemo(
@@ -85,6 +87,37 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
     });
   }, [scrollTo]);
 
+  // Track the file in view for the rail, once per frame while scrolling.
+  useEffect(() => {
+    const p = scroller.current;
+    if (!p || !rail) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      setCurrent(fileInView(p));
+    };
+    const onScroll = () => {
+      frame ||= requestAnimationFrame(update);
+    };
+    update();
+    p.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      p.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [rail]);
+
+  const pickFile = (path: string) => {
+    useUI.getState().toggleCollapsed(path, false);
+    requestAnimationFrame(() => {
+      const p = scroller.current;
+      const f = p?.querySelector<HTMLElement>(`.file[data-path="${CSS.escape(path)}"]`);
+      if (!p || !f) return;
+      p.scrollTo({ top: p.scrollTop + f.getBoundingClientRect().top - p.getBoundingClientRect().top - 12 });
+      setCurrent(path);
+    });
+  };
+
   const gutter: Gutter = useMemo(() => ({ dots, extras }), [dots, extras]);
   const allCollapsed = useUI((s) => files.length > 0 && files.every((f) => s.collapsed[f.path]));
 
@@ -98,6 +131,9 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
       onKeyDown={markDiffActivity}
     >
       <div className="toolbar">
+        <button type="button" className={`icon-btn sm${rail ? " on" : ""}`} title="Files" onClick={toggleRail}>
+          {ic(PanelLeft, 15)}
+        </button>
         <span className="grow" />
         <button
           type="button"
@@ -124,20 +160,23 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
           {ic(ChevronsDownUp, 15)}
         </button>
       </div>
-      <div className="diffwrap">
-        <div className="diff-scroll" ref={scroller}>
-          <div className={`files${hideSkip ? " hide-skip" : ""}`}>
-            {ordered.map((f) => (
-              <FileDiff
-                key={f.path}
-                file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
-                steps={fileSteps.get(f.path) ?? []}
-                gutter={gutter}
-              />
-            ))}
+      <div className="diff-body">
+        {rail && <FileRail files={files} skip={skipFiles} fileSteps={fileSteps} current={current} onPick={pickFile} />}
+        <div className="diffwrap">
+          <div className="diff-scroll" ref={scroller}>
+            <div className={`files${hideSkip ? " hide-skip" : ""}`}>
+              {ordered.map((f) => (
+                <FileDiff
+                  key={f.path}
+                  file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
+                  steps={fileSteps.get(f.path) ?? []}
+                  gutter={gutter}
+                />
+              ))}
+            </div>
           </div>
+          <ScrollMarks pane={scroller} />
         </div>
-        <ScrollMarks pane={scroller} />
       </div>
     </section>
   );
