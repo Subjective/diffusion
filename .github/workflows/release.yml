@@ -1,0 +1,73 @@
+name: Release
+
+# Push a tag matching the package version (engine/pyproject.toml), e.g. `git tag v0.1.0 && git push origin v0.1.0`.
+# Publishes the wheel (UI included) to PyPI, so `uvx --from diffusion-review diffusion` works with no checkout,
+# and attaches it to a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Check the tag matches the package version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' engine/pyproject.toml)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match engine/pyproject.toml version $version"
+            exit 1
+          fi
+      - run: make wheel
+      - name: Smoke-test the wheel serves the UI
+        run: |
+          uv venv /tmp/w && uv pip install --python /tmp/w/bin/python dist/*.whl
+          /tmp/w/bin/python -c "import diffusion.app as a; d = a._web_dist(); assert d and (d / 'index.html').is_file(), d"
+          /tmp/w/bin/diffusion open --help
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/*.whl
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # PyPI trusted publishing: register this repo, this workflow (release.yml) and this environment as a
+    # trusted publisher for `diffusion-review` on pypi.org. No API token is stored.
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - run: uv publish --trusted-publishing always dist/*
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - run: gh release create "$GITHUB_REF_NAME" dist/*.whl --repo "$GITHUB_REPOSITORY" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

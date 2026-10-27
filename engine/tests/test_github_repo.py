@@ -136,3 +136,15 @@ def test_rest_unreachable():
 
     with pytest.raises(GitHubError, match="unreachable"):
         _fetch_meta_rest(PRRef("github.com", "acme", "web", 7), None, httpx.MockTransport(fail))
+
+
+def test_rest_client_uses_the_environment_proxy(monkeypatch):
+    from diffusion.github import _proxy_for
+
+    for var in ("HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(var, raising=False)
+    assert _proxy_for("https://api.github.com") is None
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.corp:3128")
+    assert _proxy_for("https://api.github.com") == "http://proxy.corp:3128"
+    monkeypatch.setenv("NO_PROXY", "api.github.com")
+    assert _proxy_for("https://api.github.com") is None

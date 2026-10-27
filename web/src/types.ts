@@ -105,5 +105,3 @@ export interface PRPayload {
   files: FileDiff[];
   guide: Guide | null;
 }
-
-export type Stage = "fetch" | "hunks" | "explore" | "validate";
