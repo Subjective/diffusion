@@ -667,8 +667,29 @@ code {
   color: var(--brand);
 }
 
+.hscroll {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.hscroll::-webkit-scrollbar {
+  display: none;
+}
+.hbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  height: 10px;
+  margin-top: -10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.hbar > div {
+  height: 1px;
+}
+
 table.diff {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font: 12.5px / 20px var(--mono);
 }
@@ -685,10 +706,9 @@ td.no {
   width: 44px;
   padding: 0 8px;
   text-align: right;
-  color: var(--subtle);
+  color: color-mix(in srgb, var(--subtle) 80%, transparent);
   user-select: none;
   font-size: 11.5px;
-  opacity: 0.8;
 }
 td.code {
   position: relative;
@@ -707,6 +727,29 @@ tr.add td {
 tr.del td {
   background-color: var(--del);
 }
+/* The gutter stays put while long lines scroll sideways; its cells paint the row tint over an opaque base. */
+tr td.mark,
+tr td.no {
+  position: sticky;
+  z-index: 1;
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--tint, transparent), var(--tint, transparent));
+}
+td.mark {
+  left: 0;
+}
+td.no {
+  left: 26px;
+}
+td.no + td.no {
+  left: 70px;
+}
+tr.add {
+  --tint: var(--add);
+}
+tr.del {
+  --tint: var(--del);
+}
 tr.add .sg {
   color: var(--add-fg);
 }
@@ -719,6 +762,11 @@ tr.hh td {
   font-size: 11.5px;
   padding: 3px 12px;
 }
+.hh-t {
+  position: sticky;
+  left: 12px;
+  width: fit-content;
+}
 tr.hh td span {
   color: var(--muted);
 }
@@ -726,6 +774,12 @@ tr.hl td,
 tr.pin td,
 tr.sel td {
   background-image: linear-gradient(var(--hl), var(--hl));
+}
+tr.hl :is(td.mark, td.no),
+tr.pin :is(td.mark, td.no),
+tr.sel :is(td.mark, td.no) {
+  background-image:
+    linear-gradient(var(--hl), var(--hl)), linear-gradient(var(--tint, transparent), var(--tint, transparent));
 }
 tr.hl td.mark,
 tr.pin td.mark,

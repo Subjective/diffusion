@@ -1,5 +1,5 @@
 import { ChevronDown, Circle, CircleCheck, FileCode, MessageCircle } from "lucide-react";
-import { memo, type ReactNode, useEffect, useState } from "react";
+import { memo, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { highlightHunk, type LineTokens, langFor } from "../lib/highlight";
 import { rowKey, rowsOfHunk } from "../lib/refs";
 import type { FileDiff as FD, Hunk } from "../types";
@@ -74,19 +74,51 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
               {file.status === "renamed" ? `Renamed from ${file.old_path}` : "No changes"}
             </div>
           ) : (
-            <table className="diff">
-              <tbody>
-                {file.hunks.map((h) => (
-                  <HunkRows key={h.id} hunk={h} lang={langFor(file.path)} gutter={gutter} />
-                ))}
-              </tbody>
-            </table>
+            <HScroll>
+              <table className="diff">
+                <tbody>
+                  {file.hunks.map((h) => (
+                    <HunkRows key={h.id} hunk={h} lang={langFor(file.path)} gutter={gutter} />
+                  ))}
+                </tbody>
+              </table>
+            </HScroll>
           )}
         </div>
       )}
     </section>
   );
 });
+
+/** Scrolls long lines sideways. Its scrollbar sticks to the bottom of the pane while the file is in view, not just the file's end. */
+function HScroll({ children }: { children: ReactNode }) {
+  const body = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0); // content width when it overflows, else 0
+  useLayoutEffect(() => {
+    const el = body.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.scrollWidth > el.clientWidth ? el.scrollWidth : 0));
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, []);
+  const sync = (from: HTMLDivElement | null, to: HTMLDivElement | null) => {
+    if (from && to && to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+  };
+  return (
+    <>
+      <div className="hscroll" ref={body} onScroll={() => sync(body.current, bar.current)}>
+        {children}
+      </div>
+      {width > 0 && (
+        <div className="hbar" ref={bar} onScroll={() => sync(bar.current, body.current)} aria-hidden>
+          <div style={{ width }} />
+        </div>
+      )}
+    </>
+  );
+}
 
 function HunkRows({ hunk, lang, gutter }: { hunk: Hunk; lang: string | null; gutter: Gutter }) {
   const [tokens, setTokens] = useState<Map<number, LineTokens> | null>(null);
@@ -107,7 +139,9 @@ function HunkRows({ hunk, lang, gutter }: { hunk: Hunk; lang: string | null; gut
     <>
       <tr className="hh" data-hunk={hunk.id}>
         <td colSpan={4}>
-          @@ -{hunk.old_start},{hunk.old_len} +{hunk.new_start},{hunk.new_len} @@ <span>{hunk.symbol}</span>
+          <div className="hh-t">
+            @@ -{hunk.old_start},{hunk.old_len} +{hunk.new_start},{hunk.new_len} @@ <span>{hunk.symbol}</span>
+          </div>
         </td>
       </tr>
       {hunk.lines.map((ln, i) => {
