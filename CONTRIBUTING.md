@@ -27,8 +27,10 @@ engine/src/diffusion/
   backends/                         api (own loop + providers + tools), claude_code, codex
   config.py                         profiles and auto-detection
   app.py, jobs.py, store.py, cli.py HTTP/SSE API, background jobs, on-disk store, CLI
+  launcher.py                       `diffusion open`: reuse or start a background server, open the browser
 web/src/                            React UI (store.ts, chat.ts, ui.ts; components/; lib/)
 docs/design.md                      design and functional spec
+plugins/diffusion/                  Claude Code plugin (`/diffusion:review`); .claude-plugin/ is its marketplace
 ```
 
 ## Guidelines
@@ -58,3 +60,10 @@ cd engine && uv run pytest -m live
 
 `diffusion doctor --profile <p> --eval` prints a one-line score. Results for models and providers not yet covered
 in the README are very useful: open an issue with the line, the model, and the backend/protocol.
+
+## Releasing
+
+Bump `version` in `engine/pyproject.toml` (and in `plugins/diffusion/.claude-plugin/plugin.json`), merge, then push
+a matching tag: `git tag v0.2.0 && git push origin v0.2.0`. The `Release` workflow builds the wheel with the UI,
+publishes it to PyPI as `diffusion-review` (trusted publishing, from the `pypi` environment), and attaches it to a
+GitHub release.

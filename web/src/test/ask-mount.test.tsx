@@ -4,7 +4,11 @@ import { vi } from "vitest";
 import { payload } from "./fixture";
 
 let resolvePR: (v: unknown) => void = () => {};
-vi.mock("../lib/highlight", () => ({ langFor: () => null, highlightHunk: async () => new Map() }));
+vi.mock("../lib/highlight", () => ({
+  langFor: () => null,
+  highlightHunk: async () => new Map(),
+  highlightLines: async () => [],
+}));
 vi.mock("../api", () => ({ fetchPR: vi.fn(() => new Promise((r) => (resolvePR = r))), streamGuide: vi.fn() }));
 
 const { App } = await import("../App");

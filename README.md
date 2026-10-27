@@ -19,6 +19,28 @@ for the UI reference.
 - **Backends**: `api` (a [Pydantic AI](https://ai.pydantic.dev) agent over the Anthropic or any
   OpenAI-compatible API), `claude-code` (the Claude Agent SDK and your Claude Code CLI), or `codex` (the Codex CLI).
 
+## From Claude Code
+
+Install the plugin once:
+
+```
+/plugin marketplace add Subjective/diffusion
+/plugin install diffusion@diffusion
+```
+
+Then, in any session:
+
+```
+/diffusion:review https://github.com/owner/repo/pull/123   # a PR
+/diffusion:review                                          # the current branch against its base
+```
+
+It starts Diffusion in the background (or reuses the one already running) with [`uvx`](https://docs.astral.sh/uv/)
+and opens the review in your browser. Over SSH or without a display it prints the link instead. It always runs on
+your Claude Code login (the `claude-code` backend), even when an API key is set. You need `uv`, `git`, and `gh`
+signed in (or `GITHUB_TOKEN`). Releases are published to PyPI as `diffusion-review`; to pick up a new one, run
+`uv cache clean diffusion-review`.
+
 ## Prerequisites
 
 - **Model access**, any one of: `ANTHROPIC_API_KEY`; `OPENAI_API_KEY`; `OPENROUTER_API_KEY`; a gateway or local
@@ -64,6 +86,7 @@ uv run diffusion guide <pr-url>                 # generate a guide for a PR, pri
 uv run diffusion guide <repo-dir> --base main   # a local branch (default dir: current, head: HEAD)
 uv run diffusion guide <target> --json          # the validated guide as JSON
 uv run diffusion serve [--port N] [--profile P] # web UI + API
+uv run diffusion open [target] [--backend B]    # reuse or start the web UI in the background; open the review
 ```
 
 ## Configuration
