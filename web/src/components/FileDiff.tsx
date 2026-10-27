@@ -8,7 +8,7 @@ import {
   MessageCircle,
   UnfoldVertical,
 } from "lucide-react";
-import { Fragment, memo, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type Gap, gapsOf, type Reveal, STEP, shownLines } from "../lib/expand";
 import { highlightHunk, type LineTokens, langFor } from "../lib/highlight";
 import { rowKey, rowsOfHunk } from "../lib/refs";
@@ -131,23 +131,55 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
               {file.status === "renamed" ? `Renamed from ${file.old_path}` : "No changes"}
             </div>
           ) : (
-            <table className="diff">
-              <tbody>
-                {file.hunks.map((h, i) => (
-                  <Fragment key={h.id}>
-                    {expandable ? <GapRows {...gapProps(i)} hunk={h} /> : <HunkHeader hunk={h} />}
-                    <HunkRows hunk={h} lang={lang} gutter={gutter} />
-                  </Fragment>
-                ))}
-                {expandable && <GapRows {...gapProps(gaps.length - 1)} />}
-              </tbody>
-            </table>
+            <HScroll>
+              <table className="diff">
+                <tbody>
+                  {file.hunks.map((h, i) => (
+                    <Fragment key={h.id}>
+                      {expandable ? <GapRows {...gapProps(i)} hunk={h} /> : <HunkHeader hunk={h} />}
+                      <HunkRows hunk={h} lang={lang} gutter={gutter} />
+                    </Fragment>
+                  ))}
+                  {expandable && <GapRows {...gapProps(gaps.length - 1)} />}
+                </tbody>
+              </table>
+            </HScroll>
           )}
         </div>
       )}
     </section>
   );
 });
+
+/** Scrolls long lines sideways. Its scrollbar sticks to the bottom of the pane while the file is in view, not just the file's end. */
+function HScroll({ children }: { children: ReactNode }) {
+  const body = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0); // content width when it overflows, else 0
+  useLayoutEffect(() => {
+    const el = body.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.scrollWidth > el.clientWidth ? el.scrollWidth : 0));
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, []);
+  const sync = (from: HTMLDivElement | null, to: HTMLDivElement | null) => {
+    if (from && to && to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+  };
+  return (
+    <>
+      <div className="hscroll" ref={body} onScroll={() => sync(body.current, bar.current)}>
+        {children}
+      </div>
+      {width > 0 && (
+        <div className="hbar" ref={bar} onScroll={() => sync(bar.current, body.current)} aria-hidden>
+          <div style={{ width }} />
+        </div>
+      )}
+    </>
+  );
+}
 
 function HunkRows({ hunk, lang, gutter }: { hunk: Hunk; lang: string | null; gutter: Gutter }) {
   const [tokens, setTokens] = useState<Map<number, LineTokens> | null>(null);
@@ -202,7 +234,9 @@ const headerText = (h: Hunk) => (
 function HunkHeader({ hunk }: { hunk: Hunk }) {
   return (
     <tr className="hh" data-hunk={hunk.id}>
-      <td colSpan={4}>{headerText(hunk)}</td>
+      <td colSpan={4}>
+        <div className="hh-t">{headerText(hunk)}</div>
+      </td>
     </tr>
   );
 }
@@ -266,11 +300,13 @@ function GapRows({ gap, index, count, rev, text, error, onExpand, path, gutter, 
             )}
           </td>
           <td>
-            <button type="button" className="exp-all" title="Show all" disabled={!!error}>
-              {ic(UnfoldVertical, 14)}
-              {label}
-            </button>
-            {hunk?.symbol && <span className="sym">{hunk.symbol}</span>}
+            <div className="hh-t">
+              <button type="button" className="exp-all" title="Show all" disabled={!!error}>
+                {ic(UnfoldVertical, 14)}
+                {label}
+              </button>
+              {hunk?.symbol && <span className="sym">{hunk.symbol}</span>}
+            </div>
           </td>
         </tr>
       )}

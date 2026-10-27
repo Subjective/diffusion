@@ -12,3 +12,8 @@ globalThis.matchMedia ??= ((q: string) => ({
 globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => setTimeout(() => cb(0), 0)) as never;
 if (!globalThis.CSS?.escape)
   (globalThis as { CSS: unknown }).CSS = { escape: (s: string) => s.replace(/["\\]/g, "\\$&") };
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as never;
