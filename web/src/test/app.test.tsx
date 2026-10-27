@@ -11,9 +11,17 @@ vi.mock("../api", () => ({
   fetchPR: vi.fn(async () => payload),
   streamGuide: vi.fn(),
   fetchFile: vi.fn(async () => Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")),
+  fetchDefinition: vi.fn(),
+}));
+// jsdom has no caret-from-point; the clicked name comes from here
+const nav = vi.hoisted(() => ({ word: "refreshTokens" }));
+vi.mock("../lib/definition", async (orig) => ({
+  ...(await orig<typeof import("../lib/definition")>()),
+  wordAtPoint: () => nav.word,
 }));
 
 const { App } = await import("../App");
+const api = await import("../api");
 const { useApp } = await import("../store");
 
 const rows = (sel: string) => [...document.querySelectorAll<HTMLTableRowElement>(`tr.ln${sel}`)];
@@ -177,4 +185,34 @@ test("full file toggle shows every line, then folds back to the hunks", async ()
   await waitFor(() => expect(file().querySelectorAll("tr.ln")).toHaveLength(40));
   fireEvent.click(toggle());
   expect(file().querySelectorAll("tr.ln")).toHaveLength(3);
+});
+
+test("⌘-click on a name previews its definition under the row; Esc closes it", async () => {
+  await mount();
+  vi.mocked(api.fetchDefinition).mockResolvedValueOnce([
+    { path: "src/api/client.ts", line: 3, end: 5, text: "export async function refreshTokens(t) {\n  return t;\n}" },
+  ]);
+  nav.word = "refreshTokens";
+  const row = document.querySelector<HTMLElement>('tr[data-rk="src/auth/session.ts:2"]')!;
+  fireEvent.click(row.querySelector(".src")!, { metaKey: true });
+  await waitFor(() => expect(document.querySelector(".peek .path")?.textContent).toBe("src/api/client.ts"));
+  expect(api.fetchDefinition).toHaveBeenCalledWith(payload.pr.url, "refreshTokens", "src/auth/session.ts");
+  expect(row.nextElementSibling!.classList.contains("peek-row")).toBe(true);
+  expect([...document.querySelectorAll(".peek-b td.no")].map((td) => td.textContent)).toEqual(["3", "4", "5"]);
+  fireEvent.keyDown(window, { key: "Escape" });
+  await waitFor(() => expect(document.querySelector(".peek")).toBeNull());
+  // a plain click does nothing
+  fireEvent.click(row.querySelector(".src")!);
+  expect(document.querySelector(".peek")).toBeNull();
+});
+
+test("a definition already in the diff is jumped to instead of previewed", async () => {
+  await mount();
+  vi.mocked(api.fetchDefinition).mockResolvedValueOnce([
+    { path: "src/auth/types.ts", line: 2, end: 2, text: "  expiresAt: number;" },
+  ]);
+  nav.word = "expiresAt";
+  fireEvent.click(document.querySelector('tr[data-rk="src/auth/session.ts:2"] .src')!, { metaKey: true });
+  await waitFor(() => expect(nums(".flash")).toEqual(["types.ts:2"]));
+  expect(document.querySelector(".peek")).toBeNull();
 });

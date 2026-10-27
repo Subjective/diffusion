@@ -16,6 +16,7 @@ import { type FileLines, useFileLines } from "../lib/useFileLines";
 import type { FileDiff as FD, Hunk } from "../types";
 import { useUI } from "../ui";
 import { ic, SKIP_ICON } from "./icons";
+import { PeekRow } from "./Peek";
 
 export interface Dot {
   step: number;
@@ -325,54 +326,58 @@ const DiffRow = memo(function DiffRow({ rk, type, old, nw, text, tokens, dots, e
   const hl = useUI((s) => s.hoverRows.has(rk));
   const pin = useUI((s) => s.pinRows.has(rk));
   const flashN = useUI((s) => (s.flash.keys.has(rk) ? s.flash.n : 0));
+  const peek = useUI((s) => (s.peek?.rk === rk ? s.peek : null));
   const cls = ["ln", type, extra && "qd", hl && "hl", pin && "pin", flashN && `flash f${flashN % 2}`]
     .filter(Boolean)
     .join(" ");
   const sign = type === "add" ? "+" : type === "del" ? "−" : "";
   return (
-    <tr
-      className={cls}
-      data-rk={rk}
-      data-file={file}
-      data-pos={pos}
-      data-new={nw ?? undefined}
-      data-old={old ?? undefined}
-    >
-      <td className="mark">
-        {dots?.map((d) => (
-          <span
-            key={`${d.step}.${d.sub}`}
-            className={`dot${d.sub != null ? " sub-dot" : ""}`}
-            data-step={d.step}
-            data-sub={d.sub ?? undefined}
-            title={d.sub == null ? `Step ${d.step}` : `Step ${d.step}.${d.sub}`}
-          >
-            {d.sub == null ? d.step : `${d.step}.${d.sub}`}
+    <>
+      <tr
+        className={cls}
+        data-rk={rk}
+        data-file={file}
+        data-pos={pos}
+        data-new={nw ?? undefined}
+        data-old={old ?? undefined}
+      >
+        <td className="mark">
+          {dots?.map((d) => (
+            <span
+              key={`${d.step}.${d.sub}`}
+              className={`dot${d.sub != null ? " sub-dot" : ""}`}
+              data-step={d.step}
+              data-sub={d.sub ?? undefined}
+              title={d.sub == null ? `Step ${d.step}` : `Step ${d.step}.${d.sub}`}
+            >
+              {d.sub == null ? d.step : `${d.step}.${d.sub}`}
+            </span>
+          ))}
+        </td>
+        <td className="no">{old ?? ""}</td>
+        <td className="no">{nw ?? ""}</td>
+        <td className="code">
+          <button type="button" className="ask-btn" title="Click, or drag to select lines" tabIndex={-1}>
+            {ic(MessageCircle, 12)}
+          </button>
+          <span className="sg">{sign}</span>
+          <span className="src">
+            {tokens
+              ? tokens.map((t, i) =>
+                  t.color ? (
+                    <span key={i} style={{ color: t.color }}>
+                      {t.content}
+                    </span>
+                  ) : (
+                    t.content
+                  ),
+                )
+              : text || " "}
           </span>
-        ))}
-      </td>
-      <td className="no">{old ?? ""}</td>
-      <td className="no">{nw ?? ""}</td>
-      <td className="code">
-        <button type="button" className="ask-btn" title="Click, or drag to select lines" tabIndex={-1}>
-          {ic(MessageCircle, 12)}
-        </button>
-        <span className="sg">{sign}</span>
-        <span className="src">
-          {tokens
-            ? tokens.map((t, i) =>
-                t.color ? (
-                  <span key={i} style={{ color: t.color }}>
-                    {t.content}
-                  </span>
-                ) : (
-                  t.content
-                ),
-              )
-            : text || " "}
-        </span>
-        {extra}
-      </td>
-    </tr>
+          {extra}
+        </td>
+      </tr>
+      {peek && <PeekRow peek={peek} />}
+    </>
   );
 });

@@ -16,3 +16,17 @@ export async function fetchFile(url: string, path: string): Promise<string> {
   if (!res.ok) throw new Error(await errorText(res));
   return (await res.json()).text;
 }
+
+export interface DefinitionMatch {
+  path: string;
+  line: number;
+  end: number;
+  text: string;
+}
+
+export async function fetchDefinition(url: string, symbol: string, path: string): Promise<DefinitionMatch[]> {
+  const q = new URLSearchParams({ url, symbol, path });
+  const res = await fetch(`/api/definition?${q}`);
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()).matches;
+}

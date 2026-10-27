@@ -89,6 +89,19 @@ async def test_file_endpoint_serves_changed_files_at_head(setup):
     assert r.status_code == 404
 
 
+async def test_definition_endpoint_finds_imported_definitions(setup):
+    client, *_ = setup
+    r = await client.get(
+        "/api/definition", params={"url": URL, "symbol": "refreshTokens", "path": "src/auth/session.ts"}
+    )
+    assert r.status_code == 200
+    m = r.json()["matches"][0]
+    assert m["path"] == "src/api/client.ts"
+    assert m["text"].startswith("export async function refreshTokens")
+    r = await client.get("/api/definition", params={"url": URL, "symbol": "a b", "path": "x"})
+    assert r.status_code == 400
+
+
 async def test_bad_url_is_400(setup):
     client, *_ = setup
     r = await client.get("/api/pr", params={"url": "nope"})
