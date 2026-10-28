@@ -11,6 +11,7 @@
   --subtle: #8f8f8f;
   --border: #ececec;
   --border-strong: #e0e0e0;
+  --scroll-thumb: rgba(0, 0, 0, 0.13);
   --hover: rgba(0, 0, 0, 0.04);
   --chip: #f0f0f0;
   --solid: #0d0d0d;
@@ -40,6 +41,7 @@
   --subtle: #8a8a8a;
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
+  --scroll-thumb: rgba(255, 255, 255, 0.16);
   --hover: rgba(255, 255, 255, 0.05);
   --chip: #303030;
   --solid: #ececec;
@@ -593,9 +595,9 @@ code {
   min-height: 0;
   overflow: auto;
 }
-/* Opaque, so a mark under the thumb (a highlight already in view) gives way to it. */
+/* Translucent, so a mark under the thumb (a highlight already in view) still shows through it. */
 .diff-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(var(--border-strong), var(--border-strong)) var(--bg);
+  background: var(--scroll-thumb);
   background-clip: content-box;
 }
 /* Sits under the scroller's transparent track, so the native thumb draws on top of the marks. */
