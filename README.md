@@ -9,6 +9,14 @@ works, and why.
 See [`docs/design.md`](docs/design.md) for the design and [`docs/design/wireframe.html`](docs/design/wireframe.html)
 for the UI reference.
 
+## Demo
+
+[![Diffusion demo: a 30-file Rust PR reviewed with /diffusion:review](docs/assets/demo-poster.jpg)](docs/assets/demo.mp4)
+
+A one-minute walkthrough of `/diffusion:review` on a mock 30-file Rust PR: notes, the flow diagram, stepping with
+`j`, the file list, ⌘-click go to definition, comments and chat. Click the image to play
+[`docs/assets/demo.mp4`](docs/assets/demo.mp4). Music: "Study and Relax" by Kevin MacLeod (public domain, via FreePD).
+
 ## How it works
 
 - **`engine/`**: a local Python service. For a PR it reads metadata (`gh`, or `GITHUB_TOKEN`) and checks out the
