@@ -15,10 +15,17 @@ export function PeekRow({ peek }: { peek: Peek }) {
   const [matches, setMatches] = useState<DefinitionMatch[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [i, setI] = useState(0);
+  // Stay hidden while the lookup is quick, so a jump to a definition already in the diff doesn't flash a popup.
+  const [slow, setSlow] = useState(false);
   const close = () => useUI.getState().setPeek(null);
 
   useEffect(() => {
     let live = true;
+    setMatches(null);
+    setError(null);
+    setI(0);
+    setSlow(false);
+    const t = setTimeout(() => live && setSlow(true), 300);
     fetchDefinition(url, peek.symbol, peek.file).then(
       (ms) => {
         if (!live) return;
@@ -38,6 +45,7 @@ export function PeekRow({ peek }: { peek: Peek }) {
     );
     return () => {
       live = false;
+      clearTimeout(t);
     };
   }, [url, peek]);
 
@@ -48,6 +56,7 @@ export function PeekRow({ peek }: { peek: Peek }) {
   }, []);
 
   const m = matches?.[i];
+  if (!matches && !error && !slow) return null;
   return (
     <tr className="peek-row">
       <td colSpan={4}>

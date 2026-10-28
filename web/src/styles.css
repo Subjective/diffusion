@@ -1629,14 +1629,17 @@ tr.peek-row > td {
   font: 12.5px / 20px var(--mono);
 }
 .peek-b td.no {
+  /* the diff's sticky gutter offsets don't apply inside the peek's own scroller */
+  left: 0;
   width: 44px;
+  background-color: var(--surface);
 }
 .peek-b td.src {
   white-space: pre;
-  padding-right: 16px;
+  padding: 0 16px 0 8px;
 }
 .peek-b tr.def td {
-  background: var(--hl);
+  background-image: linear-gradient(var(--hl), var(--hl));
 }
 .peek-note {
   padding: 10px 14px;
