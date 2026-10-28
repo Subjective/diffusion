@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import __version__
 from .agent import DoneEvent, Runner, ToolEvent, make_runner
 from .chat_agent import ChatDelta, ChatFocus, Question, run_turn
 from .config import Config, load_config
@@ -122,6 +123,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             "backend": cfg.backend,
             "guide_model": cfg.guide_model,
             "chat_model": cfg.chat_model,
+            "version": __version__,
+            "ui": dist is not None,
         }
 
     @app.get("/api/pr")
