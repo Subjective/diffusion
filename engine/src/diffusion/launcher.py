@@ -17,6 +17,8 @@ from urllib.parse import quote
 
 import httpx
 
+from . import __version__
+
 PORT_SPAN = 20  # ports tried after the first one
 START_TIMEOUT = 60.0
 # Set by a parent Claude Code session for its children. A detached server is not part of that session, and
@@ -72,16 +74,21 @@ def _bindable(port: int) -> bool:
 
 
 def _matches(health: dict, backend: str | None, profile: str | None) -> bool:
-    return (backend is None or health.get("backend") == backend) and (
-        profile is None or health.get("profile") == profile
+    """A server this launcher can hand a review link to: same version, serving the UI (not a `make dev` API
+    server), on the requested backend and profile."""
+    return (
+        health.get("version") == __version__
+        and health.get("ui") is True
+        and (backend is None or health.get("backend") == backend)
+        and (profile is None or health.get("profile") == profile)
     )
 
 
 def find_or_start(
     first_port: int, log_dir: Path, backend: str | None = None, profile: str | None = None
 ) -> Server:
-    """Reuse a Diffusion server on ``first_port``..+``PORT_SPAN`` running the same backend/profile, else start
-    one on the first free port. A server on another backend is left alone, never reused."""
+    """Reuse a Diffusion server on ``first_port``..+``PORT_SPAN`` that matches (see ``_matches``), else start one
+    on the first free port. Other servers are left alone, never reused."""
     free: int | None = None
     for port in range(first_port, first_port + PORT_SPAN + 1):
         state, health = probe(port)

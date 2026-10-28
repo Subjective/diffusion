@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from typer.testing import CliRunner
 
-from diffusion import launcher
+from diffusion import __version__, launcher
 from diffusion.cli import app
 from diffusion.launcher import Server, can_open_browser, find_or_start, probe
 
@@ -47,17 +47,21 @@ def fake_server():
         s.shutdown()
 
 
+def _health(backend: str, profile: str, **kw) -> dict:
+    return {"ok": True, "backend": backend, "profile": profile, "version": __version__, "ui": True, **kw}
+
+
 def test_probe_tells_free_diffusion_and_other(fake_server):
     assert probe(_free_port())[0] == "free"
-    port = fake_server({"ok": True, "backend": "claude-code", "profile": "claude-code"})
-    assert probe(port) == ("diffusion", {"ok": True, "backend": "claude-code", "profile": "claude-code"})
+    port = fake_server(_health("claude-code", "claude-code"))
+    assert probe(port) == ("diffusion", _health("claude-code", "claude-code"))
     assert probe(fake_server(None))[0] == "other"
 
 
 def test_reuses_matching_server_and_skips_others(fake_server, tmp_path, monkeypatch):
     other = fake_server(None)
-    api = fake_server({"ok": True, "backend": "api", "profile": "auto"})
-    cc = fake_server({"ok": True, "backend": "claude-code", "profile": "claude-code"})
+    api = fake_server(_health("api", "auto"))
+    cc = fake_server(_health("claude-code", "claude-code"))
     ports = {other: "other", api: "api", cc: "cc"}
     real_probe = probe
     # Walk only our three fakes, in this order, then report everything else as taken.
@@ -72,6 +76,17 @@ def test_reuses_matching_server_and_skips_others(fake_server, tmp_path, monkeypa
     assert (ports[order[s.port - 1000]], s.started) == ("cc", False)
     s = find_or_start(1000, tmp_path)  # no pin: the first Diffusion server found
     assert ports[order[s.port - 1000]] == "api"
+
+
+def test_skips_servers_without_ui_or_on_another_version(fake_server, tmp_path, monkeypatch):
+    dev = fake_server(_health("claude-code", "claude-code", ui=False))  # `make dev`: API only
+    old = fake_server(_health("claude-code", "claude-code", version="0.0.1"))
+    order = [dev, old]
+    monkeypatch.setattr(launcher, "PORT_SPAN", 1)
+    real_probe = probe
+    monkeypatch.setattr(launcher, "probe", lambda p, timeout=1.0: real_probe(order[p - 1000]))
+    with pytest.raises(launcher.LaunchError, match="No free port"):
+        find_or_start(1000, tmp_path, backend="claude-code")
 
 
 def test_starts_when_no_match(tmp_path, monkeypatch):

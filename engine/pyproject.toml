@@ -1,6 +1,6 @@
 [project]
 name = "diffusion-review"
-version = "0.1.0"
+version = "0.1.1"
 description = "Turn a pull request or local branch into a guided, linked review walkthrough with an AI side chat."
 license = "MIT"
 keywords = ["code-review", "pull-request", "llm", "agent", "claude", "openai"]
