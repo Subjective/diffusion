@@ -1,5 +1,6 @@
 // Map guide refs onto diff rows. A row is identified by (file, pos) where pos is the new-side line number
-// for add/context lines and (previous new line + 0.5) for deletions, matching the wireframe's data-pos model.
+// for add/context lines. Deletions sit between the previous and next new line, spread evenly across a run so
+// each one keeps its own pos (a lone deletion gets +0.5).
 import type { FileDiff, Hunk, Line, Ref } from "../types";
 
 export interface Row {
@@ -12,11 +13,20 @@ export interface Row {
 }
 
 export function rowsOfHunk(h: Hunk): Row[] {
+  // Deletions left in the run from each line on, so each deletion knows how far through its run it is.
+  const left: number[] = [];
+  for (let i = h.lines.length - 1; i >= 0; i--) left[i] = h.lines[i].type === "del" ? (left[i + 1] ?? 0) + 1 : 0;
   let lastNew = h.new_start - 1;
-  return h.lines.map((ln) => {
+  let k = 0;
+  return h.lines.map((ln, i) => {
     let pos: number;
-    if (ln.type === "del") pos = lastNew + 0.5;
-    else pos = lastNew = ln.new!;
+    if (ln.type === "del") {
+      k++;
+      pos = lastNew + k / (k + left[i]);
+    } else {
+      pos = lastNew = ln.new!;
+      k = 0;
+    }
     return { file: h.file, hunk: h.id, pos, old: ln.old, new: ln.new, type: ln.type };
   });
 }

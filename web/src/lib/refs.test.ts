@@ -36,6 +36,20 @@ test("positions: deletions sit half a line after the previous new line", () => {
   expect(rowsOfHunk(hunk).map((r) => r.pos)).toEqual([10, 10.5, 11, 12, 13, 13.5, 14]);
 });
 
+test("positions: each deletion in a run keeps its own position", () => {
+  const removed: Hunk = {
+    id: "H2",
+    file: "src/gone.ts",
+    old_start: 1,
+    old_len: 3,
+    new_start: 0,
+    new_len: 0,
+    symbol: "",
+    lines: [1, 2, 3].map((n) => ({ type: "del" as const, old: n, new: null, text: "" })),
+  };
+  expect(rowsOfHunk(removed).map((r) => r.pos)).toEqual([-0.75, -0.5, -0.25]);
+});
+
 test("whole-hunk ref covers all rows", () => {
   expect(rowsForRef({ hunk: "H1", side: "new", start: null, end: null }, indexFiles(files))).toHaveLength(7);
 });
