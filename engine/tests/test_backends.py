@@ -20,6 +20,8 @@ from diffusion.agent import AgentRequest, DoneEvent, SandboxError, TextEvent, To
 from diffusion.backends.api import SessionStore, _cost, api_runner, make_model
 from diffusion.backends.claude_code import sandbox_decision, tool_names_note
 from diffusion.backends.codex import build_args, codex_runner, strict_schema
+from diffusion.backends.cursor import build_args as cursor_args
+from diffusion.backends.cursor import cursor_runner, parse_json_reply
 from diffusion.backends.tools import glob, grep, read_file
 from diffusion.config import Config
 
@@ -380,6 +382,89 @@ async def test_codex_runner_chat_and_failure(tmp_path, repo):
     assert [e.text for e in evs if isinstance(e, TextEvent)] == ["answer\n"]
     assert evs[-1].is_error and evs[-1].result == "quota exceeded"
     assert "--model" not in (tmp_path / "args.txt").read_text()
+
+
+# ---------- cursor backend ----------
+
+
+def test_cursor_args(tmp_path):
+    args = cursor_args(
+        cfg(tmp_path, backend="cursor"), AgentRequest("s", "p", "sonnet-4", tmp_path, resume="c1"), "P"
+    )
+    assert args[:3] == ["-p", "--output-format", "stream-json"]
+    assert args[args.index("--mode") + 1] == "ask" and "--force" not in args
+    assert args[args.index("--model") + 1] == "sonnet-4" and args[args.index("--resume") + 1] == "c1"
+    assert args[args.index("--workspace") + 1] == str(tmp_path) and args[-1] == "P"
+
+
+def test_parse_json_reply():
+    assert parse_json_reply('```json\n{"a": 1}\n```') == {"a": 1}
+    assert parse_json_reply('Here is the guide:\n{"a": {"b": 2}}\nDone.') == {"a": {"b": 2}}
+    with pytest.raises(ValueError):
+        parse_json_reply("no json here")
+
+
+def fake_cursor(tmp_path, events, code=0):
+    script = tmp_path / "cursor-agent"
+    lines = "\n".join(json.dumps(e) for e in events)
+    script.write_text(
+        f'#!/bin/sh\nfor a in "$@"; do echo "$a"; done > {tmp_path}/args.txt\ncat <<\'EOF\'\n{lines}\nEOF\nexit {code}\n'
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    return script
+
+
+async def test_cursor_runner_structured_output(tmp_path, repo):
+    final = json.dumps({"tldr": "t"})
+    exe = fake_cursor(tmp_path, [
+        {"type": "system", "subtype": "init", "model": "Auto", "session_id": "c9"},
+        {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Looking."}]}, "session_id": "c9"},
+        {"type": "tool_call", "subtype": "started", "call_id": "1", "tool_call": {"grepToolCall": {"args": {"pattern": "refresh"}}}},
+        {"type": "tool_call", "subtype": "started", "call_id": "2", "tool_call": {"readToolCall": {"args": {"path": "src/a.py"}}}},
+        {"type": "tool_call", "subtype": "completed", "call_id": "2", "tool_call": {"readToolCall": {"args": {"path": "src/a.py"}, "result": {}}}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": f"```json\n{final}\n```"}]}},
+        {"type": "result", "subtype": "success", "is_error": False, "result": f"Looking.```json\n{final}\n```", "session_id": "c9"},
+    ])  # fmt: skip
+    got = []
+
+    async def submit(a):
+        got.append(a)
+        return "received"
+
+    run = cursor_runner(cfg(tmp_path, backend="cursor", cli_path=str(exe)))
+    schema = {"type": "object", "properties": {"tldr": {"type": "string"}}}
+    tools = [ToolSpec("submit_guide", "the guide", schema, submit, terminal=True)]
+    evs = await collect(run(AgentRequest("SYS", "PROMPT", "", repo, tools)))
+    done = evs[-1]
+    assert got == [{"tldr": "t"}] and not done.is_error and done.session_id == "c9"
+    assert [e.summary for e in evs if isinstance(e, ToolEvent)] == ["Grep refresh", "Read a.py"]
+    assert not [e for e in evs if isinstance(e, TextEvent)]
+    prompt = (tmp_path / "args.txt").read_text()
+    assert "SYS" in prompt and "PROMPT" in prompt and '"tldr"' in prompt and "--model" not in prompt
+
+
+async def test_cursor_runner_rejection_chat_and_failure(tmp_path, repo):
+    exe = fake_cursor(tmp_path, [
+        {"type": "system", "subtype": "init", "session_id": "c1"},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": '{"tldr": "t"}'}]}},
+        {"type": "result", "subtype": "success", "is_error": False, "result": '{"tldr": "t"}'},
+    ])  # fmt: skip
+
+    async def reject(_):
+        return "rejected: H9 doesn't exist"
+
+    run = cursor_runner(cfg(tmp_path, backend="cursor", cli_path=str(exe)))
+    tools = [ToolSpec("submit_guide", "g", {"type": "object"}, reject, terminal=True)]
+    done = (await collect(run(AgentRequest("s", "p", "", repo, tools))))[-1]
+    assert done.is_error and "H9" in (done.result or "") and done.session_id == "c1"
+
+    exe = fake_cursor(tmp_path, [
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "answer"}]}},
+        {"type": "result", "subtype": "error", "is_error": True, "result": "usage limit reached"},
+    ], code=1)  # fmt: skip
+    evs = await collect(run(AgentRequest("s", "p", "", repo)))
+    assert [e.text for e in evs if isinstance(e, TextEvent)] == ["answer\n"]
+    assert evs[-1].is_error and evs[-1].result == "usage limit reached"
 
 
 def test_paths_exist():

@@ -6,6 +6,7 @@ A *profile* says how to talk to models:
   (Messages API) or ``"openai"`` (Chat Completions: OpenAI, OpenRouter, Gemini, Ollama, vLLM, most gateways).
 - ``backend = "claude-code"``: the Claude Agent SDK, using your Claude Code setup and login.
 - ``backend = "codex"``: the Codex CLI (``codex exec``), using your Codex setup and login.
+- ``backend = "cursor"``: the Cursor CLI (``cursor-agent -p``), using your Cursor setup and login.
 
 Profiles live in ``~/.config/diffusion/config.toml`` (or ``$DIFFUSION_CONFIG``)::
 
@@ -19,7 +20,8 @@ Profiles live in ``~/.config/diffusion/config.toml`` (or ``$DIFFUSION_CONFIG``):
     guide_model = "anthropic/claude-opus-5.5"
     chat_model = "anthropic/claude-sonnet-5.5"
 
-With no config file a profile is auto-detected from the environment; ``diffusion doctor`` shows what was chosen.
+With no config file, a review opened from an agent (Claude Code, Codex, Cursor) runs on that agent's CLI, and
+otherwise a profile is auto-detected from the environment; ``diffusion doctor`` shows what was chosen.
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-Backend = Literal["api", "claude-code", "codex"]
+Backend = Literal["api", "claude-code", "codex", "cursor"]
 Protocol = Literal["anthropic", "openai"]
 AuthStyle = Literal["x-api-key", "bearer"]
 
@@ -42,7 +44,8 @@ DEFAULT_MODELS: dict[tuple[str, str | None], tuple[str, str]] = {
     ("api", "anthropic"): ("claude-opus-5-5", "claude-sonnet-5-5"),
     ("api", "openai"): ("gpt-5", "gpt-5-mini"),
     ("claude-code", None): ("opus", "sonnet"),
-    ("codex", None): ("", ""),  # empty = Codex's configured default model
+    ("codex", None): ("", ""),  # empty = the CLI's configured default model
+    ("cursor", None): ("", ""),
 }
 DEFAULT_BASE_URLS: dict[str, str] = {
     "anthropic": "https://api.anthropic.com",
@@ -185,21 +188,49 @@ def _autodetect(environ: dict[str, str]) -> tuple[str, dict]:
         return "claude CLI on PATH", {"backend": "claude-code"}
     if shutil.which("codex", path=environ.get("PATH")):
         return "codex CLI on PATH", {"backend": "codex"}
+    if shutil.which("cursor-agent", path=environ.get("PATH")):
+        return "cursor-agent CLI on PATH", {"backend": "cursor"}
     raise ConfigError(
         "No model backend found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY, install the "
-        "`claude` or `codex` CLI, or add a profile to ~/.config/diffusion/config.toml (see docs/configuration.md)."
+        "`claude`, `codex` or `cursor-agent` CLI, or add a profile to ~/.config/diffusion/config.toml (see "
+        "docs/configuration.md)."
     )
 
 
-PINNABLE = ("claude-code", "codex")
+PINNABLE = ("claude-code", "codex", "cursor")
+HARNESS_SOURCE = "the agent that launched Diffusion"
+BACKENDS = ("api", *PINNABLE)
+CLI_NAMES = {"codex": "codex", "cursor": "cursor-agent"}  # claude-code defaults to the SDK's bundled CLI
+
+
+def detect_harness(environ: dict[str, str]) -> str | None:
+    """The CLI backend matching the agent this process runs under, from the variables each agent sets for its
+    shell commands. Claude Code and Codex come first: either can run inside Cursor's terminal."""
+    if environ.get("CLAUDECODE"):
+        return "claude-code"
+    if environ.get("CODEX_SANDBOX") or environ.get("CODEX_THREAD_ID") or environ.get("CODEX_CI"):
+        return "codex"
+    if environ.get("CURSOR_AGENT") or environ.get("CURSOR_TRACE_ID"):
+        return "cursor"
+    return None
+
+
+def _harness_usable(harness: str, environ: dict[str, str]) -> bool:
+    return harness not in CLI_NAMES or bool(shutil.which(CLI_NAMES[harness], path=environ.get("PATH")))
 
 
 def load_config(
-    environ: dict[str, str] | None = None, profile: str | None = None, backend: str | None = None
+    environ: dict[str, str] | None = None,
+    profile: str | None = None,
+    backend: str | None = None,
+    harness: str | None = None,
 ) -> Config:
-    """``backend`` (or ``$DIFFUSION_BACKEND``) pins a CLI backend in place of the config default and
-    auto-detection, so a harness plugin runs on the harness's own login, never on an API key that happens to
-    be set. An explicitly named profile still wins."""
+    """Which profile wins, first to last: a named profile (``profile`` or ``$DIFFUSION_PROFILE``); a pinned CLI
+    backend (``backend`` or ``$DIFFUSION_BACKEND``); the config file's default or only profile; the CLI of the
+    agent that launched Diffusion (``harness``), if installed; auto-detection.
+
+    So an agent plugin runs on that agent's own login, never on an API key that happens to be set, unless the
+    config file says otherwise."""
     env = dict(os.environ if environ is None else environ)
     path = config_path(env)
     data = _read_toml(path)
@@ -221,13 +252,16 @@ def load_config(
     elif len(profiles) == 1:
         name, p = next(iter(profiles.items()))
         p, source = dict(p), str(path)
+    elif harness in PINNABLE and _harness_usable(harness, env):
+        name, source = harness, HARNESS_SOURCE
+        p = {"backend": harness}
     else:
         reason, p = _autodetect(env)
         name, source = "auto", f"auto-detected from {reason}"
 
     backend = p.get("backend", "api")
-    if backend not in ("api", "claude-code", "codex"):
-        raise ConfigError(f"Profile {name!r}: unknown backend {backend!r} (api, claude-code, codex).")
+    if backend not in BACKENDS:
+        raise ConfigError(f"Profile {name!r}: unknown backend {backend!r} ({', '.join(BACKENDS)}).")
     protocol = p.get("protocol", "anthropic") if backend == "api" else None
     if protocol not in (None, "anthropic", "openai"):
         raise ConfigError(f"Profile {name!r}: unknown protocol {protocol!r} (anthropic, openai).")
@@ -250,7 +284,7 @@ def load_config(
         inherited_url = inherited.get("ANTHROPIC_BASE_URL" if protocol == "anthropic" else "OPENAI_BASE_URL")
         base_url = (p.get("base_url") or inherited_url or DEFAULT_BASE_URLS[protocol]).rstrip("/")
 
-    cli = env.get("DIFFUSION_CLI") or p.get("cli_path") or ("codex" if backend == "codex" else None)
+    cli = env.get("DIFFUSION_CLI") or p.get("cli_path") or CLI_NAMES.get(backend)
     cli_path = (shutil.which(cli, path=env.get("PATH")) or cli) if cli else None
     home = Path(env.get("HOME") or Path.home())
 

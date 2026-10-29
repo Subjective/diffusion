@@ -1,0 +1,20 @@
+{
+  "name": "diffusion",
+  "version": "0.1.1",
+  "description": "Open a guided, linked review of a pull request or branch in Diffusion.",
+  "author": {
+    "name": "Subjective"
+  },
+  "homepage": "https://github.com/Subjective/diffusion",
+  "repository": "https://github.com/Subjective/diffusion",
+  "license": "MIT",
+  "keywords": ["code-review", "pull-request", "review-guide"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Diffusion",
+    "shortDescription": "Guided, linked reviews of pull requests",
+    "developerName": "Subjective",
+    "category": "Developer Tools",
+    "defaultPrompt": ["Open a Diffusion review of this branch"]
+  }
+}

@@ -20,7 +20,7 @@ ProfileOpt = typer.Option(
 BackendOpt = typer.Option(
     None,
     "--backend",
-    help="Pin the model backend to claude-code or codex, using that CLI's own login, in place of the "
+    help="Pin the model backend to claude-code, codex or cursor, using that CLI's own login, in place of the "
     "config default and auto-detection.",
 )
 
@@ -30,9 +30,9 @@ def main() -> None:
     """Turn a pull request (or a local branch) into a guided, linked review walkthrough."""
 
 
-def _config(profile: str | None, backend: str | None = None) -> Config:
+def _config(profile: str | None, backend: str | None = None, harness: str | None = None) -> Config:
     try:
-        return load_config(profile=profile, backend=backend)
+        return load_config(profile=profile, backend=backend, harness=harness)
     except ConfigError as e:
         typer.secho(str(e), fg="red", err=True)
         raise typer.Exit(1) from e
@@ -240,13 +240,19 @@ def open_(
     profile: str = ProfileOpt,
     backend: str = BackendOpt,
 ) -> None:
-    """Open a review in the browser, starting the web UI in the background if it isn't running."""
+    """Open a review in the browser, starting the web UI in the background if it isn't running.
+
+    Run from Claude Code, Codex or Cursor, the review uses that agent's CLI unless the config file picks
+    another profile."""
     import webbrowser
 
+    from .config import HARNESS_SOURCE, detect_harness
     from .github import GitHubError, parse_pr_url
     from .launcher import LaunchError, can_open_browser, find_or_start
 
-    cfg = _config(profile, backend)  # fail fast on bad config, before starting anything
+    cfg = _config(profile, backend, detect_harness(dict(os.environ)))  # fail fast, before starting anything
+    if cfg.source == HARNESS_SOURCE:
+        backend = cfg.backend  # the detached server doesn't see the agent's environment
     resolved = resolve_target(target, base, head)
     if not resolved.startswith("local:"):
         try:

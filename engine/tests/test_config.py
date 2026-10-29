@@ -198,3 +198,27 @@ def test_named_profile_beats_pinned_backend(home):
 def test_only_cli_backends_can_be_pinned(home):
     with pytest.raises(ConfigError, match="Can't pin backend 'api'"):
         load_config(env(home, ANTHROPIC_API_KEY="a"), backend="api")
+
+
+def test_detect_harness():
+    from diffusion.config import detect_harness
+
+    assert detect_harness({}) is None
+    assert detect_harness({"CLAUDECODE": "1", "CURSOR_TRACE_ID": "t"}) == "claude-code"
+    assert detect_harness({"CODEX_THREAD_ID": "th", "CURSOR_TRACE_ID": "t"}) == "codex"
+    assert detect_harness({"CURSOR_AGENT": "1"}) == "cursor"
+
+
+def test_harness_beats_api_keys_but_not_config_default(home, tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    exe = bin_dir / "cursor-agent"
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+    e = {"HOME": str(home), "PATH": str(bin_dir), "ANTHROPIC_API_KEY": "a"}
+    cfg = load_config(e, harness="cursor")
+    assert (cfg.backend, cfg.cli_path, cfg.api_key) == ("cursor", str(exe), None)
+    assert load_config(e, harness="claude-code").backend == "claude-code"
+    assert load_config(e, harness="codex").backend == "api"  # no codex CLI installed: auto-detect
+    write_cfg(home, PROFILES)
+    assert load_config({**e, "OPENROUTER_API_KEY": "r"}, harness="cursor").profile == "or"

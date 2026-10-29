@@ -2,9 +2,12 @@
 
 With no config file, Diffusion uses the first of these it finds: `ANTHROPIC_API_KEY`; `ANTHROPIC_AUTH_TOKEN` with
 `ANTHROPIC_BASE_URL` (a gateway with bearer auth); `OPENROUTER_API_KEY`; `OPENAI_API_KEY` with optional
-`OPENAI_BASE_URL`; a `claude` CLI on `PATH`; a `codex` CLI on `PATH`. Run `diffusion doctor` to see which.
+`OPENAI_BASE_URL`; a `claude` CLI on `PATH`; a `codex` CLI on `PATH`; a `cursor-agent` CLI on `PATH`. Run
+`diffusion doctor` to see which.
 
-`/diffusion:review` always uses your Claude Code login, even when an API key is set.
+Opened from Claude Code, Codex, or Cursor, a review runs on that agent's own login, even when an API key is set.
+A config file's `default` (or only) profile takes precedence, so you can review from Cursor with Claude Code, for
+example. Cursor needs the [`cursor-agent` CLI](https://cursor.com/cli) signed in.
 
 ## Profiles
 
@@ -46,11 +49,15 @@ chat_model = "sonnet"
 # Your Codex setup (API key, login, or any provider in ~/.codex/config.toml)
 [profiles.codex]
 backend = "codex"
+
+# Your Cursor CLI login
+[profiles.cursor]
+backend = "cursor"
 ```
 
 | Key | Backends | Meaning |
 |---|---|---|
-| `backend` | all | `api` (default), `claude-code`, or `codex` |
+| `backend` | all | `api` (default), `claude-code`, `codex`, or `cursor` |
 | `protocol` | api | `anthropic` (default) or `openai` |
 | `base_url` | api | API base URL (default: the provider's public API) |
 | `api_key_env` | api | env var, or list of env vars, holding the key |
@@ -59,12 +66,12 @@ backend = "codex"
 | `headers` | api | extra HTTP headers, e.g. OpenRouter's `HTTP-Referer` |
 | `no_key` | api | allow no key (local servers) |
 | `guide_model`, `chat_model` | all | model names as the backend expects them |
-| `cli_path` | claude-code, codex | CLI to run (default: the SDK's bundled Claude Code / `codex` on `PATH`) |
-| `env` | claude-code, codex | extra environment for the CLI, e.g. `{ CLAUDE_CODE_USE_BEDROCK = "1" }` |
+| `cli_path` | CLI backends | CLI to run (default: the SDK's bundled Claude Code, or `codex` / `cursor-agent` on `PATH`) |
+| `env` | CLI backends | extra environment for the CLI, e.g. `{ CLAUDE_CODE_USE_BEDROCK = "1" }` |
 | `inherit_env_from` | all | JSON files whose `env` table supplies variables (earlier files win) |
 | `max_turns` | all | agent turn limit (default 40) |
 
-Environment overrides: `DIFFUSION_PROFILE`, `DIFFUSION_GUIDE_MODEL`, `DIFFUSION_CHAT_MODEL`, `DIFFUSION_CLI`,
+Environment overrides: `DIFFUSION_PROFILE`, `DIFFUSION_BACKEND`, `DIFFUSION_GUIDE_MODEL`, `DIFFUSION_CHAT_MODEL`, `DIFFUSION_CLI`,
 `DIFFUSION_CACHE_DIR`, `DIFFUSION_CONFIG`.
 
 ## Reusing a Claude Code gateway
