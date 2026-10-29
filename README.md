@@ -8,7 +8,7 @@ works, and why.
 
 ## Demo
 
-https://github.com/user-attachments/assets/a7f5fb1a-6361-455e-9f58-21a610bb8bf1
+https://github.com/user-attachments/assets/1955089f-872b-4a9e-beda-c3bedfa6a1c0
 
 ## From Claude Code
 
