@@ -10,25 +10,39 @@ works, and why.
 
 https://github.com/user-attachments/assets/1955089f-872b-4a9e-beda-c3bedfa6a1c0
 
-## From Claude Code
+## From your coding agent
 
-Install the plugin once:
+Install the plugin once.
+
+Claude Code:
 
 ```
 /plugin marketplace add Subjective/diffusion
 /plugin install diffusion@diffusion
 ```
 
-Then, in any session:
+Codex:
 
 ```
-/diffusion:review https://github.com/owner/repo/pull/123   # a PR
-/diffusion:review                                          # the current branch against its base
+codex plugin marketplace add Subjective/diffusion
+codex plugin add diffusion@diffusion
 ```
+
+Cursor: `/add-plugin https://github.com/Subjective/diffusion` in Agent chat.
+
+Then ask for a review, with a PR URL or nothing for the current branch:
+
+```
+/diffusion:review https://github.com/owner/repo/pull/123   # Claude Code
+$diffusion:review https://github.com/owner/repo/pull/123   # Codex
+/diffusion:review https://github.com/owner/repo/pull/123   # Cursor (Agent mode)
+```
+
+The guide is written by the agent you ran it from, on its own login.
 
 ## Prerequisites
 
-- **Model access**: an Anthropic, OpenAI, or OpenRouter API key, or a signed-in Claude Code or Codex. Gateways
+- **Model access**: an Anthropic, OpenAI, or OpenRouter API key, or a signed-in Claude Code, Codex, or Cursor CLI. Gateways
   and local models work too; see [configuration](docs/configuration.md).
 - **git**, and for GitHub PRs `gh` signed in or a `GITHUB_TOKEN`.
 - **[`uv`](https://docs.astral.sh/uv/)**.

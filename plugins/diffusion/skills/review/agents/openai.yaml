@@ -1,0 +1,5 @@
+interface:
+  display_name: "Diffusion review"
+  short_description: "Open a guided review of a PR or branch"
+policy:
+  allow_implicit_invocation: false

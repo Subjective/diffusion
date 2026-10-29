@@ -160,7 +160,7 @@ def codex_runner(cfg: Config) -> Runner:
                 error = stderr.splitlines()[-1] if stderr else f"codex exited with {code}"
             if terminal and not error:
                 try:
-                    reply = await terminal.handler(drop_nulls(json.loads(_strip_fences(last_text))))
+                    reply = await terminal.handler(drop_nulls(json.loads(strip_fences(last_text))))
                     if not reply.startswith("received"):
                         error = f"{terminal.name}: {reply}"
                 except ValueError as e:
@@ -175,7 +175,7 @@ def codex_runner(cfg: Config) -> Runner:
     return run
 
 
-def _strip_fences(text: str) -> str:
+def strip_fences(text: str) -> str:
     t = text.strip()
     if t.startswith("```"):
         t = t.split("\n", 1)[1] if "\n" in t else ""

@@ -155,3 +155,24 @@ def test_open_rejects_a_non_pr_url():
         app, ["open", "https://github.com/o/r/pull/x", "--backend", "codex", "--no-browser"]
     )
     assert r.exit_code != 0
+
+
+def test_open_from_an_agent_pins_its_backend(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake(port, log_dir, backend, profile):
+        seen.update(backend=backend)
+        return Server(8790, backend or "api", "auto", False)
+
+    monkeypatch.setattr(launcher, "find_or_start", fake)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("DIFFUSION_BACKEND", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    r = CliRunner().invoke(app, ["open", "https://github.com/o/r/pull/3", "--no-browser"])
+    assert r.exit_code == 0, r.output
+    assert seen == {"backend": "claude-code"}
+    monkeypatch.delenv("CLAUDECODE")
+    r = CliRunner().invoke(app, ["open", "https://github.com/o/r/pull/3", "--no-browser"])
+    assert r.exit_code == 0, r.output
+    assert seen == {"backend": None}

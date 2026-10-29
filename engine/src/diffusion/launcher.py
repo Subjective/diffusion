@@ -21,10 +21,14 @@ from . import __version__
 
 PORT_SPAN = 20  # ports tried after the first one
 START_TIMEOUT = 60.0
-# Set by a parent Claude Code session for its children. A detached server is not part of that session, and
-# the `claude` it launches for the claude-code backend must not look nested in it. Provider settings such as
-# CLAUDE_CODE_USE_BEDROCK are kept, so the backend reaches models the same way the harness does.
-HARNESS_ENV = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_SSE_PORT")
+# Set by a parent agent session (Claude Code, Codex, Cursor) for its shell commands. A detached server is not
+# part of that session, and the CLI it launches for a backend must not look nested or sandboxed in it.
+# Provider settings such as CLAUDE_CODE_USE_BEDROCK are kept, so the backend reaches models the same way the
+# harness does.
+HARNESS_ENV = (
+    "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_SSE_PORT",
+    "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_THREAD_ID", "CURSOR_AGENT",
+)  # fmt: skip
 
 PortState = Literal["free", "diffusion", "other"]
 

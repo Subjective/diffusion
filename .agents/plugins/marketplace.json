@@ -1,0 +1,20 @@
+{
+  "name": "diffusion",
+  "interface": {
+    "displayName": "Diffusion"
+  },
+  "plugins": [
+    {
+      "name": "diffusion",
+      "source": {
+        "source": "local",
+        "path": "./plugins/diffusion"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

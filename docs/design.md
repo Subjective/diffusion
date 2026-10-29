@@ -23,7 +23,7 @@ A local tool that turns a PR URL, or a local branch, into a **guided, linked wal
 - G3. No changed code is silently left out. Every hunk is either covered by a step, marked skippable with a reason, or listed as uncovered.
 - G4. Reviewers can ask about specific lines, ask several things without waiting, and always trace an answer back to its code.
 - G5. Minimal, icon-first UI, styled after OpenAI's design language: neutral palette, whitespace, hairline borders, one accent color.
-- G6. Works with the model access reviewers already have: Anthropic or OpenAI keys, OpenRouter, a gateway, a local model, or an existing Claude Code / Codex setup.
+- G6. Works with the model access reviewers already have: Anthropic or OpenAI keys, OpenRouter, a gateway, a local model, or an existing Claude Code, Codex, or Cursor setup.
 
 ### Non-goals (v1)
 - Posting reviews or comments to GitHub, approving, or requesting changes.
@@ -89,6 +89,7 @@ A software engineer reviewing a colleague's PR (or their own branch), often one 
   - `api`: a Pydantic AI agent over the Anthropic Messages API or any OpenAI-compatible Chat Completions API (OpenAI, OpenRouter, Gemini, Ollama, vLLM, gateways), with read-only `read_file`/`grep`/`glob` tools.
   - `claude-code`: the Claude Agent SDK, driving the user's Claude Code CLI with its read-only built-in tools.
   - `codex`: `codex exec` in a read-only sandbox; the guide comes back through `--output-schema`.
+  - `cursor`: `cursor-agent -p` in read-only ask mode; the guide comes back as a JSON reply.
 - **Web** (React, local): renders the guide, the diff and the chat. It talks to the engine over HTTP and streaming SSE. The built UI ships inside the Python package, so `diffusion serve` needs no Node.
 - **Storage:** everything stays under `~/.cache/diffusion/`: the repo clones and worktrees, guides keyed by head SHA, chat records, and `api`-backend sessions.
 
@@ -119,7 +120,7 @@ A software engineer reviewing a colleague's PR (or their own branch), often one 
 2. Web UI shows the diff and the guide, with step linking and the flow graph.
 3. Chat, select/drag to ask, the comment queue, linked annotations and history.
 4. A single-port `diffusion serve`, plus README instructions.
-5. Pluggable model backends (`api`, `claude-code`, `codex`), profiles, local-branch mode, and a self-contained package.
+5. Pluggable model backends (`api`, `claude-code`, `codex`, `cursor`), profiles, local-branch mode, and a self-contained package.
 
 ## 10. Deferred / future
 

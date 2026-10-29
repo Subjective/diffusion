@@ -10,7 +10,7 @@
     {
       "name": "diffusion",
       "source": "./plugins/diffusion",
-      "description": "Open a guided, linked review of a pull request or branch in Diffusion, running on your Claude Code login."
+      "description": "Open a guided, linked review of a pull request or branch in Diffusion."
     }
   ]
 }

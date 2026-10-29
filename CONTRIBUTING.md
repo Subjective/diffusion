@@ -64,7 +64,7 @@ in [configuration](docs/configuration.md) are very useful: open an issue with th
 
 ## Releasing
 
-Bump `version` in `engine/pyproject.toml` (and in `plugins/diffusion/.claude-plugin/plugin.json`), merge, then push
+Bump `version` in `engine/pyproject.toml` (and in the `plugin.json` files under `plugins/diffusion/`), merge, then push
 a matching tag: `git tag v0.2.0 && git push origin v0.2.0`. The `Release` workflow builds the wheel with the UI,
 publishes it to PyPI as `diffusion-review` (trusted publishing, from the `pypi` environment), and attaches it to a
 GitHub release.
