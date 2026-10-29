@@ -187,7 +187,7 @@ def _autodetect(environ: dict[str, str]) -> tuple[str, dict]:
         return "codex CLI on PATH", {"backend": "codex"}
     raise ConfigError(
         "No model backend found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY, install the "
-        "`claude` or `codex` CLI, or add a profile to ~/.config/diffusion/config.toml (see README)."
+        "`claude` or `codex` CLI, or add a profile to ~/.config/diffusion/config.toml (see docs/configuration.md)."
     )
 
 

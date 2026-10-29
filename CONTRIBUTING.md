@@ -10,6 +10,7 @@ You need `git`, [`uv`](https://docs.astral.sh/uv/) (Python 3.12+), and Node 24+ 
 make install        # engine deps (uv sync) + web deps (npm install)
 make test           # what CI runs: ruff + pyright + pytest, biome + tsc + vitest
 make dev            # engine on :8787 with auto-reload, Vite on :5173 (open this one)
+make wheel          # a self-contained package with the UI included, in dist/
 ```
 
 `make test` needs no model access or network: tests use fake runners, a scripted model, and a generated sample
@@ -59,7 +60,7 @@ cd engine && uv run pytest -m live
 ## Reporting model compatibility
 
 `diffusion doctor --profile <p> --eval` prints a one-line score. Results for models and providers not yet covered
-in the README are very useful: open an issue with the line, the model, and the backend/protocol.
+in [configuration](docs/configuration.md) are very useful: open an issue with the line, the model, and the backend/protocol.
 
 ## Releasing
 
