@@ -8,11 +8,7 @@ works, and why.
 
 ## Demo
 
-[![Diffusion demo: a 30-file Rust PR reviewed with /diffusion:review](docs/assets/demo-poster.jpg)](docs/assets/demo.mp4)
-
-A one-minute walkthrough of `/diffusion:review` on a mock 30-file Rust PR: notes, the flow diagram, stepping with
-`j`, the file list, ⌘-click go to definition, comments and chat. Click the image to play
-[`docs/assets/demo.mp4`](docs/assets/demo.mp4). Music: "Study and Relax" by Kevin MacLeod (public domain, via FreePD).
+https://github.com/user-attachments/assets/a7f5fb1a-6361-455e-9f58-21a610bb8bf1
 
 ## From Claude Code
 
