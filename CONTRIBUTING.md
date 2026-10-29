@@ -10,6 +10,7 @@ You need `git`, [`uv`](https://docs.astral.sh/uv/) (Python 3.12+), and Node 24+ 
 make install        # engine deps (uv sync) + web deps (npm install)
 make test           # what CI runs: ruff + pyright + pytest, biome + tsc + vitest
 make dev            # engine on :8787 with auto-reload, Vite on :5173 (open this one)
+make wheel          # a self-contained package with the UI included, in dist/
 ```
 
 `make test` needs no model access or network: tests use fake runners, a scripted model, and a generated sample
@@ -27,8 +28,10 @@ engine/src/diffusion/
   backends/                         api (own loop + providers + tools), claude_code, codex
   config.py                         profiles and auto-detection
   app.py, jobs.py, store.py, cli.py HTTP/SSE API, background jobs, on-disk store, CLI
+  launcher.py                       `diffusion open`: reuse or start a background server, open the browser
 web/src/                            React UI (store.ts, chat.ts, ui.ts; components/; lib/)
 docs/design.md                      design and functional spec
+plugins/diffusion/                  Claude Code plugin (`/diffusion:review`); .claude-plugin/ is its marketplace
 ```
 
 ## Guidelines
@@ -57,4 +60,11 @@ cd engine && uv run pytest -m live
 ## Reporting model compatibility
 
 `diffusion doctor --profile <p> --eval` prints a one-line score. Results for models and providers not yet covered
-in the README are very useful: open an issue with the line, the model, and the backend/protocol.
+in [configuration](docs/configuration.md) are very useful: open an issue with the line, the model, and the backend/protocol.
+
+## Releasing
+
+Bump `version` in `engine/pyproject.toml` (and in `plugins/diffusion/.claude-plugin/plugin.json`), merge, then push
+a matching tag: `git tag v0.2.0 && git push origin v0.2.0`. The `Release` workflow builds the wheel with the UI,
+publishes it to PyPI as `diffusion-review` (trusted publishing, from the `pypi` environment), and attaches it to a
+GitHub release.

@@ -187,18 +187,32 @@ def _autodetect(environ: dict[str, str]) -> tuple[str, dict]:
         return "codex CLI on PATH", {"backend": "codex"}
     raise ConfigError(
         "No model backend found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY, install the "
-        "`claude` or `codex` CLI, or add a profile to ~/.config/diffusion/config.toml (see README)."
+        "`claude` or `codex` CLI, or add a profile to ~/.config/diffusion/config.toml (see docs/configuration.md)."
     )
 
 
-def load_config(environ: dict[str, str] | None = None, profile: str | None = None) -> Config:
+PINNABLE = ("claude-code", "codex")
+
+
+def load_config(
+    environ: dict[str, str] | None = None, profile: str | None = None, backend: str | None = None
+) -> Config:
+    """``backend`` (or ``$DIFFUSION_BACKEND``) pins a CLI backend in place of the config default and
+    auto-detection, so a harness plugin runs on the harness's own login, never on an API key that happens to
+    be set. An explicitly named profile still wins."""
     env = dict(os.environ if environ is None else environ)
     path = config_path(env)
     data = _read_toml(path)
     profiles: dict[str, dict] = data.get("profiles", {})
-    name = profile or env.get("DIFFUSION_PROFILE") or data.get("default")
+    pinned = backend or env.get("DIFFUSION_BACKEND")
+    if pinned and pinned not in PINNABLE:
+        raise ConfigError(f"Can't pin backend {pinned!r} ({', '.join(PINNABLE)}).")
+    name = profile or env.get("DIFFUSION_PROFILE") or (None if pinned else data.get("default"))
 
-    if name:
+    if pinned and not name:
+        name, source = pinned, "pinned by --backend or DIFFUSION_BACKEND"
+        p: dict = {"backend": pinned}
+    elif name:
         if name not in profiles:
             raise ConfigError(
                 f"Profile {name!r} not found in {path} (have: {', '.join(profiles) or 'none'})."

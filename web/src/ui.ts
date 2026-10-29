@@ -18,6 +18,7 @@ interface UI {
   readSteps: Record<number, boolean>;
   order: Order;
   hideSkip: boolean;
+  rail: boolean;
 
   hoverRows: Set<string>; // rowKey
   pinRows: Set<string>;
@@ -27,6 +28,8 @@ interface UI {
   hoverSub: number | null;
   pinStep: number | null;
   pinSub: number | null;
+  /** Go-to-definition preview under a row. */
+  peek: Peek | null;
 
   init(prKey: string, defaultsCollapsed: Record<string, boolean>): void;
   toggleCollapsed(path: string, value?: boolean): void;
@@ -35,10 +38,18 @@ interface UI {
   toggleRead(step: number): void;
   setOrder(o: Order): void;
   toggleHideSkip(): void;
+  toggleRail(): void;
 
   setHover(keys: string[], step?: number | null, sub?: number | null): void;
   focus(keys: string[], files: string[], step?: number | null, sub?: number | null): void;
   clearPin(): void;
+  setPeek(p: Peek | null): void;
+}
+
+export interface Peek {
+  rk: string;
+  file: string;
+  symbol: string;
 }
 
 const persist = (k: string, s: Pick<UI, "viewed" | "readSteps">) =>
@@ -51,6 +62,7 @@ export const useUI = create<UI>((set, get) => ({
   readSteps: {},
   order: storage.get<Order>("rv-order", "guide"),
   hideSkip: false,
+  rail: storage.get("rv-rail", false),
   hoverRows: new Set(),
   pinRows: new Set(),
   flash: { keys: new Set(), n: 0 },
@@ -59,6 +71,7 @@ export const useUI = create<UI>((set, get) => ({
   hoverSub: null,
   pinStep: null,
   pinSub: null,
+  peek: null,
 
   init(prKey, defaultsCollapsed) {
     const saved = storage.get(`rv-ui:${prKey}`, { viewed: {}, readSteps: {} });
@@ -105,6 +118,11 @@ export const useUI = create<UI>((set, get) => ({
     set({ order });
   },
   toggleHideSkip: () => set((s) => ({ hideSkip: !s.hideSkip })),
+  toggleRail() {
+    const rail = !get().rail;
+    storage.set("rv-rail", rail);
+    set({ rail });
+  },
 
   setHover(keys, step = null, sub = null) {
     const s = get();
@@ -136,4 +154,5 @@ export const useUI = create<UI>((set, get) => ({
     });
   },
   clearPin: () => set({ pinStep: null, pinSub: null, pinRows: new Set() }),
+  setPeek: (peek) => set({ peek }),
 }));

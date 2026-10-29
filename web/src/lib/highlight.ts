@@ -110,3 +110,10 @@ export async function highlightHunk(hunk: Hunk, lang: string): Promise<Map<numbe
   }
   return out;
 }
+
+/** Tokens for each line of a whole file. Very long files stay plain. */
+export async function highlightLines(lines: string[], lang: string): Promise<LineTokens[]> {
+  if (lines.length > MAX_HIGHLIGHT_LINES) return [];
+  return tokenize(lines.join("\n"), lang);
+}
+const MAX_HIGHLIGHT_LINES = 5000;

@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import __version__
 from .agent import DoneEvent, Runner, ToolEvent, make_runner
 from .chat_agent import ChatDelta, ChatFocus, Question, run_turn
 from .config import Config, load_config
@@ -26,8 +27,10 @@ from .jobs import Emit, Jobs
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
+from .symbols import NAME, SymbolIndex
 
 PrepareFn = Callable[[Config, str], Prepared]
+MAX_FILE_CHARS = 2_000_000
 
 
 @dataclass
@@ -94,6 +97,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
 
     _prepared: dict[str, Prepared] = {}
     chat_locks: dict[str, asyncio.Lock] = {}
+    symbols: dict[Path, SymbolIndex] = {}
+    symbol_locks: dict[Path, asyncio.Lock] = {}
 
     async def get_prepared(url: str, refresh: bool = False) -> Prepared:
         try:
@@ -118,6 +123,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             "backend": cfg.backend,
             "guide_model": cfg.guide_model,
             "chat_model": cfg.chat_model,
+            "version": __version__,
+            "ui": dist is not None,
         }
 
     @app.get("/api/pr")
@@ -144,6 +151,41 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             deps.jobs.drop(job_key)
         job = deps.jobs.start(job_key, partial(run_guide, deps, prep))
         return sse_response(job.follow())
+
+    @app.get("/api/file")
+    async def file(url: str, path: str) -> dict:
+        """A changed file at the PR head, so the diff can show lines around and between hunks."""
+        prep = await get_prepared(url)
+        if path not in {f.path for f in prep.index.files}:
+            raise HTTPException(404, f"{path} isn't in this diff")
+        try:
+            text = await asyncio.to_thread(prep.checkout.file_at_head, path)
+        except UnicodeDecodeError as e:
+            raise HTTPException(415, f"{path} isn't text") from e
+        if text is None:
+            raise HTTPException(404, f"{path} doesn't exist at the head commit")
+        if len(text) > MAX_FILE_CHARS:
+            raise HTTPException(413, f"{path} is too large to show in full")
+        return {"path": path, "text": text}
+
+    @app.get("/api/definition")
+    async def definition(url: str, symbol: str, path: str) -> dict:
+        """Where `symbol` is defined at the PR head, nearest to `path` first, with each definition's source."""
+        if not NAME.match(symbol):
+            raise HTTPException(400, "Not a name")
+        prep = await get_prepared(url)
+        root = prep.checkout.worktree
+        async with symbol_locks.setdefault(root, asyncio.Lock()):
+            if root not in symbols:
+                symbols[root] = await asyncio.to_thread(SymbolIndex, root)
+        index = symbols[root]
+        found = index.lookup(symbol, path)
+        return {
+            "symbol": symbol,
+            "matches": [
+                {"path": m.path, "line": m.line, "end": m.end, "text": index.snippet(m)} for m in found
+            ],
+        }
 
     # ---------- chats ----------
 
@@ -266,12 +308,6 @@ def _web_dist() -> Path | None:
 
 async def run_guide(deps: Deps, prep: Prepared, emit: Emit) -> None:
     t0 = time.monotonic()
-    emit("stage", {"stage": "fetch", "status": "done"})
-    emit(
-        "stage",
-        {"stage": "hunks", "status": "done", "files": len(prep.index.files), "hunks": len(prep.index.hunks)},
-    )
-    emit("stage", {"stage": "explore", "status": "active"})
     done: GuideDone | None = None
     async for ev in generate_guide(
         prep.meta, prep.checkout, prep.index, deps.runner, deps.cfg.guide_model, deps.cfg.max_turns
@@ -283,8 +319,6 @@ async def run_guide(deps: Deps, prep: Prepared, emit: Emit) -> None:
         elif isinstance(ev, GuideDone):
             done = ev
     assert done is not None
-    emit("stage", {"stage": "explore", "status": "done"})
-    emit("stage", {"stage": "validate", "status": "done"})
     record = {
         **done.guide.model_dump(by_alias=True),
         "meta": {
