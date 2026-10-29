@@ -94,7 +94,7 @@ A software engineer reviewing a colleague's PR (or their own branch), often one 
 
 ## 7. LLM, security and data constraints
 
-- Model access is configured as profiles (`~/.config/diffusion/config.toml`) or auto-detected from the environment; see the README. Each profile sets a backend, endpoint, key source and models: a strong model for guides and a faster one for chat.
+- Model access is configured as profiles (`~/.config/diffusion/config.toml`) or auto-detected from the environment; see [configuration](configuration.md). Each profile sets a backend, endpoint, key source and models: a strong model for guides and a faster one for chat.
 - Keys come from environment variables, a key command, or inherited settings files (e.g. an existing Claude Code setup). They're never written to disk by the tool, logged, or sent to the browser.
 - The agent's tools are read-only and confined to the change's worktree; paths outside it are rejected, including through symlinks. It has no write access and no web access, and no shell except Codex's own read-only sandbox.
 - PR text and code are untrusted input. A hostile change can at worst mislead the guide.
