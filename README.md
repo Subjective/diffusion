@@ -34,8 +34,8 @@ Then ask for a review, with a PR URL or nothing for the current branch:
 
 ```
 /diffusion:review https://github.com/owner/repo/pull/123   # Claude Code
-$review https://github.com/owner/repo/pull/123             # Codex
-/review https://github.com/owner/repo/pull/123             # Cursor
+$diffusion:review https://github.com/owner/repo/pull/123   # Codex
+/diffusion:review https://github.com/owner/repo/pull/123   # Cursor (Agent mode)
 ```
 
 The guide is written by the agent you ran it from, on its own login.

@@ -50,7 +50,7 @@ chat_model = "sonnet"
 [profiles.codex]
 backend = "codex"
 
-# Your Cursor CLI login
+# Your Cursor CLI login (models default to "auto", which every Cursor plan includes)
 [profiles.cursor]
 backend = "cursor"
 ```

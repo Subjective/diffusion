@@ -39,7 +39,7 @@ def summarize_call(call: dict) -> tuple[str, str] | None:
     name = key.removesuffix("ToolCall")
     args: dict[str, Any] = (body or {}).get("args") or {}
     if args.get("command"):
-        cmd = str(args["command"])
+        cmd = " ".join(str(args["command"]).split())
         return name, cmd if len(cmd) <= 60 else cmd[:57] + "…"
     if args.get("path"):
         return name, f"{name.capitalize()} {Path(str(args['path'])).name}"
@@ -54,8 +54,9 @@ def compose_prompt(req: AgentRequest, terminal: ToolSpec | None) -> str:
         parts += [
             "",
             f"When done, reply with only the JSON for `{terminal.name}` ({terminal.description}), matching this "
-            f"JSON schema:\n```json\n{json.dumps(terminal.schema)}\n```\nThe `get_hunk` tool isn't available "
-            "here, so use the annotated hunks above and your tools to read files. Don't edit any files.",
+            f"JSON schema:\n```json\n{json.dumps(terminal.schema)}\n```\nThere are no MCP tools here (no "
+            "`get_hunk`), so use the annotated hunks above and your own tools to read files. Don't edit files, "
+            "run commands or start subagents.",
         ]
     return "\n".join(parts)
 

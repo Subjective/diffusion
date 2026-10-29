@@ -397,6 +397,15 @@ def test_cursor_args(tmp_path):
     assert args[args.index("--workspace") + 1] == str(tmp_path) and args[-1] == "P"
 
 
+def test_cursor_call_summaries_fit_one_line():
+    from diffusion.backends.cursor import summarize_call
+
+    assert summarize_call({"shellToolCall": {"args": {"command": "python3 -c '\nimport x\nprint(x)'"}}}) == (
+        "shell",
+        "python3 -c ' import x print(x)'",
+    )
+
+
 def test_parse_json_reply():
     assert parse_json_reply('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json_reply('Here is the guide:\n{"a": {"b": 2}}\nDone.') == {"a": {"b": 2}}

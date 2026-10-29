@@ -218,6 +218,7 @@ def test_harness_beats_api_keys_but_not_config_default(home, tmp_path):
     e = {"HOME": str(home), "PATH": str(bin_dir), "ANTHROPIC_API_KEY": "a"}
     cfg = load_config(e, harness="cursor")
     assert (cfg.backend, cfg.cli_path, cfg.api_key) == ("cursor", str(exe), None)
+    assert (cfg.guide_model, cfg.chat_model) == ("auto", "auto")  # what every Cursor plan includes
     assert load_config(e, harness="claude-code").backend == "claude-code"
     assert load_config(e, harness="codex").backend == "api"  # no codex CLI installed: auto-detect
     write_cfg(home, PROFILES)

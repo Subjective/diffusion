@@ -45,7 +45,7 @@ DEFAULT_MODELS: dict[tuple[str, str | None], tuple[str, str]] = {
     ("api", "openai"): ("gpt-5", "gpt-5-mini"),
     ("claude-code", None): ("opus", "sonnet"),
     ("codex", None): ("", ""),  # empty = the CLI's configured default model
-    ("cursor", None): ("", ""),
+    ("cursor", None): ("auto", "auto"),  # the CLI's own default can be a model the user's plan excludes
 }
 DEFAULT_BASE_URLS: dict[str, str] = {
     "anthropic": "https://api.anthropic.com",
