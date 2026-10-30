@@ -1,6 +1,6 @@
 {
   "name": "diffusion",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Open a guided, linked review of a pull request or branch in Diffusion.",
   "author": {
     "name": "Subjective"
