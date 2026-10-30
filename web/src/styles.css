@@ -1533,6 +1533,14 @@ tr.gap td {
   height: 26px;
   vertical-align: middle;
 }
+/* The label lines up with the code column, its icon in the sign gutter. */
+tr.gap td:not(.exp) {
+  padding-left: 4px;
+}
+tr.gap .hh-t {
+  display: flex;
+  align-items: center;
+}
 tr.gap td.exp {
   position: sticky;
   left: 0;
@@ -1561,7 +1569,7 @@ tr.gap.err {
 .exp-all {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   height: 26px;
   color: var(--subtle);
   font: inherit;
