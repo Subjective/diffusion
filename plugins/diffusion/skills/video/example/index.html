@@ -10,7 +10,7 @@
         --panel: #f9f9f9;
         --text: #0d0d0d;
         --muted: #5d5d5d;
-        --subtle: #8f8f8f;
+        --subtle: #6e6e6e;
         --border: #e0e0e0;
         --chip: #f0f0f0;
         --brand: #10a37f;
@@ -67,7 +67,7 @@
       .ln.del { background: var(--del); }
       .ln.del::before { content: "−"; color: var(--del-fg); }
       .ln .mark { position: absolute; inset: 0; background: var(--hl); border-left: 6px solid var(--hl-bar); opacity: 0; }
-      .k { color: var(--t-k); } .s { color: var(--t-s); } .n { color: var(--t-n); } .c { color: var(--t-c); } .f { color: var(--t-f); }
+      .tk-k { color: var(--t-k); } .tk-s { color: var(--t-s); } .tk-n { color: var(--t-n); } .tk-c { color: var(--t-c); } .tk-f { color: var(--t-f); }
       #note { position: absolute; left: 1080px; top: 640px; font-size: 30px; padding: 14px 24px; border-radius: 14px; background: var(--text); color: #fff; }
 
       /* Captions */
@@ -84,13 +84,13 @@
 
       Narration: SCRIPT in the script holds the segments, word for word as spoken. Each segment N has
       <audio id="voN"> with data-duration = its clip's durationSeconds. The root's data-duration is the
-      sum of (clip + 0.8) over all segments. Captions are built from SCRIPT.
+      sum of (clip + 0.8) over all segments, plus 2 s to hold the last frame. Captions are built from SCRIPT.
 
-      Timing: cue(N, "word") is the moment that word is spoken in segment N (cue(N, 0.5) = halfway).
-      Start each move on the word that names its subject.
+      Timing: cue(N, "word") is about when that word is spoken in segment N (cue(N, "word", 2) for its
+      second use, cue(N, 0.5) for halfway). Start each move on the word that names its subject.
     -->
-    <div id="root" data-composition-id="main" data-start="0" data-duration="36.2" data-width="1920" data-height="1080">
-      <div id="stage" class="clip" data-start="0" data-duration="36.2" data-track-index="0">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="38.2" data-width="1920" data-height="1080">
+      <div id="stage" class="clip" data-start="0" data-duration="38.2" data-track-index="0">
         <div id="cam">
           <div id="title">
             <div class="repo">acme/shop · #482</div>
@@ -151,15 +151,16 @@
         "Client errors still fail right away. Worth checking: the backoff has no upper limit.",
       ];
 
-      // ---- Helpers: leave as is. ----
+      // ---- Helpers: keep, and extend when the video needs more (another language's keywords, say). ----
       const tl = gsap.timeline({ paused: true });
       const clips = SCRIPT.map((_, i) => parseFloat(document.getElementById("vo" + i).dataset.duration));
       const starts = clips.map((_, i) => clips.slice(0, i).reduce((t, d) => t + d + 0.8, 0) + 0.3);
       const words = SCRIPT.map((s) => s.split(/\s+/));
-      function cue(n, at) {
+      function cue(n, at, nth = 1) {
         if (typeof at === "number") return starts[n] + clips[n] * at;
-        const i = words[n].findIndex((w) => w.toLowerCase().replace(/[^\w]/g, "").startsWith(at.toLowerCase()));
-        if (i < 0) throw new Error(`cue: "${at}" is not in segment ${n}`);
+        const hits = words[n].map((w, i) => (w.toLowerCase().replace(/[^\w]/g, "").startsWith(at.toLowerCase()) ? i : -1)).filter((i) => i >= 0);
+        const i = hits[nth - 1];
+        if (i === undefined) throw new Error(`cue: "${at}" (${nth}) is not in segment ${n}`);
         return starts[n] + (clips[n] * i) / words[n].length;
       }
       // Captions: each segment split evenly into groups of at most 7 words, shown while they're spoken.
@@ -178,7 +179,7 @@
         }
       });
       // Syntax colors for every .ln.
-      const KW = /^(fn|let|mut|match|if|else|return|pub|use|impl|struct|enum|for|in|while|loop|async|await|const|def|class|import|from|export|function|new|type|interface|true|false|null|None|True|False|self|Self|Ok|Err|Some)$/;
+      const KW = /^(fn|let|mut|match|if|elif|else|and|or|not|return|pub|use|impl|struct|enum|for|in|while|loop|async|await|const|def|class|import|from|export|function|new|type|interface|true|false|null|None|True|False|self|Self|Ok|Err|Some)$/;
       for (const ln of document.querySelectorAll(".ln")) {
         const src = ln.textContent;
         ln.innerHTML = "";
@@ -186,7 +187,7 @@
           const [text, c, s, n, f, w] = m;
           const cls = c ? "c" : s ? "s" : n ? "n" : f ? "f" : w && KW.test(w) ? "k" : "";
           const el = document.createElement("span");
-          if (cls) el.className = cls;
+          if (cls) el.className = "tk-" + cls;
           el.textContent = text;
           ln.appendChild(el);
         }
@@ -200,6 +201,15 @@
         tl.set(path, { opacity: 1, attr: { "marker-end": "none" } }, t);
         if (head) tl.set(path, { attr: { "marker-end": head } }, t + dur);
         tl.fromTo(path, { strokeDasharray: `${len} ${len}`, strokeDashoffset: len }, { strokeDashoffset: 0, duration: dur, ease: "power2.inOut" }, t);
+      };
+      // Move el along an SVG path at even speed (el is centred on its x/y).
+      const travel = (el, path, t, dur, ease = "power1.inOut") => {
+        const len = path.getTotalLength();
+        const keyframes = Array.from({ length: 25 }, (_, i) => {
+          const p = path.getPointAtLength((len * i) / 24);
+          return { x: p.x, y: p.y };
+        });
+        tl.to(el, { keyframes, duration: dur, ease }, t);
       };
       const pop = (el, t) => tl.fromTo(el, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, t);
       const mark = (ln, t) => tl.fromTo(ln.querySelector(".mark"), { opacity: 0 }, { opacity: 1, duration: 0.3 }, t);
@@ -238,7 +248,7 @@
       // 3: now, the error loops back through the queue with a backoff, then succeeds.
       tl.set("#packet", { x: 1220, y: 520, opacity: 1 }, cue(3, "server"));
       draw($("#retry"), cue(3, "back"), 0.8);
-      tl.to("#packet", { keyframes: [{ x: 1180, y: 660 }, { x: 990, y: 700 }, { x: 800, y: 660 }, { x: 760, y: 520 }], duration: 1.4, ease: "none" }, cue(3, "back"));
+      travel("#packet", $("#retry"), cue(3, "back"), 1.4);
       pop("#delays", cue(3, "growing"));
       tl.to("#packet", { x: 1580, duration: 1.4, ease: "power1.inOut" }, cue(3, "retry"));
       pop("#ok", cue(3, "through"));
