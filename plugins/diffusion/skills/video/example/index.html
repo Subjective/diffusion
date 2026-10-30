@@ -11,7 +11,7 @@
         --text: #0d0d0d;
         --muted: #5d5d5d;
         --subtle: #8f8f8f;
-        --border: #ececec;
+        --border: #e0e0e0;
         --chip: #f0f0f0;
         --brand: #10a37f;
         --hl: rgba(37, 99, 235, 0.12);
@@ -20,116 +20,243 @@
         --del: rgba(239, 68, 68, 0.09);
         --add-fg: #0a7a5c;
         --del-fg: #d03b3b;
+        --t-k: #7c3aed;
+        --t-s: #0a7a5c;
+        --t-n: #b45309;
+        --t-c: #6e6e6e;
+        --t-f: #2563eb;
         --sans: "Inter", sans-serif;
         --mono: "JetBrains Mono", monospace;
       }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
       #root { width: 100%; height: 100%; font-family: var(--sans); color: var(--text); }
-      .scene { position: absolute; inset: 0; padding: 120px 160px 220px; display: flex; flex-direction: column; justify-content: center; }
+      #stage, #cam { position: absolute; inset: 0; }
+      #cam { transform-origin: 50% 50%; }
 
-      /* Title */
-      .eyebrow { font-size: 30px; color: var(--muted); margin-bottom: 28px; }
-      .headline { font-size: 76px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; max-width: 1500px; }
-      .stats { display: flex; gap: 16px; margin-top: 44px; font: 28px var(--mono); font-variant-ligatures: none; }
-      .stats span { background: var(--chip); border-radius: 999px; padding: 8px 22px; }
-      .stats .a { color: var(--add-fg); }
-      .stats .d { color: var(--del-fg); }
+      /* Title, which later shrinks into the header */
+      #title { position: absolute; left: 160px; top: 380px; transform-origin: 0 0; }
+      #title .repo { font-size: 30px; color: var(--muted); margin-bottom: 24px; }
+      #title h1 { font-size: 84px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.08; }
+      #title h1 span { display: inline-block; }
+      #title .accent { color: var(--brand); }
+      #stats { display: flex; gap: 14px; margin-top: 40px; font: 28px var(--mono); font-variant-ligatures: none; }
+      #stats span { background: var(--chip); border-radius: 999px; padding: 8px 22px; }
+      #stats .a { color: var(--add-fg); }
+      #stats .d { color: var(--del-fg); }
 
-      /* Points */
-      .heading { font-size: 56px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 48px; }
-      .point { font-size: 40px; line-height: 1.35; color: var(--muted); margin: 14px 0; padding-left: 36px; position: relative; }
-      .point::before { content: ""; position: absolute; left: 0; top: 22px; width: 12px; height: 12px; border-radius: 50%; background: var(--brand); }
+      /* System diagram */
+      #wires { position: absolute; inset: 0; overflow: visible; }
+      #wires > path { fill: none; stroke: #c4c4c4; stroke-width: 4; stroke-linecap: round; }
+      #wires #retry { stroke: var(--brand); }
+      .node { position: absolute; width: 240px; height: 96px; margin: -48px 0 0 -120px; border: 2px solid var(--border); border-radius: 22px; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 600; }
+      #packet { position: absolute; left: 0; top: 0; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; background: var(--brand); }
+      .badge { position: absolute; font: 600 28px var(--mono); padding: 6px 16px; border-radius: 12px; white-space: nowrap; }
+      #fail { color: #fff; background: var(--del-fg); }
+      #ok { color: #fff; background: var(--brand); }
+      #delays { color: var(--add-fg); background: var(--add); }
 
-      /* Code */
-      .file { font: 28px var(--mono); color: var(--muted); margin-bottom: 20px; }
-      .code { border: 1px solid var(--border); border-radius: 18px; padding: 20px 0; font: 30px/1.6 var(--mono); font-variant-ligatures: none; overflow: hidden; }
+      /* Code card, grown out of the Deliver node */
+      #card { position: absolute; left: 260px; top: 260px; width: 1400px; padding-bottom: 24px; transform-origin: 0 0; border: 2px solid var(--border); border-radius: 22px; background: var(--bg); overflow: hidden; }
+      #card .file { font: 28px var(--mono); color: var(--muted); padding: 26px 40px 12px; }
+      .code { font: 30px/1.65 var(--mono); font-variant-ligatures: none; }
       .ln { position: relative; padding: 0 40px 0 76px; white-space: pre; }
       .ln::before { position: absolute; left: 36px; color: var(--subtle); }
       .ln.add { background: var(--add); }
       .ln.add::before { content: "+"; color: var(--add-fg); }
-      .ln.del { background: var(--del); color: var(--del-fg); }
-      .ln.del::before { content: "−"; }
+      .ln.del { background: var(--del); }
+      .ln.del::before { content: "−"; color: var(--del-fg); }
       .ln .mark { position: absolute; inset: 0; background: var(--hl); border-left: 6px solid var(--hl-bar); opacity: 0; }
-      .ln.del .mark { background: rgba(239, 68, 68, 0.14); border-left-color: var(--del-fg); }
+      .k { color: var(--t-k); } .s { color: var(--t-s); } .n { color: var(--t-n); } .c { color: var(--t-c); } .f { color: var(--t-f); }
+      #note { position: absolute; left: 1080px; top: 640px; font-size: 30px; padding: 14px 24px; border-radius: 14px; background: var(--text); color: #fff; }
 
       /* Captions */
-      .cap { position: absolute; left: 0; right: 0; bottom: 88px; text-align: center; overflow: visible; }
-      .cap span { position: absolute; left: 0; right: 0; bottom: 0; opacity: 0; }
-      .cap b { display: inline-block; max-width: 1500px; font-size: 38px; font-weight: 400; color: #fff; background: rgba(13, 13, 13, 0.86); border-radius: 14px; padding: 12px 28px; }
+      #caps { position: absolute; left: 0; right: 0; bottom: 70px; height: 70px; }
+      #caps span { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; opacity: 0; visibility: hidden; }
+      #caps b { display: inline-block; font-size: 36px; font-weight: 400; color: #fff; background: rgba(13, 13, 13, 0.86); border-radius: 14px; padding: 10px 26px; }
     </style>
   </head>
   <body>
     <!--
-      One <section> per narration segment, in order. Each scene lasts its voice clip plus 0.8 s and starts
-      when the previous one ends ("s0" = the end of #s0). Its <audio> starts 0.3 s into the scene. The
-      root's data-duration is the sum of the scene durations.
-      Inside a scene, data-at="seconds" reveals an element (or highlights a .ln) that long after the scene
-      starts. To land on a spoken word, use about 0.3 + clip × (words before it / words in the segment).
-      Elements without data-at show from the scene's first frame. A .cap holds the narration split into
-      short phrases, spread across the clip by word count.
+      One continuous stage: everything lives in #stage for the whole video, and the timeline below moves
+      it from idea to idea. Things persist and transform (the title becomes the header, the Deliver node
+      grows into the code) instead of cutting between slides.
+
+      Narration: SCRIPT in the script holds the segments, word for word as spoken. Each segment N has
+      <audio id="voN"> with data-duration = its clip's durationSeconds. The root's data-duration is the
+      sum of (clip + 0.8) over all segments. Captions are built from SCRIPT.
+
+      Timing: cue(N, "word") is the moment that word is spoken in segment N (cue(N, 0.5) = halfway).
+      Start each move on the word that names its subject.
     -->
-    <div id="root" data-composition-id="main" data-start="0" data-duration="18.1" data-width="1920" data-height="1080">
-      <section id="s0" class="clip scene" data-start="0" data-duration="5.6" data-track-index="0">
-        <div class="eyebrow">acme/shop · #482</div>
-        <div class="headline">Retry failed webhook deliveries</div>
-        <div class="stats" data-at="2.4"><span class="a">+64</span><span class="d">−12</span><span>4 files</span></div>
-        <div class="cap"><span><b>This pull request retries webhook deliveries</b></span><span><b>that fail with a server error.</b></span></div>
-      </section>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="36.2" data-width="1920" data-height="1080">
+      <div id="stage" class="clip" data-start="0" data-duration="36.2" data-track-index="0">
+        <div id="cam">
+          <div id="title">
+            <div class="repo">acme/shop · #482</div>
+            <h1><span>Retry</span> <span>failed</span> <span>webhook</span> <span>deliveries</span></h1>
+            <div id="stats"><span class="a">+64</span><span class="d">−12</span><span>4 files</span></div>
+          </div>
 
-      <section id="s1" class="clip scene" data-start="s0" data-duration="5.8" data-track-index="0">
-        <div class="heading" data-at="0">Why</div>
-        <div class="point" data-at="0.4">One 502 from a merchant dropped the event for good</div>
-        <div class="point" data-at="2.4">Merchants rebuilt state by polling every minute</div>
-        <div class="cap"><span><b>Today a single bad gateway drops the event,</b></span><span><b>so merchants poll to catch up.</b></span></div>
-      </section>
+          <svg id="wires" viewBox="0 0 1920 1080">
+            <defs>
+              <marker id="head" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M1 1 L8 5 L1 9" fill="none" stroke="#c4c4c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></marker>
+              <marker id="head-retry" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M1 1 L8 5 L1 9" fill="none" stroke="#10a37f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></marker>
+            </defs>
+            <path id="w1" d="M424 520 H632" marker-end="url(#head)" />
+            <path id="w2" d="M884 520 H1092" marker-end="url(#head)" />
+            <path id="w3" d="M1344 520 H1512" marker-end="url(#head)" />
+            <path id="retry" d="M1220 572 C1220 740 760 740 760 576" marker-end="url(#head-retry)" />
+          </svg>
+          <div id="packet"></div>
+          <div class="node" id="n-shop" style="left: 300px; top: 520px">Shop</div>
+          <div class="node" id="n-queue" style="left: 760px; top: 520px">Queue</div>
+          <div class="node" id="n-deliver" style="left: 1220px; top: 520px">Deliver</div>
+          <div class="node" id="n-merchant" style="left: 1640px; top: 520px">Merchant</div>
+          <div class="badge" id="fail" style="left: 1590px; top: 400px">502</div>
+          <div class="badge" id="ok" style="left: 1610px; top: 400px">200</div>
+          <div class="badge" id="delays" style="left: 860px; top: 690px">2s · 4s · 8s</div>
 
-      <section id="s2" class="clip scene" data-start="s1" data-duration="6.7" data-track-index="0">
-        <div class="file" data-at="0">webhooks/deliver.rs</div>
-        <div class="code" data-at="0">
-<div class="ln">match send(&amp;hook, &amp;event).await {</div>
-<div class="ln del">    Err(e) =&gt; return Err(e),<i class="mark"></i></div>
-<div class="ln add" data-at="1.2">    Err(e) if e.is_server() =&gt; queue.retry(event, backoff(n)),<i class="mark"></i></div>
-<div class="ln add" data-at="3.4">    Err(e) =&gt; return Err(e),<i class="mark"></i></div>
-<div class="ln">    Ok(_) =&gt; Ok(()),</div>
-<div class="ln">}</div>
+          <div id="card">
+            <div class="file">webhooks/deliver.rs</div>
+            <div class="code">
+              <div class="ln">match send(&amp;hook, &amp;event).await {</div>
+              <div class="ln del">    Err(e) =&gt; return Err(e),</div>
+              <div class="ln add" id="l-retry">    Err(e) if e.is_server() =&gt; queue.retry(event, backoff(n)),</div>
+              <div class="ln add" id="l-fail">    Err(e) =&gt; return Err(e), // 4xx: the merchant rejected it</div>
+              <div class="ln">    Ok(_) =&gt; Ok(()),</div>
+              <div class="ln">}</div>
+            </div>
+          </div>
+          <div id="note">No upper limit on backoff(n)</div>
         </div>
-        <div class="cap"><span><b>Server errors now go back on the queue with a backoff,</b></span><span><b>while client errors still fail right away.</b></span></div>
-      </section>
+        <div id="caps"></div>
+      </div>
 
-      <audio id="vo0" data-start="0.3" src="assets/vo-0.wav"></audio>
-      <audio id="vo1" data-start="s0 + 0.3" src="assets/vo-1.wav"></audio>
-      <audio id="vo2" data-start="s1 + 0.3" src="assets/vo-2.wav"></audio>
+      <audio id="vo0" data-start="0.3" data-duration="4.93" src="assets/vo-0.wav"></audio>
+      <audio id="vo1" data-start="vo0 + 0.8" data-duration="4.97" src="assets/vo-1.wav"></audio>
+      <audio id="vo2" data-start="vo1 + 0.8" data-duration="4.88" src="assets/vo-2.wav"></audio>
+      <audio id="vo3" data-start="vo2 + 0.8" data-duration="5.48" src="assets/vo-3.wav"></audio>
+      <audio id="vo4" data-start="vo3 + 0.8" data-duration="5.57" src="assets/vo-4.wav"></audio>
+      <audio id="vo5" data-start="vo4 + 0.8" data-duration="5.57" src="assets/vo-5.wav"></audio>
     </div>
 
     <script>
-      // Generic: builds every reveal, highlight and caption from the markup. Leave as is.
+      const SCRIPT = [
+        "This pull request retries webhook deliveries when a merchant's server fails.",
+        "Events leave the shop, wait in a queue, and a worker delivers them to the merchant.",
+        "Before this change, one bad gateway from the merchant dropped the event for good.",
+        "Now server errors go back on the queue with a growing backoff, and the retry gets through.",
+        "In deliver dot r s, a new match arm sends server errors to the retry queue.",
+        "Client errors still fail right away. Worth checking: the backoff has no upper limit.",
+      ];
+
+      // ---- Helpers: leave as is. ----
       const tl = gsap.timeline({ paused: true });
-      let t0 = 0;
-      for (const scene of document.querySelectorAll("#root > section.scene")) {
-        const dur = parseFloat(scene.dataset.duration);
-        for (const el of scene.querySelectorAll("[data-at]")) {
-          const at = t0 + parseFloat(el.dataset.at);
-          const mark = el.classList.contains("ln") ? el.querySelector(".mark") : null;
-          if (mark) {
-            tl.fromTo(mark, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" }, at);
-          } else {
-            tl.fromTo(el, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, at);
-          }
-        }
-        const phrases = [...scene.querySelectorAll(".cap > span")];
-        const words = phrases.map((p) => p.textContent.trim().split(/\s+/).length);
-        const total = words.reduce((a, b) => a + b, 0);
-        const speech = dur - 0.8;
-        let at = t0 + 0.3;
-        phrases.forEach((p, i) => {
-          const len = (speech * words[i]) / total;
-          tl.set(p, { opacity: 1, visibility: "visible" }, at);
-          tl.set(p, { opacity: 0, visibility: "hidden" }, at + len);
-          at += len;
-        });
-        t0 += dur;
+      const clips = SCRIPT.map((_, i) => parseFloat(document.getElementById("vo" + i).dataset.duration));
+      const starts = clips.map((_, i) => clips.slice(0, i).reduce((t, d) => t + d + 0.8, 0) + 0.3);
+      const words = SCRIPT.map((s) => s.split(/\s+/));
+      function cue(n, at) {
+        if (typeof at === "number") return starts[n] + clips[n] * at;
+        const i = words[n].findIndex((w) => w.toLowerCase().replace(/[^\w]/g, "").startsWith(at.toLowerCase()));
+        if (i < 0) throw new Error(`cue: "${at}" is not in segment ${n}`);
+        return starts[n] + (clips[n] * i) / words[n].length;
       }
+      // Captions: each segment split evenly into groups of at most 7 words, shown while they're spoken.
+      SCRIPT.forEach((_, n) => {
+        const groups = Math.ceil(words[n].length / 7);
+        for (let g = 0; g < groups; g++) {
+          const i = Math.round((g * words[n].length) / groups);
+          const j = Math.round(((g + 1) * words[n].length) / groups);
+          const span = document.createElement("span");
+          span.innerHTML = "<b></b>";
+          span.firstChild.textContent = words[n].slice(i, j).join(" ");
+          document.getElementById("caps").appendChild(span);
+          const a = starts[n] + (clips[n] * i) / words[n].length;
+          const b = starts[n] + (clips[n] * j) / words[n].length + (g === groups - 1 ? 0.5 : 0);
+          tl.set(span, { opacity: 1, visibility: "visible" }, a).set(span, { opacity: 0, visibility: "hidden" }, b);
+        }
+      });
+      // Syntax colors for every .ln.
+      const KW = /^(fn|let|mut|match|if|else|return|pub|use|impl|struct|enum|for|in|while|loop|async|await|const|def|class|import|from|export|function|new|type|interface|true|false|null|None|True|False|self|Self|Ok|Err|Some)$/;
+      for (const ln of document.querySelectorAll(".ln")) {
+        const src = ln.textContent;
+        ln.innerHTML = "";
+        for (const m of src.matchAll(/(\/\/.*|#.*)|("[^"]*"|'[^']*')|(\b\d[\d_.]*\b)|([A-Za-z_]\w*)(?=\s*\()|([A-Za-z_]\w*)|([^A-Za-z_\d"'\/#]+|.)/g)) {
+          const [text, c, s, n, f, w] = m;
+          const cls = c ? "c" : s ? "s" : n ? "n" : f ? "f" : w && KW.test(w) ? "k" : "";
+          const el = document.createElement("span");
+          if (cls) el.className = cls;
+          el.textContent = text;
+          ln.appendChild(el);
+        }
+        const mark = document.createElement("i");
+        mark.className = "mark";
+        ln.prepend(mark);
+      }
+      const draw = (path, t, dur = 0.6) => {
+        const len = path.getTotalLength();
+        const head = path.getAttribute("marker-end");
+        tl.set(path, { opacity: 1, attr: { "marker-end": "none" } }, t);
+        if (head) tl.set(path, { attr: { "marker-end": head } }, t + dur);
+        tl.fromTo(path, { strokeDasharray: `${len} ${len}`, strokeDashoffset: len }, { strokeDashoffset: 0, duration: dur, ease: "power2.inOut" }, t);
+      };
+      const pop = (el, t) => tl.fromTo(el, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, t);
+      const mark = (ln, t) => tl.fromTo(ln.querySelector(".mark"), { opacity: 0 }, { opacity: 1, duration: 0.3 }, t);
+      const $ = (s) => document.querySelector(s);
+
+      // ---- This video's moves: rewrite for each PR. ----
+      // Hidden until their moment.
+      gsap.set(["#wires > path", ".node", "#packet", ".badge", "#card", "#note", "#stats"], { opacity: 0 });
+      gsap.set("#packet", { x: 300, y: 520 });
+
+      // 0: the title lands word by word, then becomes the header.
+      tl.fromTo("#title h1 span", { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, stagger: 0.07 }, 0);
+      tl.fromTo("#title .repo", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0);
+      tl.to("#title h1 span:first-child", { color: "var(--brand)", duration: 0.3 }, cue(0, "retries"));
+      tl.fromTo("#stats", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.5, ease: "expo.out" }, cue(0, "when"));
+      tl.to("#title", { x: -100, y: -360, scale: 0.5, duration: 0.8, ease: "power2.inOut" }, starts[1] - 0.5);
+      tl.to("#title .repo", { opacity: 0, duration: 0.2 }, starts[1] - 0.5);
+      tl.to("#stats", { opacity: 0, duration: 0.2 }, starts[1] - 0.5);
+
+      // 1: the system grows one part per word.
+      pop("#n-shop", cue(1, "shop"));
+      draw($("#w1"), cue(1, "wait"));
+      pop("#n-queue", cue(1, "queue"));
+      draw($("#w2"), cue(1, "worker"));
+      pop("#n-deliver", cue(1, "worker"));
+      draw($("#w3"), cue(1, "them"));
+      pop("#n-merchant", cue(1, "merchant"));
+
+      // 2: before, the packet reaches the merchant, gets a 502 and is lost.
+      tl.set("#packet", { opacity: 1 }, cue(2, "one"));
+      tl.to("#packet", { x: 1580, duration: 1.6, ease: "power1.inOut" }, cue(2, "one"));
+      pop("#fail", cue(2, "gateway"));
+      tl.to("#packet", { y: 640, opacity: 0, duration: 0.6, ease: "power3.in" }, cue(2, "dropped"));
+      tl.to("#fail", { opacity: 0, duration: 0.2 }, starts[3] - 0.2);
+
+      // 3: now, the error loops back through the queue with a backoff, then succeeds.
+      tl.set("#packet", { x: 1220, y: 520, opacity: 1 }, cue(3, "server"));
+      draw($("#retry"), cue(3, "back"), 0.8);
+      tl.to("#packet", { keyframes: [{ x: 1180, y: 660 }, { x: 990, y: 700 }, { x: 800, y: 660 }, { x: 760, y: 520 }], duration: 1.4, ease: "none" }, cue(3, "back"));
+      pop("#delays", cue(3, "growing"));
+      tl.to("#packet", { x: 1580, duration: 1.4, ease: "power1.inOut" }, cue(3, "retry"));
+      pop("#ok", cue(3, "through"));
+
+      // 4: the Deliver node grows into its code.
+      tl.to(["#wires", ".node:not(#n-deliver)", "#packet", ".badge"], { opacity: 0, filter: "blur(10px)", duration: 0.4 }, cue(4, "in"));
+      const cardH = $("#card").offsetHeight;
+      tl.set("#card", { opacity: 1, x: 1100 - 260, y: 472 - 260, scaleX: 240 / 1400, scaleY: 96 / cardH }, cue(4, "in"));
+      tl.set("#n-deliver", { opacity: 0 }, cue(4, "in"));
+      tl.to("#card", { x: 0, y: 0, scaleX: 1, scaleY: 1, duration: 0.8, ease: "power3.inOut" }, cue(4, "in"));
+      tl.fromTo("#card > *", { opacity: 0 }, { opacity: 1, duration: 0.3 }, cue(4, "in") + 0.6);
+      mark($("#l-retry"), cue(4, "match"));
+
+      // 5: client errors, then the one thing to check.
+      mark($("#l-fail"), cue(5, "client"));
+      tl.to("#l-retry .mark", { opacity: 0, duration: 0.3 }, cue(5, "client"));
+      pop("#note", cue(5, "backoff"));
+
       window.__timelines["main"] = tl;
       tl.seek(0);
     </script>
