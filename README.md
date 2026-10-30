@@ -40,6 +40,10 @@ $diffusion:review https://github.com/owner/repo/pull/123   # Codex
 
 The guide is written by the agent you ran it from, on its own login.
 
+For a short narrated, animated video of the change instead, run `/diffusion:video` the same way (`$diffusion:video`
+in Codex). It renders locally with [HyperFrames](https://github.com/heygen-com/hyperframes) and a Kokoro voice, and
+needs Node 22+, ffmpeg and uv.
+
 ## Prerequisites
 
 - **Model access**: an Anthropic, OpenAI, or OpenRouter API key, or a signed-in Claude Code, Codex, or Cursor CLI. Gateways

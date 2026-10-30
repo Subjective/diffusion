@@ -1,0 +1,5 @@
+interface:
+  display_name: "Diffusion video"
+  short_description: "Make a narrated explainer video of a PR or branch"
+policy:
+  allow_implicit_invocation: false
