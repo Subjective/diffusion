@@ -1,6 +1,6 @@
 {
   "name": "diffusion",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Guided, linked review walkthroughs of a pull request, branch or uncommitted changes, written by your coding agent.",
   "author": {
     "name": "Subjective"

@@ -69,7 +69,7 @@ Be concise; the UI shows icons, not prose.
 ## 4. Submit it
 
 ```
-uvx --from diffusion-review diffusion submit GUIDE.json TARGET [--uncommitted]
+uvx --from diffusion-review==0.1.3 diffusion submit GUIDE.json TARGET [--uncommitted]
 ```
 
 It checks every citation against the diff. If something doesn't match, nothing is saved: it prints what to
@@ -85,7 +85,7 @@ summarize the link yourself.
 ## Changing a guide
 
 When the user asks to change a guide (regroup steps, refocus, fix a citation), run
-`uvx --from diffusion-review diffusion open TARGET`. It prints where the latest version's JSON is. Copy it to
+`uvx --from diffusion-review==0.1.3 diffusion open TARGET`. It prints where the latest version's JSON is. Copy it to
 the temp directory, edit it, update `label`, and submit it: it becomes a new version, and the open page switches
 to it. Earlier versions stay in the page's history.
 
