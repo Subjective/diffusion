@@ -8,7 +8,6 @@ import {
   FileCode,
   Focus,
   GitPullRequest,
-  Info,
   ListOrdered,
   MessageCircle,
   Workflow,
@@ -24,7 +23,7 @@ import { useApp } from "../store";
 import type { Ref, Step } from "../types";
 import { useUI } from "../ui";
 import { FlowGraph } from "./FlowGraph";
-import { CONTEXT_ICON, ic, SKIP_ICON, STEP_ICON } from "./icons";
+import { ic, SKIP_ICON, STEP_ICON } from "./icons";
 
 export interface GuidePaneProps {
   onAskStep?: (step: Step) => void;
@@ -71,7 +70,6 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
               <Inline text={guide.tldr} />
             </p>
           </section>
-          <Notes />
           {guide.flow.nodes.length > 0 && (
             <section className="sec">
               <div className="sec-h">{ic(Workflow, 13)}Flow</div>
@@ -93,40 +91,6 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
 }
 
 /** Things a reviewer should know that the diff doesn't show. Risks first; items with refs link to code. */
-function Notes() {
-  const context = useApp((s) => s.guide!.context);
-  const idx = useHunkIndex();
-  if (!context.length) return null;
-  const items = [...context].sort(
-    (a, b) => Number(b.icon === "risk" || b.icon === "security") - Number(a.icon === "risk" || a.icon === "security"),
-  );
-  return (
-    <section className="sec">
-      <div className="sec-h">{ic(Info, 13)}Notes</div>
-      <ul className="notes" onMouseLeave={() => useUI.getState().setHover([])}>
-        {items.map((c, i) => {
-          const warn = c.icon === "risk" || c.icon === "security";
-          const t = c.refs?.length ? refsTarget(c.refs, idx) : null;
-          return (
-            <li
-              key={i}
-              className={`note${warn ? " warn" : ""}${t?.keys.length ? " linked" : ""}`}
-              title={c.icon}
-              onMouseEnter={() => useUI.getState().setHover(t?.keys ?? [])}
-              onClick={() => t?.keys.length && useUI.getState().focus(t.keys, t.files)}
-            >
-              {ic(CONTEXT_ICON[c.icon] ?? Info, 14)}
-              <span>
-                <Inline text={c.text} />
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-
 function Header() {
   const pr = useApp((s) => s.pr)!;
   return (

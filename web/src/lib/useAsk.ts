@@ -1,5 +1,6 @@
 // Drag/select-to-ask controller: owns the bubble drag, text-selection detection, and ask-popup placement.
 import { useEffect, useRef, useState } from "react";
+import type { Anchor } from "../chat";
 import type { AskState } from "../components/AskPopup";
 import { anchorFromRows, rangeText, rowInfo, rowsBetween, selectionRows } from "./selection";
 
@@ -23,13 +24,13 @@ export function useAsk() {
   const clearSel = () => {
     for (const r of document.querySelectorAll<HTMLElement>("tr.sel")) r.classList.remove("sel");
   };
-  const open = (rows: HTMLElement[], x: number, y: number) => {
+  const open = (rows: HTMLElement[], x: number, y: number, extra?: Partial<Anchor>) => {
     const info = rows.map(rowInfo).filter((r): r is NonNullable<typeof r> => !!r);
     const anchor = anchorFromRows(info);
     if (!anchor) return;
     clearSel();
     setSel(rows, true);
-    setAsk({ anchor, x, y });
+    setAsk({ anchor: { ...anchor, ...extra }, x, y });
   };
   const close = () => {
     clearSel();
@@ -132,5 +133,5 @@ export function useAsk() {
     };
   }, []);
 
-  return { ask, close };
+  return { ask, close, open };
 }

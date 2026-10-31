@@ -3,6 +3,7 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 import { type Question, useChat } from "./chat";
 import { AskPopup } from "./components/AskPopup";
 import { type ChatLinkProps, ChatPanel } from "./components/ChatPanel";
+import type { AskComment } from "./components/Comments";
 import { DiffPane } from "./components/DiffPane";
 import { GuidePane, NoGuide } from "./components/GuidePane";
 import { ic } from "./components/icons";
@@ -122,7 +123,16 @@ export function App() {
   );
   const chatLink: ChatLinkProps = { onHoverQ, onFocusQ, hoverQ, flashQ };
   const badges = useQuestionBadges(hoverQ, onHoverQ, revealQ);
-  const { ask, close } = useAsk();
+  const { ask, close, open } = useAsk();
+  const askComment: AskComment = useCallback(
+    (c, keys, at) => {
+      const rows = keys
+        .map((k) => document.querySelector<HTMLElement>(`tr.ln[data-rk="${CSS.escape(k)}"]`))
+        .filter((r): r is HTMLElement => !!r);
+      open(rows, at.x, at.y, { comment: `${c.title}. ${c.text}`, commentTitle: c.title });
+    },
+    [open],
+  );
 
   const askStep = useCallback(
     (s: Step) => {
@@ -169,7 +179,7 @@ export function App() {
           onClickCapture={onClick}
         >
           <GuidePane onAskStep={askStep} onWidth={panes.setGuide} />
-          <DiffPane extras={badges} />
+          <DiffPane extras={badges} onAskComment={askComment} />
           {chatOpen ? <ChatPanel onWidth={panes.setChat} link={chatLink} /> : <aside className="chat" />}
         </main>
       )}

@@ -1,39 +1,44 @@
 {
   "$defs": {
-    "ContextDraft": {
+    "CommentDraft": {
       "properties": {
-        "icon": {
-          "enum": [
-            "fact",
-            "dependency",
-            "risk",
-            "history",
-            "config",
-            "security",
-            "performance"
-          ],
-          "title": "Icon",
+        "title": {
+          "description": "2\u20134 words naming the point, e.g. 'Never re-armed'.",
+          "title": "Title",
           "type": "string"
         },
         "text": {
-          "description": "One sentence, \u2264 18 words. Inline `code` allowed.",
+          "description": "1\u20132 sentences, \u2264 35 words. Inline `code` allowed.",
           "title": "Text",
           "type": "string"
         },
+        "tone": {
+          "default": "note",
+          "description": "'bug' for a likely defect, 'check' for something worth verifying, 'note' for context.",
+          "enum": [
+            "bug",
+            "check",
+            "note"
+          ],
+          "title": "Tone",
+          "type": "string"
+        },
         "refs": {
-          "description": "Optional: the changed lines this note is about.",
+          "description": "The changed lines this comment is about.",
           "items": {
             "$ref": "#/$defs/LineRef"
           },
+          "minItems": 1,
           "title": "Refs",
           "type": "array"
         }
       },
       "required": [
-        "icon",
-        "text"
+        "title",
+        "text",
+        "refs"
       ],
-      "title": "ContextDraft",
+      "title": "CommentDraft",
       "type": "object"
     },
     "Flow": {
@@ -379,13 +384,13 @@
       "title": "Tldr",
       "type": "string"
     },
-    "context": {
-      "description": "Notes: what the reviewer can't see in the diff.",
+    "comments": {
+      "description": "Comments left on the changed lines they are about.",
       "items": {
-        "$ref": "#/$defs/ContextDraft"
+        "$ref": "#/$defs/CommentDraft"
       },
-      "maxItems": 5,
-      "title": "Context",
+      "maxItems": 8,
+      "title": "Comments",
       "type": "array"
     },
     "steps": {

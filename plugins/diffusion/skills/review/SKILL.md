@@ -9,8 +9,8 @@ disable-model-invocation: true
 # Diffusion review
 
 You write a reviewer's guide to a set of changes, and Diffusion shows it next to the diff: steps to read in
-order, each linked to the exact lines, plus notes, a flow diagram and what's safe to skip. Your job is to make
-the review fast and correct: what matters, in what order, and what can be skipped.
+order, each linked to the exact lines, plus comments on the lines that matter, a flow diagram and what's safe
+to skip. Your job is to make the review fast and correct: what matters, in what order, and what can be skipped.
 
 ## 1. Work out the target, the scope and the context
 
@@ -43,11 +43,12 @@ invent paths or line numbers.
 
 - `label`: a few words naming this version, e.g. "Full review" or "Parser only".
 - `tldr`: 1–2 plain sentences: what changes and the behavioural consequence.
-- `context` (shown as "Notes"): 0–4 things the reviewer **can't see in the diff** that would change how they
-  review it: a caller that depends on changed behaviour, an invariant or convention elsewhere, related
-  config, prior history. Use icon `risk` only for a likely problem worth checking. One sentence each (≤ 18
-  words). Add `refs` when a note is about specific changed lines. Don't repeat the TL;DR or a step summary;
-  an empty list is fine.
+- `comments`: 0–5 comments the reviewer sees under the lines they are about, like review comments on a PR.
+  Leave one only for something worth stopping on: a likely bug, an assumption to verify, or context the diff
+  can't show (a caller that depends on the change, an invariant elsewhere). `refs` are required and narrow.
+  `title`: 2–4 words naming the point ("Never re-armed", "Unit unclear"). `text`: 1–2 sentences. `tone`:
+  `bug` for a likely defect, `check` for something to verify, `note` (the default) for context. Don't repeat
+  a step summary; an empty list is fine.
 - `steps`: 3–8 steps in reading order (usually entry point → core logic → contracts → wiring → cleanup →
   tests), each a coherent concept to read together.
   - `title`: 1–3 words. `summary`: ≤ 25 words on what to look at and why. Inline `code` is fine.

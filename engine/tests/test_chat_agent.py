@@ -99,6 +99,12 @@ def test_format_turn_single_and_multi(prep):
     assert "each under its own `### Q<n>` heading" in multi
 
 
+def test_format_turn_includes_the_comment_asked_about(prep):
+    a = Anchor(file="src/auth/types.ts", start=4, end=4, comment="Unit unclear. Seconds or milliseconds?")
+    s = format_turn([Question(n=1, text="Is this a real problem?", anchor=a)], prep.index)
+    assert "Your guide left this comment on those lines: Unit unclear. Seconds or milliseconds?" in s
+
+
 async def test_run_turn_routes_sections_and_tools(prep):
     seen = {}
 

@@ -89,9 +89,21 @@ export const files: FileDiff[] = [
 
 export const guide: Guide = {
   tldr: "Sessions now refresh `tokens` before expiry.",
-  context: [
-    { icon: "fact", text: "Teardown runs on logout", refs: [{ hunk: "H1", side: "new", start: 6, end: 7 }] },
-    { icon: "risk", text: "No retry on 5xx" },
+  comments: [
+    {
+      id: 1,
+      title: "Teardown on logout",
+      text: "`end()` runs on logout too.",
+      tone: "note",
+      refs: [{ hunk: "H1", side: "new", start: 6, end: 7 }],
+    },
+    {
+      id: 2,
+      title: "No retry",
+      text: "A 5xx is not retried.",
+      tone: "bug",
+      refs: [{ hunk: "H2", side: "new", start: 2, end: 2 }],
+    },
   ],
   steps: [
     {

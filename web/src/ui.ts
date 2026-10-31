@@ -1,4 +1,4 @@
-// View state shared across panes: file collapse/viewed, ordering, and line highlight/pin/flash.
+// View state shared across panes: file collapse/viewed, ordering, comments, and line highlight/pin/flash.
 import { create } from "zustand";
 import { storage } from "./lib/storage";
 
@@ -19,6 +19,9 @@ interface UI {
   order: Order;
   hideSkip: boolean;
   rail: boolean;
+  hideComments: boolean;
+  /** Comments the reviewer resolved, by title (ids change between guide versions). */
+  resolved: Record<string, boolean>;
 
   hoverRows: Set<string>; // rowKey
   pinRows: Set<string>;
@@ -41,6 +44,9 @@ interface UI {
   setOrder(o: Order): void;
   toggleHideSkip(): void;
   toggleRail(): void;
+  toggleHideComments(): void;
+  /** Resolve a comment, or reopen it with `false`. */
+  resolve(title: string, on?: boolean): void;
 
   setHover(keys: string[], step?: number | null, sub?: number | null): void;
   focus(keys: string[], files: string[], step?: number | null, sub?: number | null): void;
@@ -56,8 +62,8 @@ export interface Peek {
   symbol: string;
 }
 
-const persist = (k: string, s: Pick<UI, "viewed" | "readSteps">) =>
-  storage.set(`rv-ui:${k}`, { viewed: s.viewed, readSteps: s.readSteps });
+const persist = (k: string, s: Pick<UI, "viewed" | "readSteps" | "resolved">) =>
+  storage.set(`rv-ui:${k}`, { viewed: s.viewed, readSteps: s.readSteps, resolved: s.resolved });
 
 export const useUI = create<UI>((set, get) => ({
   prKey: "",
@@ -67,6 +73,8 @@ export const useUI = create<UI>((set, get) => ({
   order: storage.get<Order>("rv-order", "guide"),
   hideSkip: false,
   rail: storage.get("rv-rail", false),
+  hideComments: storage.get("rv-hide-comments", false),
+  resolved: {},
   hoverRows: new Set(),
   pinRows: new Set(),
   flash: { keys: new Set(), n: 0 },
@@ -79,7 +87,7 @@ export const useUI = create<UI>((set, get) => ({
   peek: null,
 
   init(prKey, defaultsCollapsed) {
-    const saved = storage.get(`rv-ui:${prKey}`, { viewed: {}, readSteps: {} });
+    const saved = { viewed: {}, readSteps: {}, resolved: {}, ...storage.get(`rv-ui:${prKey}`, {}) };
     const collapsed = { ...defaultsCollapsed };
     for (const [p, v] of Object.entries(saved.viewed)) if (v) collapsed[p] = true;
     set({
@@ -87,6 +95,7 @@ export const useUI = create<UI>((set, get) => ({
       collapsed,
       viewed: saved.viewed,
       readSteps: saved.readSteps,
+      resolved: saved.resolved,
       pinRows: new Set(),
       pinStep: null,
       pinSub: null,
@@ -108,14 +117,14 @@ export const useUI = create<UI>((set, get) => ({
     set((s) => {
       const on = !s.viewed[path];
       const viewed = { ...s.viewed, [path]: on };
-      persist(s.prKey, { viewed, readSteps: s.readSteps });
+      persist(s.prKey, { viewed, readSteps: s.readSteps, resolved: s.resolved });
       return { viewed, collapsed: { ...s.collapsed, [path]: on } };
     });
   },
   toggleRead(step) {
     set((s) => {
       const readSteps = { ...s.readSteps, [step]: !s.readSteps[step] };
-      persist(s.prKey, { viewed: s.viewed, readSteps });
+      persist(s.prKey, { viewed: s.viewed, readSteps, resolved: s.resolved });
       return { readSteps };
     });
   },
@@ -124,6 +133,18 @@ export const useUI = create<UI>((set, get) => ({
     set({ order });
   },
   toggleHideSkip: () => set((s) => ({ hideSkip: !s.hideSkip })),
+  toggleHideComments() {
+    const hideComments = !get().hideComments;
+    storage.set("rv-hide-comments", hideComments);
+    set({ hideComments });
+  },
+  resolve(title, on = true) {
+    set((s) => {
+      const resolved = { ...s.resolved, [title]: on };
+      persist(s.prKey, { viewed: s.viewed, readSteps: s.readSteps, resolved });
+      return { resolved };
+    });
+  },
   toggleRail() {
     const rail = !get().rail;
     storage.set("rv-rail", rail);

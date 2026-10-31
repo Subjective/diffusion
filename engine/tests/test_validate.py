@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from diffusion.hunks import parse_diff
 from diffusion.schema import GuideDraft
@@ -230,17 +231,25 @@ def test_coarse_refs_counted(idx):
     assert g.validation.coarse_refs == 0
 
 
-def test_note_refs_validated(idx):
+def test_comment_refs_validated(idx):
     t = {"file": "src/auth/types.ts"}
     d = draft(
         [step(t)],
-        context=[
-            {"icon": "risk", "text": "a", "refs": [t, {"file": "nope.ts"}]},
-            {"icon": "fact", "text": "b"},
+        comments=[
+            {"title": "A", "text": "a", "tone": "bug", "refs": [t, {"file": "nope.ts"}]},
+            {"title": "B", "text": "b", "refs": [{"file": "nope.ts"}]},
+            {"title": "C", "text": "c", "refs": [t]},
         ],
     )
     g = validate(d, idx)
-    assert [r.hunk for r in g.context[0].refs] == [hid(idx, "src/auth/types.ts")] and g.context[1].refs == []
+    # a comment whose refs all miss the diff is dropped; the rest are renumbered
+    assert [(c.id, c.title, c.tone) for c in g.comments] == [(1, "A", "bug"), (2, "C", "note")]
+    assert [r.hunk for r in g.comments[0].refs] == [hid(idx, "src/auth/types.ts")]
+
+
+def test_comments_need_refs():
+    with pytest.raises(ValidationError):
+        draft([step({"file": "src/auth/types.ts"})], comments=[{"title": "A", "text": "a", "refs": []}])
 
 
 def test_check_parses_text_and_explains_schema_errors(idx):
