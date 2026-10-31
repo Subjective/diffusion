@@ -101,6 +101,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         return _deps[0]
 
     _prepared: dict[str, Prepared] = {}
+    _latest_seen: dict[str, str | None] = {}
     chat_locks: dict[str, asyncio.Lock] = {}
     symbols: dict[Path, SymbolIndex] = {}
     symbol_locks: dict[Path, asyncio.Lock] = {}
@@ -110,11 +111,13 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             key = target_ref(url).key
         except GitHubError as e:
             raise HTTPException(400, str(e)) from e
+        # A guide arrived for a new head (a new push, or a new snapshot of uncommitted work). Refresh once per
+        # change: after a push with no new guide yet, the latest guide stays on the old head.
         latest = d().store.latest_head(key)
-        if latest and key in _prepared and _prepared[key].meta.head_sha != latest:
-            refresh = (
-                True  # a guide arrived for a newer head (a new push, or a new snapshot of uncommitted work)
-            )
+        if latest != _latest_seen.get(key):
+            _latest_seen[key] = latest
+            if latest and key in _prepared and _prepared[key].meta.head_sha != latest:
+                refresh = True
         if refresh or key not in _prepared:
             try:
                 _prepared[key] = await asyncio.to_thread(d().prepare, d().cfg, url)

@@ -120,6 +120,26 @@ async def test_guide_versions(setup):
     assert polled["head_sha"] == prep.meta.head_sha and len(polled["versions"]) == 2
 
 
+async def test_polling_after_a_push_does_not_re_prepare(setup):
+    """After a push with no new guide yet, the latest guide is for the old head; polls mustn't prepare again."""
+    import dataclasses
+
+    client, _, deps, prep = setup
+    submit(deps, prep, guide_for(prep))
+    pushed = dataclasses.replace(prep, meta=dataclasses.replace(prep.meta, head_sha="f" * 40))
+    calls = []
+
+    def prepare(cfg, url):
+        calls.append(url)
+        return pushed
+
+    deps.prepare = prepare
+    assert (await client.get("/api/pr", params={"url": URL})).json()["pr"]["head_sha"] == "f" * 40
+    for _ in range(3):
+        assert (await client.get("/api/guides", params={"url": URL})).status_code == 200
+    assert len(calls) == 1
+
+
 async def test_health_marks_the_app(setup):
     client, *_ = setup
     h = (await client.get("/api/health")).json()
