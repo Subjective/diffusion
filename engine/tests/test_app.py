@@ -306,7 +306,7 @@ async def test_thinking_streams_and_is_kept_with_the_turn(setup):
     assert [e for e, _ in evs] == ["thinking", "thinking", "tool", "delta", "done"]
     assert "seconds" in evs[-1][1]
     t = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()["turns"][0]
-    assert t["thinking"] == "Look at the timer." and t["tools"] == ["Read session.ts"] and t["seconds"] >= 0
+    assert t["trace"] == [{"think": "Look at the timer."}, {"tool": "Read session.ts"}] and t["seconds"] >= 0
 
 
 async def test_overlapping_turns_serialize_and_both_persist(setup):

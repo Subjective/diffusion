@@ -34,12 +34,22 @@ export interface Question {
   turn: number | null;
   /** Diff regions the model chose to show for this question (`show_code`). */
   shows: Show[];
-  /** The agent's reasoning for this turn, as its CLI reports it (shared by the turn's questions). */
-  thinking?: string;
+  /** What the agent did this turn, in order: reasoning as its CLI reports it, and tool calls (shared by the turn's
+   * questions). */
+  trace?: TraceItem[];
   /** How long the turn took, once it's done. */
   seconds?: number;
   /** The guide version this answer saved, when it was asked to change the guide. */
   guideVersion?: number;
+}
+
+export type TraceItem = { think: string } | { tool: string };
+
+/** Add a tool call, or a piece of streamed reasoning (joined to the reasoning just before it). */
+export function extendTrace(trace: TraceItem[] = [], item: TraceItem): TraceItem[] {
+  const last = trace.at(-1);
+  if ("think" in item && last && "think" in last) return [...trace.slice(0, -1), { think: last.think + item.think }];
+  return [...trace, item];
 }
 
 export interface Show extends CodeLoc {
@@ -189,9 +199,16 @@ export const useChat = create<State>((set, get) => {
               .refresh()
               .then(() => useApp.getState().showVersion(v));
           } else if (event === "tool") {
-            patch(get().chat, ids, (q) => (q.status === "pending" ? { tools: [...q.tools, d.summary as string] } : {}));
+            patch(get().chat, ids, (q) =>
+              q.status === "pending"
+                ? {
+                    tools: [...q.tools, d.summary as string],
+                    trace: extendTrace(q.trace, { tool: d.summary as string }),
+                  }
+                : {},
+            );
           } else if (event === "thinking") {
-            patch(get().chat, ids, (q) => ({ thinking: (q.thinking ?? "") + (d.text as string) }));
+            patch(get().chat, ids, (q) => ({ trace: extendTrace(q.trace, { think: d.text as string }) }));
           } else if (event === "done") {
             const seconds = typeof d.seconds === "number" ? d.seconds : undefined;
             patch(get().chat, ids, () => ({ status: "answered", seconds }));
@@ -320,7 +337,7 @@ interface WireChat {
     tools: string[];
     shows?: (Show & { n: number })[];
     guide_version?: number;
-    thinking?: string;
+    trace?: TraceItem[];
     seconds?: number;
     status: string;
   }[];
@@ -349,7 +366,7 @@ export function fromWire(c: WireChat): Chat {
         tools: t.tools,
         shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
         guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
-        thinking: t.thinking || undefined,
+        trace: t.trace ?? t.tools.map((tool) => ({ tool })),
         seconds: t.seconds,
       });
     });

@@ -117,11 +117,11 @@ const type = (text: string) => {
   fireEvent.keyDown(ta, { key: "Enter" });
 };
 
-test("composer sends immediately; answer streams; tool chips show while pending", async () => {
+test("composer sends immediately; answer streams; the latest step shows while pending", async () => {
   await mount();
   expect(document.querySelector(".empty")).toBeTruthy();
   type("What does this do?");
-  await waitFor(() => expect(document.querySelector(".tool-chip")?.textContent).toBe("Grep x"));
+  await waitFor(() => expect(document.querySelector(".trace-h")?.textContent).toBe("Grep x"));
   expect(document.querySelector(".bubble")!.textContent).toBe("What does this do?");
   expect(document.querySelector(".cursor")).toBeTruthy();
   await act(async () => release!());
@@ -301,7 +301,7 @@ test("an answer that changes the guide switches to the new version and links to 
   });
   vi.mocked(api.fetchGuide).mockResolvedValue({ ...payload.guide!, version: 2, tldr: "edited" });
   type("change step 2 to cover the timer");
-  await waitFor(() => expect(document.querySelector(".tool-chip")).toBeTruthy());
+  await waitFor(() => expect(document.querySelector(".trace-live")).toBeTruthy());
   await act(async () => release!());
   await waitFor(() => expect(document.querySelector(".tldr")!.textContent).toBe("edited"));
   expect(turnBodies.at(-1)!.version).toBe(1); // asked about the version on screen
@@ -311,15 +311,24 @@ test("an answer that changes the guide switches to the new version and links to 
   expect(document.querySelector(".ver-btn")!.textContent).toBe("v2");
 });
 
-test("a turn's reasoning and tools fold into one line under the answer", async () => {
+test("a turn's reasoning and tools fold into one line that opens to a timeline", async () => {
   await mount();
   fireEvent.click(screen.getByTitle("New chat"));
   type("think about the callers");
-  await waitFor(() => expect(document.querySelector(".tool-chip")).toBeTruthy());
+  await waitFor(() => expect(document.querySelector(".trace-live")).toBeTruthy());
   await act(async () => release!());
   await waitFor(() => expect(document.querySelector(".trace-h")?.textContent).toBe("Thought for 12s · 1 tool"));
   expect(document.querySelector(".trace-b")).toBeNull();
   fireEvent.click(document.querySelector(".trace-h")!);
-  expect(document.querySelector(".trace-think")!.textContent).toBe("Check who calls it.");
-  expect(document.querySelector(".trace-tools")!.textContent).toBe("Grep x");
+  // a timeline, in the order things happened
+  expect([...document.querySelectorAll(".trace-b > li")].map((li) => li.textContent)).toEqual([
+    "Grep x",
+    "Check who calls it.",
+  ]);
+});
+
+test("reasoning headlines: first bold phrase, else first sentence", async () => {
+  const { headline } = await import("../components/ChatPanel");
+  expect(headline("**Finding callers**\n\nI'll grep.")).toBe("Finding callers");
+  expect(headline("Check the timer. Then the API.")).toBe("Check the timer.");
 });

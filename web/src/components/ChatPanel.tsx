@@ -15,6 +15,7 @@ import {
   SquarePen,
   Trash2,
   Workflow,
+  Wrench,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -286,7 +287,6 @@ export const Qn = ({ q }: { q: Question }) =>
 function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
   const multi = qs.length > 1 || qs.some((q) => q.n);
   const pending = qs.some((q) => q.status === "pending");
-  const tools = pending ? qs[0].tools : [];
   const linked = (q: Question) =>
     q.anchor
       ? {
@@ -334,16 +334,6 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
               {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
             </div>
           ))}
-          {tools.length > 0 && (
-            <div className="tool-log in-chat">
-              {tools.slice(-4).map((t, i) => (
-                <span key={i} className="tool-chip">
-                  {t}
-                </span>
-              ))}
-              <span className="spin">{ic(LoaderCircle, 12)}</span>
-            </div>
-          )}
         </div>
       </div>
     </>
@@ -352,42 +342,57 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
 
 const secs = (s: number) => (s < 60 ? `${Math.max(1, Math.round(s))}s` : `${Math.round(s / 60)}m`);
 
-/** What the agent did for a turn: its reasoning and tool calls, folded into one quiet line. */
+/** A reasoning summary's headline: its first bold phrase, else its first sentence. */
+export const headline = (think: string) => {
+  const bold = think.match(/\*\*(.+?)\*\*/);
+  const first = (bold ? bold[1] : think.trim().split(/(?<=[.!?])\s|\n/)[0]).trim();
+  return first.length > 60 ? `${first.slice(0, 57)}…` : first;
+};
+
+/** What the agent did for a turn, folded into one quiet line that opens to a timeline: reasoning and tool calls in
+ * the order they happened. While it runs, the line shows the latest step. */
 function Trace({ q, pending }: { q: Question; pending: boolean }) {
   const [open, setOpen] = useState(false);
-  const { thinking, tools, seconds } = q;
-  if (!thinking && (pending || !tools.length)) return null; // while working, the live tool chips say enough
-  const verb = thinking ? (pending ? "Thinking" : "Thought") : pending ? "Working" : "Worked";
-  const label = [
-    seconds != null && !pending ? `${verb} for ${secs(seconds)}` : verb,
-    tools.length ? `${tools.length} tool${tools.length === 1 ? "" : "s"}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const trace = q.trace ?? [];
+  if (!trace.length) return null;
+  const thought = trace.some((t) => "think" in t);
+  const tools = trace.filter((t) => "tool" in t).length;
+  let label: string;
+  if (pending) {
+    const last = trace.at(-1)!;
+    label = "tool" in last ? last.tool : headline(last.think) || "Thinking";
+  } else {
+    const verb = thought ? "Thought" : "Worked";
+    label = [
+      q.seconds != null ? `${verb} for ${secs(q.seconds)}` : verb,
+      tools ? `${tools} tool${tools === 1 ? "" : "s"}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
   return (
     <div className={`trace${open ? " open" : ""}`}>
       <button type="button" className="trace-h" onClick={() => setOpen(!open)} aria-expanded={open}>
-        {ic(Brain, 13)}
-        <span className={pending ? "trace-live" : undefined}>{label}</span>
+        {ic(pending ? LoaderCircle : thought ? Brain : Wrench, 13, pending ? { className: "ic spin" } : {})}
+        <span key={pending ? label : undefined} className={pending ? "trace-live" : undefined}>
+          {label}
+        </span>
         {ic(ChevronRight, 12)}
       </button>
       {open && (
-        <div className="trace-b">
-          {thinking && (
-            <div className="trace-think">
-              <Markdown text={thinking} />
-            </div>
+        <ol className="trace-b">
+          {trace.map((t, i) =>
+            "think" in t ? (
+              <li key={i} className="trace-think">
+                <Markdown text={t.think} />
+              </li>
+            ) : (
+              <li key={i} className="trace-tool">
+                <span className="tool-chip">{t.tool}</span>
+              </li>
+            ),
           )}
-          {tools.length > 0 && (
-            <div className="trace-tools">
-              {tools.map((t, i) => (
-                <span key={i} className="tool-chip">
-                  {t}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+        </ol>
       )}
     </div>
   );

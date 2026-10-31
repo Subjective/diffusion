@@ -249,7 +249,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     "questions": [q.model_dump() for q in req.questions],
                     "answers": {str(q.n): "" for q in req.questions},
                     "tools": [],
-                    "thinking": "",
+                    "trace": [],  # what the agent did, in order: {"think": text} and {"tool": summary}
                     "shows": [],
                     "status": "streaming",
                 }
@@ -278,11 +278,16 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                     yield "focus", ev.to_dict()
                                 elif isinstance(ev, ThinkingEvent):
                                     said = True
-                                    record["thinking"] += ev.text
+                                    trace = record["trace"]
+                                    if trace and "think" in trace[-1]:
+                                        trace[-1]["think"] += ev.text
+                                    else:
+                                        trace.append({"think": ev.text})
                                     yield "thinking", {"text": ev.text}
                                 elif isinstance(ev, ToolEvent):
                                     said = True
                                     record["tools"].append(ev.summary)
+                                    record["trace"].append({"tool": ev.summary})
                                     yield "tool", {"name": ev.name, "summary": ev.summary}
                                 elif isinstance(ev, DoneEvent):
                                     if ev.is_error:

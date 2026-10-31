@@ -79,7 +79,7 @@ A software engineer reviewing a colleague's PR (or their own branch), often one 
 - Empty state: suggestion chips (risks, test gaps, flow).
 - Messages: the user's questions with code cards (file, range, code preview) and number badges, and AI answers with a numbered, linked header per question.
 - Queue tray (shown only when comments are queued): a list of `n · file:range · question` rows with remove and clear-all. No separate send button; the composer's send button shows the count.
-- Tool activity (for example `Grep refreshTokens`) shown while the agent is exploring. Afterwards it folds into one quiet line above the answer, "Thought for 12s · 6 tools" (or "Worked for…" without reasoning), which opens to the agent's reasoning as its CLI reports it (Claude Code's thinking summaries, Codex reasoning items, Cursor thinking) and the full tool list.
+- What the agent is doing shows as one quiet line above the answer: its latest step while it works (`Grep refreshTokens`, or a reasoning headline), then "Thought for 12s · 6 tools" (or "Worked for…" without reasoning). It opens to a timeline of reasoning and tool calls in the order they happened, as Cursor and Codex show them. Reasoning is whatever the agent's CLI reports: Claude Code's thinking summaries, Codex reasoning items, Cursor thinking.
 - Questions asked while an answer is streaming appear in the thread with a clock icon and count, and are sent together when it finishes.
 - An answer that changed the guide ends with a small "Updated the guide · v4" link, and the guide pane switches to that version.
 
