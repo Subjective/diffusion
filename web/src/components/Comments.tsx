@@ -1,5 +1,5 @@
-import { Check, ChevronRight, MessageCircle, RotateCcw } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { Check, MessageCircle, RotateCcw } from "lucide-react";
+import type { ReactNode } from "react";
 import { refsTarget } from "../lib/linking";
 import { Inline } from "../lib/md";
 import { type HunkIndex, rowKey, rowsForRef } from "../lib/refs";
@@ -11,7 +11,7 @@ import { ic } from "./icons";
 export type AskComment = (c: Comment, keys: string[], at: { x: number; y: number }) => void;
 
 /** Comment rows by the row key of each comment's last cited line, where they render, GitHub-style. Resolved
- *  comments stay, collapsed to a dimmed line that opens to show the comment and Unresolve. */
+ *  comments stay as one dimmed line; clicking it unresolves the comment. */
 export function commentRows(
   comments: Comment[],
   idx: HunkIndex,
@@ -37,22 +37,26 @@ export function commentRows(
 function CommentRow({ c, idx, onAsk, resolved }: { c: Comment; idx: HunkIndex; onAsk: AskComment; resolved: boolean }) {
   const { keys } = refsTarget(c.refs, idx);
   const ui = useUI.getState;
-  const [open, setOpen] = useState(false);
-  if (resolved && !open)
+  if (resolved)
     return (
-      <tr className="cmt-row resolved" data-tone={c.tone}>
+      <tr className="cmt-row closed" data-tone={c.tone}>
         <td colSpan={4}>
-          <button type="button" className="cmt-closed" onClick={() => setOpen(true)} title="Show resolved comment">
-            {ic(ChevronRight, 13)}
+          <button type="button" className="cmt-closed" onClick={() => ui().resolve(c.title, false)} title="Unresolve">
+            {ic(Check, 13)}
             <span>Resolved</span>
             <b>{c.title}</b>
+            <span className="grow" />
+            <span className="cmt-un">
+              {ic(RotateCcw, 12)}
+              Unresolve
+            </span>
           </button>
         </td>
       </tr>
     );
   return (
     <tr
-      className={`cmt-row${resolved ? " resolved" : ""}`}
+      className="cmt-row"
       data-tone={c.tone}
       onMouseEnter={() => ui().setHover(keys)}
       onMouseLeave={() => ui().setHover([])}
@@ -76,23 +80,9 @@ function CommentRow({ c, idx, onAsk, resolved }: { c: Comment; idx: HunkIndex; o
             >
               {ic(MessageCircle, 14)}
             </button>
-            {resolved ? (
-              <button
-                type="button"
-                className="icon-btn sm"
-                title="Unresolve"
-                onClick={() => {
-                  setOpen(false);
-                  ui().resolve(c.title, false);
-                }}
-              >
-                {ic(RotateCcw, 14)}
-              </button>
-            ) : (
-              <button type="button" className="icon-btn sm" title="Resolve" onClick={() => ui().resolve(c.title)}>
-                {ic(Check, 14)}
-              </button>
-            )}
+            <button type="button" className="icon-btn sm" title="Resolve" onClick={() => ui().resolve(c.title)}>
+              {ic(Check, 14)}
+            </button>
           </div>
           <div className="cmt-t">
             <Inline text={c.text} />

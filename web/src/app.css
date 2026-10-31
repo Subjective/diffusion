@@ -615,7 +615,7 @@ tr.cmt-row[data-tone="bug"] .cmt-tone {
   font-family: var(--sans);
   font-weight: 600;
 }
-tr.cmt-row.resolved > td {
+tr.cmt-row.closed > td {
   padding-top: 4px;
   padding-bottom: 4px;
 }
@@ -637,6 +637,13 @@ tr.cmt-row.resolved > td {
 .cmt-closed b {
   font-weight: 500;
 }
-tr.cmt-row.resolved .cmt {
-  opacity: 0.75;
+.cmt-un {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+}
+.cmt-closed:hover .cmt-un,
+.cmt-closed:focus-visible .cmt-un {
+  opacity: 1;
 }
