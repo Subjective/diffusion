@@ -637,13 +637,16 @@ tr.cmt-row.closed > td {
 .cmt-closed b {
   font-weight: 500;
 }
-.cmt-un {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  opacity: 0;
+.cmt-ic {
+  display: inline-grid;
 }
-.cmt-closed:hover .cmt-un,
-.cmt-closed:focus-visible .cmt-un {
-  opacity: 1;
+.cmt-ic > * {
+  grid-area: 1 / 1;
+}
+.cmt-ic > :last-child,
+.cmt-closed:is(:hover, :focus-visible) .cmt-ic > :first-child {
+  visibility: hidden;
+}
+.cmt-closed:is(:hover, :focus-visible) .cmt-ic > :last-child {
+  visibility: visible;
 }

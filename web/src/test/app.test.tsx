@@ -188,7 +188,7 @@ test("comments sit under their last line, highlight it, and can be hidden, resol
   expect(tg.textContent).toBe("1");
   // a resolved comment collapses to one line, and one click on it unresolves
   const closed = cmts()[0];
-  expect([closed.classList.contains("closed"), closed.textContent]).toEqual([true, "ResolvedNo retryUnresolve"]);
+  expect([closed.classList.contains("closed"), closed.textContent]).toEqual([true, "ResolvedNo retry"]);
   fireEvent.click(closed.querySelector(".cmt-closed")!);
   expect([cmts()[0].querySelector(".cmt-t")!.textContent, tg.textContent]).toEqual(["A 5xx is not retried.", "2"]);
 });

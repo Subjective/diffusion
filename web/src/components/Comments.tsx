@@ -42,14 +42,12 @@ function CommentRow({ c, idx, onAsk, resolved }: { c: Comment; idx: HunkIndex; o
       <tr className="cmt-row closed" data-tone={c.tone}>
         <td colSpan={4}>
           <button type="button" className="cmt-closed" onClick={() => ui().resolve(c.title, false)} title="Unresolve">
-            {ic(Check, 13)}
+            <span className="cmt-ic">
+              {ic(Check, 13)}
+              {ic(RotateCcw, 13)}
+            </span>
             <span>Resolved</span>
             <b>{c.title}</b>
-            <span className="grow" />
-            <span className="cmt-un">
-              {ic(RotateCcw, 12)}
-              Unresolve
-            </span>
           </button>
         </td>
       </tr>
