@@ -1,18 +1,19 @@
 import {
   ArrowUp,
-  Brain,
   ChevronRight,
   Clock,
   FileCode,
+  FileText,
   FlaskConical,
   History,
   Layers,
-  LoaderCircle,
   LocateFixed,
   MessageCircle,
+  Search,
   ShieldAlert,
   Sparkles,
   SquarePen,
+  SquareTerminal,
   Trash2,
   Workflow,
   Wrench,
@@ -349,6 +350,36 @@ export const headline = (think: string) => {
   return first.length > 60 ? `${first.slice(0, 57)}…` : first;
 };
 
+const TOOL_ICONS: Partial<Record<string, typeof Wrench>> = {
+  Ran: SquareTerminal,
+  Read: FileText,
+  Grep: Search,
+  Glob: Search,
+  Search: Search,
+  Hunk: FileCode,
+  Show: FileCode,
+};
+
+/** One tool call as a quiet line, the way chat apps show them: an icon, a verb, and what it acted on. */
+function ToolRow({ summary }: { summary: string }) {
+  const sp = summary.indexOf(" ");
+  const verb = sp < 0 ? summary : summary.slice(0, sp);
+  const Icon = TOOL_ICONS[verb];
+  return (
+    <li className="trace-tool" title={summary}>
+      {ic(Icon ?? Wrench, 12)}
+      {Icon ? (
+        <>
+          <span>{verb}</span>
+          <code>{summary.slice(sp + 1)}</code>
+        </>
+      ) : (
+        <span>{summary}</span>
+      )}
+    </li>
+  );
+}
+
 /** What the agent did for a turn, folded into one quiet line that opens to a timeline: reasoning and tool calls in
  * the order they happened. While it runs, the line shows the latest step. */
 function Trace({ q, pending }: { q: Question; pending: boolean }) {
@@ -373,7 +404,6 @@ function Trace({ q, pending }: { q: Question; pending: boolean }) {
   return (
     <div className={`trace${open ? " open" : ""}`}>
       <button type="button" className="trace-h" onClick={() => setOpen(!open)} aria-expanded={open}>
-        {ic(pending ? LoaderCircle : thought ? Brain : Wrench, 13, pending ? { className: "ic spin" } : {})}
         <span key={pending ? label : undefined} className={pending ? "trace-live" : undefined}>
           {label}
         </span>
@@ -387,9 +417,7 @@ function Trace({ q, pending }: { q: Question; pending: boolean }) {
                 <Markdown text={t.think} />
               </li>
             ) : (
-              <li key={i} className="trace-tool">
-                <span className="tool-chip">{t.tool}</span>
-              </li>
+              <ToolRow key={i} summary={t.tool} />
             ),
           )}
         </ol>

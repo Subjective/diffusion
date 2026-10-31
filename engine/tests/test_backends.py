@@ -85,7 +85,7 @@ async def test_codex_runner_streams_text_and_tools(tmp_path, repo):
     evs = await collect(codex_runner(str(exe))(AgentRequest("SYS", "PROMPT", "m", repo)))
     done = evs[-1]
     assert not done.is_error and done.session_id == "th_9"
-    assert [e.summary for e in evs if isinstance(e, ToolEvent)] == ["rg refresh"]
+    assert [e.summary for e in evs if isinstance(e, ToolEvent)] == ["Ran rg refresh"]
     assert [e.text for e in evs if isinstance(e, TextEvent)] == ["answer\n"]
     assert [e.text for e in evs if isinstance(e, ThinkingEvent)] == ["**Finding callers**\n"]
     stdin = (tmp_path / "stdin.txt").read_text()
@@ -120,7 +120,7 @@ def test_cursor_call_summaries_fit_one_line():
 
     assert summarize_call({"shellToolCall": {"args": {"command": "python3 -c '\nimport x\nprint(x)'"}}}) == (
         "shell",
-        "python3 -c ' import x print(x)'",
+        "Ran python3 -c ' import x print(x)'",
     )
 
 

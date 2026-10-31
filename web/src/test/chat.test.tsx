@@ -321,10 +321,10 @@ test("a turn's reasoning and tools fold into one line that opens to a timeline",
   expect(document.querySelector(".trace-b")).toBeNull();
   fireEvent.click(document.querySelector(".trace-h")!);
   // a timeline, in the order things happened
-  expect([...document.querySelectorAll(".trace-b > li")].map((li) => li.textContent)).toEqual([
-    "Grep x",
-    "Check who calls it.",
-  ]);
+  const items = [...document.querySelectorAll(".trace-b > li")];
+  expect(items.map((li) => li.className)).toEqual(["trace-tool", "trace-think"]);
+  expect(items[0].querySelector("code")!.textContent).toBe("x"); // a tool call: verb, then what it acted on
+  expect(items[1].textContent).toBe("Check who calls it.");
 });
 
 test("reasoning headlines: first bold phrase, else first sentence", async () => {

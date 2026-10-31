@@ -13,7 +13,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 
-from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent
+from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent, ran
 
 
 def build_args(req: AgentRequest) -> list[str]:
@@ -37,8 +37,7 @@ def build_args(req: AgentRequest) -> list[str]:
 def summarize_item(item: dict) -> str | None:
     t = item.get("type")
     if t == "command_execution":
-        cmd = item.get("command", "")
-        return cmd if len(cmd) <= 60 else cmd[:57] + "…"
+        return ran(item.get("command", ""))
     if t == "mcp_tool_call":
         return item.get("tool")
     if t == "web_search":

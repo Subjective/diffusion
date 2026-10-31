@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent
+from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent, ran
 
 
 def build_args(req: AgentRequest, prompt: str) -> list[str]:
@@ -34,8 +34,7 @@ def summarize_call(call: dict) -> tuple[str, str] | None:
     name = key.removesuffix("ToolCall")
     args: dict[str, Any] = (body or {}).get("args") or {}
     if args.get("command"):
-        cmd = " ".join(str(args["command"]).split())
-        return name, cmd if len(cmd) <= 60 else cmd[:57] + "…"
+        return name, ran(str(args["command"]))
     if args.get("path"):
         return name, f"{name.capitalize()} {Path(str(args['path'])).name}"
     if args.get("pattern") or args.get("globPattern"):

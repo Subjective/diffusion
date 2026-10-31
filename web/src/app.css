@@ -87,18 +87,6 @@ tr.flash.f1 td.no {
 .pr .meta a:hover {
   color: var(--text);
 }
-.tool-chip {
-  font: 11px var(--mono);
-  color: var(--subtle);
-  background: var(--chip);
-  padding: 2px 7px;
-  border-radius: 6px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  animation: fadeUp 0.25s both;
-}
 .skip-row.uncovered {
   color: var(--t-n);
 }
@@ -571,6 +559,23 @@ td.mark {
   flex-direction: column;
   gap: 6px;
   animation: fadeUp 0.2s both;
+}
+.trace-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--subtle);
+  font-size: 12px;
+}
+.trace-tool code {
+  font: 11.5px var(--mono);
+  color: var(--muted);
+  background: none;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .trace-think {
   color: var(--subtle);

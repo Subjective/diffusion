@@ -45,8 +45,16 @@ class DoneEvent:
 Event = ToolEvent | TextEvent | ThinkingEvent | DoneEvent
 
 
+def ran(command: str) -> str:
+    """A shell command as one short line: ``Ran git diff --stat``."""
+    cmd = " ".join(command.split())
+    return f"Ran {cmd if len(cmd) <= 60 else cmd[:57] + '…'}"
+
+
 def summarize_tool(name: str, args: dict) -> str:
     short = name.rsplit("__", 1)[-1]
+    if short == "Bash" and args.get("command"):
+        return ran(str(args["command"]))
     if short.lower() in ("grep", "glob"):
         return f"{short.capitalize()} {args.get('pattern', '')}".strip()
     if short.lower() in ("read", "read_file"):
