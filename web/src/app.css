@@ -615,3 +615,28 @@ tr.cmt-row[data-tone="bug"] .cmt-tone {
   font-family: var(--sans);
   font-weight: 600;
 }
+tr.cmt-row.resolved > td {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.cmt-closed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(720px, calc(100cqw - 124px));
+  padding: 4px 10px;
+  border-radius: 8px;
+  color: var(--subtle);
+  font: 12.5px var(--sans);
+  text-align: left;
+}
+.cmt-closed:hover {
+  background: var(--hover);
+  color: var(--muted);
+}
+.cmt-closed b {
+  font-weight: 500;
+}
+tr.cmt-row.resolved .cmt {
+  opacity: 0.75;
+}

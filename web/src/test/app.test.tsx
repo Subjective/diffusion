@@ -150,7 +150,7 @@ test("h/l walk the pinned step's line ranges, keeping the pin", async () => {
   expect(nums(".flash")).toEqual(["session.ts:5"]);
 });
 
-test("comments sit under their last line, highlight it, and can be hidden, resolved or asked about", async () => {
+test("comments sit under their last line, highlight it, and can be hidden, resolved, reopened or asked about", async () => {
   await mount();
   const cmts = () => [...document.querySelectorAll<HTMLElement>("tr.cmt-row")];
   // each comment row follows the last line it cites
@@ -185,8 +185,14 @@ test("comments sit under their last line, highlight it, and can be hidden, resol
   expect(cmts()).toHaveLength(0);
   fireEvent.click(tg);
   fireEvent.click(cmts()[0].querySelector('button[title="Resolve"]')!);
-  expect(cmts().map((r) => r.querySelector("b")!.textContent)).toEqual(["Teardown on logout"]);
   expect(tg.textContent).toBe("1");
+  // a resolved comment collapses to one line; opening it offers Unresolve
+  const closed = cmts()[0];
+  expect([closed.classList.contains("resolved"), closed.textContent]).toEqual([true, "ResolvedNo retry"]);
+  fireEvent.click(closed.querySelector(".cmt-closed")!);
+  expect(cmts()[0].querySelector(".cmt-t")!.textContent).toBe("A 5xx is not retried.");
+  fireEvent.click(cmts()[0].querySelector('button[title="Unresolve"]')!);
+  expect([cmts()[0].classList.contains("resolved"), tg.textContent]).toEqual([false, "2"]);
 });
 
 test("file list toggles, groups by directory, and opens a picked file", async () => {

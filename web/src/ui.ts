@@ -45,7 +45,8 @@ interface UI {
   toggleHideSkip(): void;
   toggleRail(): void;
   toggleHideComments(): void;
-  resolve(title: string): void;
+  /** Resolve a comment, or reopen it with `false`. */
+  resolve(title: string, on?: boolean): void;
 
   setHover(keys: string[], step?: number | null, sub?: number | null): void;
   focus(keys: string[], files: string[], step?: number | null, sub?: number | null): void;
@@ -137,9 +138,9 @@ export const useUI = create<UI>((set, get) => ({
     storage.set("rv-hide-comments", hideComments);
     set({ hideComments });
   },
-  resolve(title) {
+  resolve(title, on = true) {
     set((s) => {
-      const resolved = { ...s.resolved, [title]: true };
+      const resolved = { ...s.resolved, [title]: on };
       persist(s.prKey, { viewed: s.viewed, readSteps: s.readSteps, resolved });
       return { resolved };
     });
