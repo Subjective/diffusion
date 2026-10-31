@@ -19,6 +19,9 @@ export interface Anchor {
   stepTitle?: string;
   stepKind?: string;
   refs?: Ref[];
+  /** The guide comment being asked about: its title and text, and the title alone for display. */
+  comment?: string;
+  commentTitle?: string;
 }
 
 // staged: queued line comment (tray) · waiting: sent while a turn was running; goes out with the next turn
@@ -344,7 +347,16 @@ interface WireChat {
 }
 
 function toWire(a: Anchor) {
-  return { file: a.file, start: a.start, end: a.end, side: a.side, code: a.code, step: a.step ?? null, ui: a };
+  return {
+    file: a.file,
+    start: a.start,
+    end: a.end,
+    side: a.side,
+    code: a.code,
+    step: a.step ?? null,
+    comment: a.comment ?? null,
+    ui: a,
+  };
 }
 
 export function fromWire(c: WireChat): Chat {

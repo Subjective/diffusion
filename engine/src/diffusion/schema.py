@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 StepKind = Literal["entry", "core", "contract", "wiring", "cleanup", "test", "config", "docs"]
-ContextIcon = Literal["fact", "dependency", "risk", "history", "config", "security", "performance"]
+Tone = Literal["bug", "check", "note"]
 SkipReason = Literal[
     "lockfile", "generated", "snapshot", "vendored", "rename", "binary", "formatting", "trivial"
 ]
@@ -43,12 +43,14 @@ class Ref(BaseModel):
     end: int | None = None
 
 
-class ContextDraft(BaseModel):
-    icon: ContextIcon
-    text: str = Field(description="One sentence, ≤ 18 words. Inline `code` allowed.")
-    refs: list[LineRef] = Field(
-        default_factory=list, description="Optional: the changed lines this note is about."
+class CommentDraft(BaseModel):
+    title: str = Field(description="2–4 words naming the point, e.g. 'Never re-armed'.")
+    text: str = Field(description="1–2 sentences, ≤ 35 words. Inline `code` allowed.")
+    tone: Tone = Field(
+        default="note",
+        description="'bug' for a likely defect, 'check' for something worth verifying, 'note' for context.",
     )
+    refs: list[LineRef] = Field(min_length=1, description="The changed lines this comment is about.")
 
 
 class SubstepDraft(BaseModel):
@@ -117,8 +119,8 @@ class GuideDraft(BaseModel):
         default="", description="What the reviewer cares about or already knows, passed on to chat."
     )
     tldr: str = Field(description="1–2 sentences: what changes and why it matters.")
-    context: list[ContextDraft] = Field(
-        default_factory=list, max_length=5, description="Notes: what the reviewer can't see in the diff."
+    comments: list[CommentDraft] = Field(
+        default_factory=list, max_length=8, description="Comments left on the changed lines they are about."
     )
     steps: list[StepDraft] = Field(min_length=1, max_length=12)
     flow: Flow = Field(default_factory=Flow)
@@ -130,10 +132,12 @@ class GuideDraft(BaseModel):
 # ---------- validated output ----------
 
 
-class ContextItem(BaseModel):
-    icon: ContextIcon
+class Comment(BaseModel):
+    id: int
+    title: str
     text: str
-    refs: list[Ref] = Field(default_factory=list)
+    tone: Tone
+    refs: list[Ref]
 
 
 class Substep(BaseModel):
@@ -180,7 +184,7 @@ class Guide(BaseModel):
     scope: Scope | None = None
     brief: str = ""
     tldr: str
-    context: list[ContextItem]
+    comments: list[Comment]
     steps: list[Step]
     flow: Flow
     skippable: list[SkipGroup]

@@ -161,10 +161,14 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
         if h.id not in covered and h.id not in skip_ids and in_scope(h.file, draft.scope)
     ]
 
-    context = [
-        {"icon": c.icon, "text": c.text, "refs": fix_refs(c.refs, f"note {i}")}
-        for i, c in enumerate(draft.context, start=1)
-    ]
+    # A comment whose refs all miss the diff has nowhere to sit, so it is dropped (and reported via its refs).
+    comments = []
+    for i, c in enumerate(draft.comments, start=1):
+        refs = fix_refs(c.refs, f"comment {i}")
+        if refs:
+            comments.append(
+                {"id": len(comments) + 1, "title": c.title, "text": c.text, "tone": c.tone, "refs": refs}
+            )
 
     return Guide.model_validate(
         {
@@ -172,7 +176,7 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
             "scope": draft.scope,
             "brief": draft.brief,
             "tldr": draft.tldr,
-            "context": context,
+            "comments": comments,
             "steps": steps,
             "flow": Flow(nodes=nodes, edges=edges),
             "skippable": skippable,

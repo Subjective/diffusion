@@ -56,7 +56,7 @@ export interface PRMeta {
 }
 
 export type StepKind = "entry" | "core" | "contract" | "wiring" | "cleanup" | "test" | "config" | "docs";
-export type ContextIcon = "fact" | "dependency" | "risk" | "history" | "config" | "security" | "performance";
+export type Tone = "bug" | "check" | "note";
 export interface Ref {
   hunk: string;
   side: "new" | "old";
@@ -89,6 +89,14 @@ export interface FlowEdge {
   label: string | null;
   kind: "normal" | "error";
 }
+/** A comment the guide leaves on the lines it is about; shown under them in the diff. */
+export interface Comment {
+  id: number;
+  title: string;
+  text: string;
+  tone: Tone;
+  refs: Ref[];
+}
 export interface Scope {
   files: string[];
   note: string;
@@ -99,7 +107,7 @@ export interface Guide {
   scope?: Scope | null;
   brief?: string;
   tldr: string;
-  context: { icon: ContextIcon; text: string; refs?: Ref[] }[];
+  comments: Comment[];
   steps: Step[];
   flow: { nodes: FlowNode[]; edges: FlowEdge[] };
   skippable: { file: string; hunks: string[]; reason: SkipReason }[];

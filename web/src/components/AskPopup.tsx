@@ -1,4 +1,4 @@
-import { ArrowUp, FileCode, ListPlus, X } from "lucide-react";
+import { ArrowUp, FileCode, ListPlus, MessageCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Anchor } from "../chat";
 import { rangeText } from "../lib/selection";
@@ -48,7 +48,7 @@ export function AskPopup({
   if (!state) return null;
   const a = state.anchor;
   const submit = (stage: boolean) => {
-    const q = text.trim() || "Explain this.";
+    const q = text.trim() || (a.comment ? "Tell me more about this comment." : "Explain this.");
     (stage ? onStage : onAsk)(q, a);
     onClose();
   };
@@ -59,7 +59,8 @@ export function AskPopup({
       style={{ left: Math.min(state.x, innerWidth - 376), top: Math.min(state.y + 12, innerHeight - 120) }}
     >
       <div className="ask-ctx">
-        {ic(FileCode, 13)}
+        {ic(a.commentTitle ? MessageCircle : FileCode, 13)}
+        {a.commentTitle && <b className="ask-cmt">{a.commentTitle}</b>}
         <b>{a.file.split("/").pop()}</b>
         <span>{rangeText(a.start, a.end)}</span>
         <span className="grow" />
@@ -71,7 +72,7 @@ export function AskPopup({
         <input
           ref={input}
           value={text}
-          placeholder="Ask about these lines"
+          placeholder={a.comment ? "Ask about this comment" : "Ask about these lines"}
           autoComplete="off"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {

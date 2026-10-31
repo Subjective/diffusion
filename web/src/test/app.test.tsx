@@ -25,6 +25,7 @@ const { App } = await import("../App");
 const api = await import("../api");
 const { useApp } = await import("../store");
 const { useUI } = await import("../ui");
+const { useChat } = await import("../chat");
 
 const rows = (sel: string) => [...document.querySelectorAll<HTMLTableRowElement>(`tr.ln${sel}`)];
 const nums = (sel: string) =>
@@ -45,7 +46,7 @@ test("renders guide, diff in guide order, skippable collapsed", async () => {
   expect(document.querySelector('.file[data-path="package-lock.json"]')!.classList.contains("collapsed")).toBe(true);
   expect(document.querySelectorAll(".step")).toHaveLength(3);
   expect(document.querySelector(".tldr code")!.textContent).toBe("tokens");
-  expect(document.querySelector(".note.warn")!.textContent).toBe("No retry on 5xx");
+  expect(document.querySelector(".sec-h")?.textContent).not.toBe("Notes");
   // gutter dots at first row of each ref
   expect([...document.querySelectorAll("td.mark .dot")].map((d) => d.textContent)).toEqual([
     "1",
@@ -149,13 +150,43 @@ test("h/l walk the pinned step's line ranges, keeping the pin", async () => {
   expect(nums(".flash")).toEqual(["session.ts:5"]);
 });
 
-test("notes with refs link to lines", async () => {
+test("comments sit under their last line, highlight it, and can be hidden, resolved or asked about", async () => {
   await mount();
-  const note = document.querySelector<HTMLElement>(".note.linked")!;
-  fireEvent.mouseEnter(note);
+  const cmts = () => [...document.querySelectorAll<HTMLElement>("tr.cmt-row")];
+  // each comment row follows the last line it cites
+  expect(
+    cmts().map((r) => [r.querySelector("b")!.textContent, (r.previousElementSibling as HTMLElement).dataset.new]),
+  ).toEqual([
+    ["No retry", "2"],
+    ["Teardown on logout", "7"],
+  ]);
+  expect(cmts()[0].dataset.tone).toBe("bug");
+  fireEvent.mouseEnter(cmts()[1]);
   expect(nums(".hl")).toEqual(["session.ts:6", "session.ts:7"]);
-  fireEvent.click(note);
-  expect(document.querySelectorAll("tr.ln.flash").length).toBe(2);
+
+  // Ask opens the popup on the comment's lines, carrying the comment as context
+  fireEvent.click(cmts()[1].querySelector('button[title="Ask in chat"]')!);
+  const pop = document.querySelector(".ask-pop")!;
+  expect(pop.querySelector(".ask-ctx")!.textContent).toContain("Teardown on logout");
+  expect(pop.querySelector("input")!.getAttribute("placeholder")).toBe("Ask about this comment");
+  fireEvent.keyDown(pop.querySelector("input")!, { key: "Enter", shiftKey: true }); // queue it
+  const q = useChat.getState().chat.questions.at(-1)!;
+  expect([q.text, q.anchor?.comment, q.anchor?.start, q.anchor?.end]).toEqual([
+    "Tell me more about this comment.",
+    "Teardown on logout. `end()` runs on logout too.",
+    6,
+    7,
+  ]);
+
+  // the toolbar toggle hides them all; resolving one removes it and the count
+  const tg = document.querySelector<HTMLElement>(".cmt-tg")!;
+  expect(tg.textContent).toBe("2");
+  fireEvent.click(tg);
+  expect(cmts()).toHaveLength(0);
+  fireEvent.click(tg);
+  fireEvent.click(cmts()[0].querySelector('button[title="Resolve"]')!);
+  expect(cmts().map((r) => r.querySelector("b")!.textContent)).toEqual(["Teardown on logout"]);
+  expect(tg.textContent).toBe("1");
 });
 
 test("file list toggles, groups by directory, and opens a picked file", async () => {

@@ -6,12 +6,8 @@ import {
   Crosshair,
   Diamond,
   FlaskConical,
-  Gauge,
   GitBranch,
-  History,
   Image,
-  Info,
-  KeyRound,
   Lock,
   type LucideIcon,
   type LucideProps,
@@ -19,11 +15,10 @@ import {
   Plug,
   Power,
   Settings,
-  ShieldAlert,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import type { ContextIcon, SkipReason, StepKind } from "../types";
+import type { SkipReason, StepKind } from "../types";
 
 export const STEP_ICON: Record<StepKind, LucideIcon> = {
   entry: Crosshair,
@@ -34,16 +29,6 @@ export const STEP_ICON: Record<StepKind, LucideIcon> = {
   test: FlaskConical,
   config: Settings,
   docs: BookOpen,
-};
-
-export const CONTEXT_ICON: Record<ContextIcon, LucideIcon> = {
-  fact: Info,
-  dependency: Package,
-  risk: ShieldAlert,
-  history: History,
-  config: Settings,
-  security: KeyRound,
-  performance: Gauge,
 };
 
 export const SKIP_ICON: Record<SkipReason, LucideIcon> = {

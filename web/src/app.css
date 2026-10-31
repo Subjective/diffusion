@@ -44,7 +44,7 @@
   animation: spin 0.8s linear infinite;
 }
 
-/* Diff: restartable flash (alternating classes), notes, Shiki tokens → wireframe palette */
+/* Diff: restartable flash (alternating classes), Shiki tokens → wireframe palette */
 tr.flash.f1 td.code,
 tr.flash.f1 td.no {
   animation: flash2 1.1s ease-out;
@@ -357,45 +357,58 @@ td.mark {
   right: -4px;
 }
 
-/* Notes (was context chips): full-width rows, risks tinted */
-.notes {
-  list-style: none;
-  margin: 0 4px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+/* Guide comments: GitHub-style rows under the last line they cite; the icon is tinted by tone */
+tr.cmt-row > td {
+  padding: 6px 16px 8px 70px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
-.note {
-  display: grid;
-  grid-template-columns: 16px 1fr;
-  gap: 8px;
-  align-items: start;
-  padding: 6px 8px;
-  border-radius: 8px;
+.cmt {
+  width: min(720px, calc(100cqw - 124px));
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  font-family: var(--sans);
+  white-space: normal;
+}
+.cmt-h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 6px 0 12px;
   font-size: 13px;
-  line-height: 1.45;
+}
+.cmt-h b {
+  font-weight: 600;
+}
+.cmt-tone {
+  display: inline-grid;
   color: var(--muted);
 }
-.note .ic {
-  margin-top: 2px;
-  color: var(--subtle);
+tr.cmt-row[data-tone="check"] .cmt-tone {
+  color: #d99a00;
 }
-.note.warn .ic {
-  color: #b45309;
+:root.dark tr.cmt-row[data-tone="check"] .cmt-tone {
+  color: #e8b030;
 }
-:root.dark .note.warn .ic {
-  color: #fbbf24;
+tr.cmt-row[data-tone="bug"] .cmt-tone {
+  color: var(--del-fg);
 }
-.note.linked {
-  cursor: pointer;
+.cmt-t {
+  padding: 2px 14px 11px 32px;
+  font-size: 13px;
+  line-height: 1.55;
 }
-.note.linked:hover {
-  background: var(--hover);
-  color: var(--text);
+.cmt-t code {
+  font-size: 12px;
 }
-.note code {
-  font-size: 11.5px;
+.icon-btn.cmt-tg {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  gap: 4px;
+  padding: 0 6px;
+  font: 500 12px var(--sans);
 }
 
 /* Guide versions (top bar) */
@@ -597,4 +610,8 @@ td.mark {
 .ref.on {
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--hl-bar);
+}
+.ask-ctx .ask-cmt {
+  font-family: var(--sans);
+  font-weight: 600;
 }
