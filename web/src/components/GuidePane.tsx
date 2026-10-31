@@ -9,11 +9,13 @@ import {
   Focus,
   GitPullRequest,
   ListOrdered,
+  Map as MapIcon,
+  Maximize2,
   MessageCircle,
-  Workflow,
   Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { layoutView } from "../lib/layout";
 import { readingOrder, refsOf, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { Inline } from "../lib/md";
 import { GUIDE_W, startResize } from "../lib/panes";
@@ -22,8 +24,8 @@ import { storage } from "../lib/storage";
 import { useApp } from "../store";
 import type { Ref, Step } from "../types";
 import { useUI } from "../ui";
-import { FlowGraph } from "./FlowGraph";
 import { ic, SKIP_ICON, STEP_ICON } from "./icons";
+import { MapCanvas } from "./MapCanvas";
 
 export interface GuidePaneProps {
   onAskStep?: (step: Step) => void;
@@ -70,12 +72,7 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
               <Inline text={guide.tldr} />
             </p>
           </section>
-          {guide.flow.nodes.length > 0 && (
-            <section className="sec">
-              <div className="sec-h">{ic(Workflow, 13)}Flow</div>
-              <FlowGraph />
-            </section>
-          )}
+          <MiniMap />
           <Steps onAskStep={onAskStep} />
           <Skippable />
           <Uncovered />
@@ -87,6 +84,41 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
         </>
       )}
     </aside>
+  );
+}
+
+/** The overview view at thumbnail size: hovering or clicking a box works on its lines, and expand opens the map. */
+function MiniMap() {
+  const view = useApp((s) => s.guide?.views?.[0]);
+  const idx = useHunkIndex();
+  const layout = useMemo(() => (view ? layoutView(view) : null), [view]);
+  if (!view || !layout) return null;
+  return (
+    <section className="sec">
+      <div className="sec-h">
+        {ic(MapIcon, 13)}Map
+        <span className="grow" />
+        <button
+          type="button"
+          className="icon-btn sm"
+          title="Open the map"
+          onClick={() => useUI.getState().setMode("map")}
+        >
+          {ic(Maximize2, 13)}
+        </button>
+      </div>
+      <div className="mini-map" onMouseLeave={() => useUI.getState().setHover([])}>
+        <MapCanvas
+          layout={layout}
+          idx={idx}
+          onEnter={(b) => useUI.getState().setHover(refsTarget(b.refs, idx).keys)}
+          onPick={(b) => {
+            const t = refsTarget(b.refs, idx);
+            useUI.getState().focus(t.keys, t.files);
+          }}
+        />
+      </div>
+    </section>
   );
 }
 

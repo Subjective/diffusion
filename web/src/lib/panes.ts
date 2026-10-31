@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { storage } from "./storage";
 
 export const GUIDE_W = 360;
+export const MAP_W = 620;
 export const CHAT_W = 380;
 export const MIN_GUIDE = 260;
 export const MIN_CHAT = 300;
@@ -13,8 +14,12 @@ export const clampGuideW = (w: number, chatW: number, vw = innerWidth) =>
 export const clampChatW = (w: number, guideW: number, vw = innerWidth) =>
   Math.round(Math.max(MIN_CHAT, Math.min(w, vw - guideW - MIN_DIFF)));
 
-export function usePaneWidths(chatOpen: boolean) {
-  const [guide, setGuide] = useState(() => storage.get("rv-guide-w", GUIDE_W));
+/** Pane widths. The left pane keeps its own width per mode, since the map wants more room than the steps. */
+export function usePaneWidths(chatOpen: boolean, map = false) {
+  const [steps, setSteps] = useState(() => storage.get("rv-guide-w", GUIDE_W));
+  const [mapW, setMapW] = useState(() => storage.get("rv-map-w", MAP_W));
+  const guide = map ? mapW : steps;
+  const setGuide = map ? setMapW : setSteps;
   const [chat, setChat] = useState(() => storage.get("rv-chat-w", CHAT_W));
   const effChat = chatOpen ? chat : 0;
   // biome-ignore lint/correctness/useExhaustiveDependencies: refit only on toggle/resize; render clamps to the live widths.
@@ -26,7 +31,7 @@ export function usePaneWidths(chatOpen: boolean) {
     refit();
     addEventListener("resize", refit);
     return () => removeEventListener("resize", refit);
-  }, [chatOpen]);
+  }, [chatOpen, map]);
   return {
     guide: clampGuideW(guide, effChat),
     chat: clampChatW(chat, clampGuideW(guide, effChat)),

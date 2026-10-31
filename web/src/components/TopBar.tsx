@@ -1,7 +1,8 @@
-import { Check, GitBranch, History, Moon, PanelRight, Route, Sun } from "lucide-react";
+import { Check, GitBranch, History, ListOrdered, Map as MapIcon, Moon, PanelRight, Route, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ago } from "../lib/time";
 import { useApp } from "../store";
+import { useUI } from "../ui";
 import { GithubIcon, ic } from "./icons";
 
 export function TopBar() {
@@ -11,6 +12,7 @@ export function TopBar() {
       <div className="brand">{ic(Route, 16)}</div>
       <Target />
       <div className="top-r">
+        <ModeToggle />
         <Versions />
         <button type="button" className="icon-btn" title="Theme" onClick={toggleTheme}>
           {ic(theme === "dark" ? Sun : Moon, 17)}
@@ -20,6 +22,35 @@ export function TopBar() {
         </button>
       </div>
     </header>
+  );
+}
+
+/** Steps or map in the left pane; shown once the guide has a view to map. */
+function ModeToggle() {
+  const hasMap = useApp((s) => !!s.guide?.views?.length);
+  const { mode, setMode } = useUI();
+  if (!hasMap) return null;
+  return (
+    <div className="seg">
+      <button
+        type="button"
+        className={`icon-btn${mode !== "map" ? " on" : ""}`}
+        title="Steps"
+        aria-pressed={mode !== "map"}
+        onClick={() => setMode("guide")}
+      >
+        {ic(ListOrdered, 16)}
+      </button>
+      <button
+        type="button"
+        className={`icon-btn${mode === "map" ? " on" : ""}`}
+        title="Map"
+        aria-pressed={mode === "map"}
+        onClick={() => setMode("map")}
+      >
+        {ic(MapIcon, 16)}
+      </button>
+    </div>
   );
 }
 

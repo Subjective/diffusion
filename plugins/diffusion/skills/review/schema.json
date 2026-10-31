@@ -1,5 +1,114 @@
 {
   "$defs": {
+    "ArrowDraft": {
+      "properties": {
+        "from": {
+          "description": "Block id.",
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "description": "Block id.",
+          "title": "To",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "\u2264 2 words, e.g. 'fires', 'tokens'.",
+          "title": "Label"
+        },
+        "kind": {
+          "default": "call",
+          "description": "'call', 'data' (a value passed along), 'event' (async), or 'error'.",
+          "enum": [
+            "call",
+            "data",
+            "event",
+            "error"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "ArrowDraft",
+      "type": "object"
+    },
+    "BlockDraft": {
+      "properties": {
+        "id": {
+          "description": "Short unique id within the view, e.g. 'refresh'.",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "description": "What the reader sees: a function, type or component name, e.g. 'refresh()'.",
+          "title": "Label",
+          "type": "string"
+        },
+        "kind": {
+          "default": "box",
+          "description": "'box' for a piece of code; 'region' groups boxes (a file, class or module).",
+          "enum": [
+            "box",
+            "region"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Id of the region this box sits in.",
+          "title": "Parent"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1-based index of the step that covers this block.",
+          "title": "Step"
+        },
+        "refs": {
+          "description": "The changed lines this block stands for. Leave empty for unchanged code shown as context.",
+          "items": {
+            "$ref": "#/$defs/LineRef"
+          },
+          "title": "Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "title": "BlockDraft",
+      "type": "object"
+    },
     "CommentDraft": {
       "properties": {
         "title": {
@@ -39,106 +148,6 @@
         "refs"
       ],
       "title": "CommentDraft",
-      "type": "object"
-    },
-    "Flow": {
-      "properties": {
-        "nodes": {
-          "items": {
-            "$ref": "#/$defs/FlowNode"
-          },
-          "maxItems": 12,
-          "title": "Nodes",
-          "type": "array"
-        },
-        "edges": {
-          "items": {
-            "$ref": "#/$defs/FlowEdge"
-          },
-          "title": "Edges",
-          "type": "array"
-        }
-      },
-      "title": "Flow",
-      "type": "object"
-    },
-    "FlowEdge": {
-      "properties": {
-        "from": {
-          "title": "From",
-          "type": "string"
-        },
-        "to": {
-          "title": "To",
-          "type": "string"
-        },
-        "label": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "\u2264 2 words, e.g. 'timer', 'ok'.",
-          "title": "Label"
-        },
-        "kind": {
-          "default": "normal",
-          "enum": [
-            "normal",
-            "error"
-          ],
-          "title": "Kind",
-          "type": "string"
-        }
-      },
-      "required": [
-        "from",
-        "to"
-      ],
-      "title": "FlowEdge",
-      "type": "object"
-    },
-    "FlowNode": {
-      "properties": {
-        "id": {
-          "description": "Short unique id, e.g. 'refresh'.",
-          "title": "Id",
-          "type": "string"
-        },
-        "label": {
-          "description": "Function/component name, e.g. 'refresh()'.",
-          "title": "Label",
-          "type": "string"
-        },
-        "step": {
-          "description": "1-based index of the step this node belongs to.",
-          "title": "Step",
-          "type": "integer"
-        },
-        "substep": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "1-based substep index within the step, if specific.",
-          "title": "Substep"
-        }
-      },
-      "required": [
-        "id",
-        "label",
-        "step"
-      ],
-      "title": "FlowNode",
       "type": "object"
     },
     "LineRef": {
@@ -190,6 +199,49 @@
         "file"
       ],
       "title": "LineRef",
+      "type": "object"
+    },
+    "SceneDraft": {
+      "properties": {
+        "title": {
+          "description": "1\u20134 words, e.g. 'Arm the timer'.",
+          "title": "Title",
+          "type": "string"
+        },
+        "text": {
+          "description": "1\u20132 sentences, \u2264 30 words. Inline `code` allowed.",
+          "title": "Text",
+          "type": "string"
+        },
+        "blocks": {
+          "description": "Ids of the blocks this scene frames and lights.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Blocks",
+          "type": "array"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1-based index of the step this scene tells.",
+          "title": "Step"
+        }
+      },
+      "required": [
+        "title",
+        "text",
+        "blocks"
+      ],
+      "title": "SceneDraft",
       "type": "object"
     },
     "Scope": {
@@ -352,6 +404,52 @@
       ],
       "title": "SubstepDraft",
       "type": "object"
+    },
+    "ViewDraft": {
+      "properties": {
+        "title": {
+          "description": "A few words, e.g. 'Token refresh'.",
+          "title": "Title",
+          "type": "string"
+        },
+        "layout": {
+          "const": "flow",
+          "default": "flow",
+          "title": "Layout",
+          "type": "string"
+        },
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/BlockDraft"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Blocks",
+          "type": "array"
+        },
+        "arrows": {
+          "items": {
+            "$ref": "#/$defs/ArrowDraft"
+          },
+          "title": "Arrows",
+          "type": "array"
+        },
+        "scenes": {
+          "description": "A walk through the view, outside-in.",
+          "items": {
+            "$ref": "#/$defs/SceneDraft"
+          },
+          "maxItems": 10,
+          "title": "Scenes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "blocks"
+      ],
+      "title": "ViewDraft",
+      "type": "object"
     }
   },
   "properties": {
@@ -402,8 +500,14 @@
       "title": "Steps",
       "type": "array"
     },
-    "flow": {
-      "$ref": "#/$defs/Flow"
+    "views": {
+      "description": "Diagrams of the change; the first is the overview.",
+      "items": {
+        "$ref": "#/$defs/ViewDraft"
+      },
+      "maxItems": 4,
+      "title": "Views",
+      "type": "array"
     },
     "skippable": {
       "description": "Changes that are pure formatting or trivially safe.",

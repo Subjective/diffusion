@@ -312,73 +312,322 @@ code {
   background: rgba(251, 191, 36, 0.07);
 }
 
-.flow {
+/* Map: a view of the change. The same SVG renders the mini map in the guide and the full map pane. */
+.mini-map {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 6px 4px;
 }
-.flow svg {
+.mini-map svg {
   width: 100%;
+  max-height: 300px;
   display: block;
 }
-.fn {
-  cursor: pointer;
+.guide.map {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  background: var(--panel);
+  cursor: grab;
+  touch-action: none;
+  overscroll-behavior: contain;
 }
-.fn rect {
+.guide.map:active {
+  cursor: grabbing;
+}
+.guide.map > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.m-region rect {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-dasharray: 5 4;
+}
+.m-region text {
+  font: 500 11px var(--sans);
+  fill: var(--subtle);
+  letter-spacing: 0.02em;
+  paint-order: stroke;
+  stroke: var(--panel);
+  stroke-width: 4px;
+}
+.mini-map .m-region text {
+  stroke: var(--surface);
+}
+.m-box {
+  cursor: pointer;
+  transition: opacity 0.25s;
+}
+.m-box rect.b {
   fill: var(--surface);
   stroke: var(--border-strong);
   transition:
     fill 0.12s,
     stroke 0.12s;
 }
-.fn text {
-  fill: var(--text);
-  font: 11.5px var(--mono);
+.m-box.context rect.b {
+  fill: none;
+  stroke-dasharray: 4 3;
 }
-.fn .num circle {
+.m-box .lab {
+  fill: var(--text);
+  font: 12.5px var(--mono);
+}
+.m-box.context .lab {
+  fill: var(--muted);
+}
+.m-box .num circle {
   fill: var(--chip);
 }
-.fn .num text {
+.m-box .num text {
   font: 600 9.5px var(--sans);
   fill: var(--muted);
   text-anchor: middle;
 }
-.fn.hover rect {
+.m-box .chg circle {
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+.m-box .chg text {
+  fill: #fff;
+  font: 700 9px var(--sans);
+  text-anchor: middle;
+}
+.m-box .chg.added circle {
+  fill: var(--add-fg);
+}
+.m-box .chg.removed circle {
+  fill: var(--del-fg);
+}
+.m-box .chg.changed circle {
+  fill: var(--hl-bar);
+}
+.m-box .chg.changed text {
+  font-size: 6px;
+}
+.m-box:hover rect.b,
+.m-box.hover rect.b {
   fill: var(--hl);
   stroke: var(--hl-bar);
 }
-.fn.active rect {
+.m-box.on rect.b {
   stroke: var(--text);
   stroke-width: 1.5;
 }
-.fn.active .num circle {
+.m-box.on .num circle {
   fill: var(--solid);
 }
-.fn.active .num text {
+.m-box.on .num text {
   fill: var(--solid-fg);
 }
-.fe {
+.m-arrow {
+  transition: opacity 0.25s;
+}
+.m-arrow path {
   fill: none;
   stroke: var(--subtle);
   stroke-width: 1.2;
 }
-.fe.err {
+.m-arrow.data path {
+  stroke-dasharray: 1 3;
+  stroke-linecap: round;
+  stroke-width: 1.6;
+}
+.m-arrow.event path {
+  stroke-dasharray: 5 3;
+}
+.m-arrow.error path {
   stroke: var(--del-fg);
-  stroke-dasharray: 3 3;
+  stroke-dasharray: 4 3;
+}
+.m-arrow text {
+  font: 11px var(--mono);
+  fill: var(--subtle);
+  paint-order: stroke;
+  stroke: var(--panel);
+  stroke-width: 4px;
+}
+.mini-map .m-arrow text {
+  stroke: var(--surface);
+}
+.m-arrow.error text {
+  fill: var(--del-fg);
 }
 .mk {
   fill: var(--subtle);
 }
-.mk.err {
+.mk.error {
   fill: var(--del-fg);
 }
-.fl {
-  font: 10px var(--sans);
-  fill: var(--subtle);
+svg.dim .m-box:not(.lit),
+svg.dim .m-arrow:not(.lit) {
+  opacity: 0.28;
 }
-.fl.err {
-  fill: var(--del-fg);
+svg.dim .m-region {
+  opacity: 0.6;
+}
+.map-float {
+  position: absolute;
+  z-index: 2;
+  cursor: default;
+}
+.map-tabs {
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.map-tabs button {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.map-tabs button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.map-tabs button.on {
+  background: var(--chip);
+  color: var(--text);
+}
+.map-zoom {
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.map-card {
+  left: 12px;
+  bottom: 12px;
+  width: min(380px, calc(100% - 80px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 10px 12px 12px;
+}
+.map-card-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -4px 6px 0;
+  color: var(--subtle);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.map-card-h .icon-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.map-card-t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.map-card-t .dot {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--chip);
+  color: var(--muted);
+  font: 600 10.5px var(--sans);
+}
+.map-card-s {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.map-card-s code {
+  font-size: 11.5px;
+}
+.map-peek {
+  position: absolute;
+  z-index: 5;
+  width: 480px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+.map-peek .peek {
+  max-width: none;
+}
+.map-peek .peek-h.next {
+  border-top: 1px solid var(--border);
+}
+.map-peek .peek-b {
+  max-height: none;
+}
+.map-peek .peek-b table {
+  table-layout: fixed;
+}
+.map-peek .peek-b td.no {
+  width: 44px;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--subtle);
+  font-size: 11.5px;
+}
+.map-peek .peek-b td.src {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-peek .peek-b tr.add td {
+  background-color: var(--add);
+}
+.map-peek .peek-b tr.add td.no {
+  color: var(--add-fg);
+  box-shadow: inset 2px 0 var(--add-fg);
+}
+.map-peek .peek-b tr.del td {
+  background-color: var(--del);
+}
+.map-peek .peek-b tr.del td.no {
+  color: var(--del-fg);
+  box-shadow: inset 2px 0 var(--del-fg);
+}
+.map-peek .peek-b tr.more td {
+  color: var(--subtle);
+  font-family: var(--sans);
+}
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  margin-right: 6px;
+  border-radius: 9px;
+  background: var(--chip);
+}
+.seg .icon-btn {
+  width: 30px;
+  height: 28px;
+  border-radius: 7px;
+}
+.seg .icon-btn.on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .progress {

@@ -9,8 +9,8 @@ disable-model-invocation: true
 # Diffusion review
 
 You write a reviewer's guide to a set of changes, and Diffusion shows it next to the diff: steps to read in
-order, each linked to the exact lines, plus comments on the lines that matter, a flow diagram and what's safe
-to skip. Your job is to make the review fast and correct: what matters, in what order, and what can be skipped.
+order, each linked to the exact lines, plus comments on the lines that matter, a map of the change and what's
+safe to skip. Your job is to make the review fast and correct: what matters, in what order, and what can be skipped.
 
 ## 1. Work out the target, the scope and the context
 
@@ -59,9 +59,13 @@ invent paths or line numbers.
     with substeps can leave its own `refs` empty.
   - Every non-trivial change in scope must appear in some step. A change may appear in several steps with
     different line ranges.
-- `flow`: 3–8 nodes for the main functions or components and how control or data moves between them. Each
-  node belongs to a step (`step`, 1-based) and optionally a substep. Use `kind: "error"` for failure paths.
-  Labels like `refresh()`; edge labels ≤ 2 words. Leave it out when there's no meaningful flow.
+- `views`: one diagram of how the change fits together, which the reviewer can open as a map. 4–12 `box`
+  blocks for the main functions, types or components (labels like `refresh()`), grouped by `region` blocks
+  (a file, class or module) through `parent`. Each box cites the lines it stands for in `refs` and names its
+  `step`; a box for unchanged code that helps explain the change has no `refs`. `arrows` show how control or
+  data moves (`call`, `data`, `event`, `error`; labels ≤ 2 words). `scenes` walk the view outside-in: usually
+  one per step (with `step`), each lighting the blocks it is about, then a last one on the blocks your `bug`
+  and `check` comments sit on. Leave `views` out when the change has no meaningful structure.
 - `skippable`: changes that are pure formatting or trivially safe (`formatting` / `trivial`). Lockfiles,
   snapshots, generated, vendored, binary and rename-only files are detected already.
 

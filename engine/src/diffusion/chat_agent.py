@@ -65,7 +65,7 @@ def seed_context(prep: Prepared, guide: dict | None) -> str:
     ]
     if guide:
         draft = guide.get("draft") or {
-            k: guide[k] for k in ("tldr", "comments", "steps", "flow", "skippable") if k in guide
+            k: guide[k] for k in ("tldr", "comments", "steps", "views", "skippable") if k in guide
         }
         parts += ["## Reviewer's guide (JSON)", "```json", json.dumps(draft, ensure_ascii=False), "```"]
     return "\n".join(parts)

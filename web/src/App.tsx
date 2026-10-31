@@ -7,6 +7,7 @@ import type { AskComment } from "./components/Comments";
 import { DiffPane } from "./components/DiffPane";
 import { GuidePane, NoGuide } from "./components/GuidePane";
 import { ic } from "./components/icons";
+import { MapPane } from "./components/MapPane";
 import { useQuestionBadges } from "./components/QuestionBadges";
 import { TopBar } from "./components/TopBar";
 import { refsTarget, useHunkIndex, useStepLinking } from "./lib/linking";
@@ -33,7 +34,9 @@ export function questionRows(q: Question, idx: HunkIndex): { keys: string[]; fil
 
 export function App() {
   const { theme, chatOpen, pr, error, loading, url, load, toggleChat } = useApp();
-  const panes = usePaneWidths(chatOpen);
+  const hasMap = useApp((s) => !!s.guide?.views?.length);
+  const map = useUI((s) => s.mode === "map") && hasMap;
+  const panes = usePaneWidths(chatOpen, map);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -178,7 +181,7 @@ export function App() {
           onMouseOver={onOver}
           onClickCapture={onClick}
         >
-          <GuidePane onAskStep={askStep} onWidth={panes.setGuide} />
+          {map ? <MapPane onWidth={panes.setGuide} /> : <GuidePane onAskStep={askStep} onWidth={panes.setGuide} />}
           <DiffPane extras={badges} onAskComment={askComment} />
           {chatOpen ? <ChatPanel onWidth={panes.setChat} link={chatLink} /> : <aside className="chat" />}
         </main>

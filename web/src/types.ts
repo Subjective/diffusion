@@ -77,17 +77,36 @@ export interface Step {
   refs: Ref[];
   substeps?: Substep[];
 }
-export interface FlowNode {
+/** A piece of code in a view: a box, or a region grouping boxes. A block with no refs is unchanged context. */
+export interface Block {
   id: string;
   label: string;
-  step: number;
-  substep?: number | null;
+  kind: "box" | "region";
+  parent?: string | null;
+  step?: number | null;
+  refs: Ref[];
 }
-export interface FlowEdge {
+export interface Arrow {
   from: string;
   to: string;
-  label: string | null;
-  kind: "normal" | "error";
+  label?: string | null;
+  kind: "call" | "data" | "event" | "error";
+}
+/** One stop in a walk through a view: the blocks it frames and lights. */
+export interface Scene {
+  title: string;
+  text: string;
+  blocks: string[];
+  step?: number | null;
+}
+/** A diagram of the change, shown as the map. The first view is the overview. */
+export interface View {
+  id: number;
+  title: string;
+  layout: "flow";
+  blocks: Block[];
+  arrows: Arrow[];
+  scenes: Scene[];
 }
 /** A comment the guide leaves on the lines it is about; shown under them in the diff. */
 export interface Comment {
@@ -109,7 +128,7 @@ export interface Guide {
   tldr: string;
   comments: Comment[];
   steps: Step[];
-  flow: { nodes: FlowNode[]; edges: FlowEdge[] };
+  views: View[];
   skippable: { file: string; hunks: string[]; reason: SkipReason }[];
   uncovered: string[];
   validation: { total_refs: number; invalid_refs: number; clamped_refs: number };

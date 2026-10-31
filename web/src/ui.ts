@@ -3,6 +3,8 @@ import { create } from "zustand";
 import { storage } from "./lib/storage";
 
 export type Order = "guide" | "alpha";
+/** What the left pane shows: the guide's steps, or the map of the change. */
+export type Mode = "guide" | "map";
 
 /** Last time the reviewer scrolled or clicked in the diff themselves. Chat only auto-jumps the diff if it's older
  *  than the question, so an answer never yanks the view away from what they're reading. */
@@ -17,6 +19,7 @@ interface UI {
   viewed: Record<string, boolean>;
   readSteps: Record<number, boolean>;
   order: Order;
+  mode: Mode;
   hideSkip: boolean;
   rail: boolean;
   hideComments: boolean;
@@ -42,6 +45,7 @@ interface UI {
   toggleViewed(path: string): void;
   toggleRead(step: number): void;
   setOrder(o: Order): void;
+  setMode(m: Mode): void;
   toggleHideSkip(): void;
   toggleRail(): void;
   toggleHideComments(): void;
@@ -49,7 +53,8 @@ interface UI {
   resolve(title: string, on?: boolean): void;
 
   setHover(keys: string[], step?: number | null, sub?: number | null): void;
-  focus(keys: string[], files: string[], step?: number | null, sub?: number | null): void;
+  /** Scroll to, flash and (given a step) pin lines. `pin` pins them without a step, as a map block or scene does. */
+  focus(keys: string[], files: string[], step?: number | null, sub?: number | null, pin?: boolean): void;
   clearPin(): void;
   /** Scroll to and flash one of the pinned item's refs, keeping the pin. */
   showRef(i: number, keys: string[], files: string[]): void;
@@ -71,6 +76,7 @@ export const useUI = create<UI>((set, get) => ({
   viewed: {},
   readSteps: {},
   order: storage.get<Order>("rv-order", "guide"),
+  mode: storage.get<Mode>("rv-mode", "guide"),
   hideSkip: false,
   rail: storage.get("rv-rail", false),
   hideComments: storage.get("rv-hide-comments", false),
@@ -132,6 +138,10 @@ export const useUI = create<UI>((set, get) => ({
     storage.set("rv-order", order);
     set({ order });
   },
+  setMode(mode) {
+    storage.set("rv-mode", mode);
+    set({ mode });
+  },
   toggleHideSkip: () => set((s) => ({ hideSkip: !s.hideSkip })),
   toggleHideComments() {
     const hideComments = !get().hideComments;
@@ -162,7 +172,7 @@ export const useUI = create<UI>((set, get) => ({
       return;
     set({ hoverRows: new Set(keys), hoverStep: step, hoverSub: sub });
   },
-  focus(keys, files, step = null, sub = null) {
+  focus(keys, files, step = null, sub = null, pin = false) {
     if (!keys.length) return;
     set((s) => {
       const collapsed = { ...s.collapsed };
@@ -174,8 +184,8 @@ export const useUI = create<UI>((set, get) => ({
         hideSkip: false,
         pinStep,
         pinSub: same ? null : sub,
-        refAt: step == null ? s.refAt : null,
-        pinRows: step == null ? s.pinRows : pinStep == null ? new Set() : new Set(keys),
+        refAt: step == null && !pin ? s.refAt : null,
+        pinRows: pin ? new Set(keys) : step == null ? s.pinRows : pinStep == null ? new Set() : new Set(keys),
         flash: { keys: new Set(keys), n: s.flash.n + 1 },
         scrollTo: { keys, n: (s.scrollTo?.n ?? 0) + 1 },
       };

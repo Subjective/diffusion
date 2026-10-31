@@ -31,7 +31,10 @@ const rows = (sel: string) => [...document.querySelectorAll<HTMLTableRowElement>
 const nums = (sel: string) =>
   rows(sel).map((r) => `${r.dataset.file!.split("/").pop()}:${r.dataset.new ?? `-${r.dataset.old}`}`);
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  useUI.setState({ mode: "guide" });
+});
 
 async function mount() {
   useApp.setState({ url: payload.pr.url });
@@ -95,16 +98,70 @@ test("viewed collapses; skippable row expands lockfile; gutter dot focuses step"
   expect(document.body.textContent).toContain("1/3");
 });
 
-test("flow graph nodes link to steps", async () => {
+test("mini map boxes show what changed and link to their lines; expand opens the map", async () => {
   await mount();
-  const nodes = document.querySelectorAll<SVGGElement>(".flow .fn");
-  expect(nodes).toHaveLength(2);
-  fireEvent.mouseEnter(nodes[1]);
+  const boxes = document.querySelectorAll<SVGGElement>(".mini-map .m-box");
+  expect([...boxes].map((b) => [b.dataset.id, b.classList[1]])).toEqual([
+    ["start", "added"],
+    ["end", "added"],
+    ["types", "added"],
+    ["login", "context"],
+  ]);
+  expect(document.querySelectorAll(".mini-map .m-region")).toHaveLength(1);
+  fireEvent.mouseEnter(boxes[1]);
   expect(nums(".hl")).toEqual(["session.ts:6", "session.ts:7"]);
-  expect(document.querySelector('.step[data-step="2"]')!.classList.contains("hover")).toBe(true);
-  fireEvent.click(nodes[0]);
+  fireEvent.click(boxes[2]);
+  expect(nums(".pin")).toEqual([]); // a mini map click scrolls and flashes, like a ref chip
+  fireEvent.click(document.querySelector('button[title="Open the map"]')!);
+  expect(document.querySelector(".guide.map")).toBeTruthy();
+  expect(document.querySelector(".step")).toBeNull();
+});
+
+test("map: scenes walk with j/k and arrows, light their blocks, pin their lines; h/l step through ranges", async () => {
+  useUI.setState({ mode: "map" });
+  useApp.setState({ url: payload.pr.url });
+  render(<App />);
+  await waitFor(() => expect(document.querySelector(".guide.map .m-box")).toBeTruthy());
+  const card = () => document.querySelector(".map-card")!.textContent;
+  const lit = () => [...document.querySelectorAll(".guide.map .m-box.lit")].map((b) => (b as SVGGElement).dataset.id);
+  expect(card()).toContain("Overview of 2");
+  expect(card()).toContain("Session lifecycle");
+  expect(document.querySelector(".guide.map svg")!.classList.contains("dim")).toBe(false);
+
+  fireEvent.keyDown(window, { key: "j" });
+  expect(card()).toContain("Scene 1 of 2");
+  expect(card()).toContain("Types");
+  expect(lit()).toEqual(["types"]);
   expect(nums(".pin")).toEqual(["types.ts:2"]);
-  expect(nodes[0].classList.contains("active")).toBe(true);
+
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  expect(card()).toContain("Teardown");
+  expect(nums(".pin")).toEqual(["session.ts:5", "session.ts:6", "session.ts:7"]);
+  fireEvent.keyDown(window, { key: "l" });
+  expect(nums(".flash")).toEqual(["session.ts:5"]);
+  fireEvent.keyDown(window, { key: "l" });
+  expect(nums(".flash")).toEqual(["session.ts:6", "session.ts:7"]);
+
+  fireEvent.keyDown(window, { key: "k" });
+  expect(card()).toContain("Types");
+  fireEvent.keyDown(window, { key: "ArrowLeft" });
+  expect(card()).toContain("Overview");
+  expect(nums(".pin")).toEqual([]);
+
+  // hover peeks every range a block cites; click pins its lines
+  const end = document.querySelector<SVGGElement>('.guide.map .m-box[data-id="end"]')!;
+  fireEvent.mouseEnter(end);
+  expect(document.querySelector(".map-peek")!.textContent).toContain("clearTimeout(this.timer);");
+  expect(nums(".hl")).toEqual(["session.ts:6", "session.ts:7"]);
+  fireEvent.mouseLeave(end);
+  expect(document.querySelector(".map-peek")).toBeNull();
+  fireEvent.click(end);
+  expect(end.classList.contains("on")).toBe(true);
+  expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
+
+  // back to the steps
+  fireEvent.click(document.querySelector('button[title="Steps"]')!);
+  expect(document.querySelectorAll(".step")).toHaveLength(3);
 });
 
 test("substeps: hover/click highlight just their lines (multi-file); j/k walk substeps; gutter dots", async () => {
