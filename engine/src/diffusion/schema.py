@@ -1,8 +1,9 @@
 """Guide schema.
 
-``GuideDraft`` is what the model submits (via the ``submit_guide`` tool). ``Guide`` is what the UI renders:
-the validated draft plus fields computed by code (skippable files, uncovered hunks, validation report).
-Visuals are chosen from fixed enums; the UI maps them to icons.
+``GuideDraft`` is what an agent writes and ``diffusion submit`` checks: it cites changed lines by path and line
+number. ``Guide`` is what the UI renders: the draft with every citation mapped onto the diff's hunks, plus
+fields computed by code (skippable files, uncovered hunks, validation report). Visuals are chosen from fixed
+enums; the UI maps them to icons.
 """
 
 from __future__ import annotations
@@ -19,21 +20,33 @@ SkipReason = Literal[
 Side = Literal["new", "old"]
 
 
-class Ref(BaseModel):
-    hunk: str = Field(description="Hunk ID from the hunk table, e.g. 'H3'.")
-    side: Side = Field(
-        default="new", description="'new' for added/context lines, 'old' for deleted-only ranges."
-    )
+class LineRef(BaseModel):
+    """Changed lines as an agent cites them: a path and line numbers in the diff."""
+
+    file: str = Field(description="Path of a changed file, relative to the repository root.")
     start: int | None = Field(
-        default=None, description="First line (on `side`) within the hunk; omit for whole hunk."
+        default=None, description="First line on `side`; omit for every change in the file."
     )
-    end: int | None = Field(default=None, description="Last line (inclusive); omit for whole hunk.")
+    end: int | None = Field(default=None, description="Last line, inclusive; defaults to `start`.")
+    side: Side = Field(
+        default="new",
+        description="'new' for added and unchanged lines (head numbers), 'old' for deleted lines.",
+    )
 
 
-class ContextItem(BaseModel):
+class Ref(BaseModel):
+    """Lines within one hunk, as the UI links them."""
+
+    hunk: str
+    side: Side = "new"
+    start: int | None = None
+    end: int | None = None
+
+
+class ContextDraft(BaseModel):
     icon: ContextIcon
     text: str = Field(description="One sentence, ≤ 18 words. Inline `code` allowed.")
-    refs: list[Ref] = Field(
+    refs: list[LineRef] = Field(
         default_factory=list, description="Optional: the changed lines this note is about."
     )
 
@@ -41,7 +54,9 @@ class ContextItem(BaseModel):
 class SubstepDraft(BaseModel):
     title: str = Field(description="1–4 words, e.g. 'Load affinity'.")
     summary: str = Field(description="≤ 20 words: what this part does and what to check.")
-    refs: list[Ref] = Field(min_length=1, description="Narrow line ranges; several if the logic is split.")
+    refs: list[LineRef] = Field(
+        min_length=1, description="Narrow line ranges; several if the logic is split."
+    )
 
 
 class StepDraft(BaseModel):
@@ -50,7 +65,7 @@ class StepDraft(BaseModel):
     summary: str = Field(
         description="≤ 25 words of markdown explaining what to look for. Inline `code` allowed."
     )
-    refs: list[Ref] = Field(
+    refs: list[LineRef] = Field(
         default_factory=list,
         description="Refs for the step as a whole. May be empty when substeps carry them.",
     )
@@ -82,26 +97,50 @@ class Flow(BaseModel):
     edges: list[FlowEdge] = Field(default_factory=list)
 
 
-class SkipDraft(BaseModel):
-    hunks: list[str] = Field(min_length=1)
+class SkipDraft(LineRef):
     reason: Literal["formatting", "trivial"]
 
 
+class Scope(BaseModel):
+    files: list[str] = Field(
+        default_factory=list, description="Paths or globs the guide covers; empty means the whole diff."
+    )
+    note: str = Field(default="", description="What the reviewer asked to focus on, in a few words.")
+
+
 class GuideDraft(BaseModel):
+    label: str = Field(default="", description="A few words naming this version, e.g. 'Split config step'.")
+    scope: Scope | None = Field(
+        default=None, description="Set when the review is narrowed to part of the diff."
+    )
+    brief: str = Field(
+        default="", description="What the reviewer cares about or already knows, passed on to chat."
+    )
     tldr: str = Field(description="1–2 sentences: what changes and why it matters.")
-    context: list[ContextItem] = Field(default_factory=list, max_length=5)
+    context: list[ContextDraft] = Field(
+        default_factory=list, max_length=5, description="Notes: what the reviewer can't see in the diff."
+    )
     steps: list[StepDraft] = Field(min_length=1, max_length=12)
     flow: Flow = Field(default_factory=Flow)
     skippable: list[SkipDraft] = Field(
-        default_factory=list, description="Extra hunks that are pure formatting or trivially safe."
+        default_factory=list, description="Changes that are pure formatting or trivially safe."
     )
 
 
 # ---------- validated output ----------
 
 
-class Substep(SubstepDraft):
+class ContextItem(BaseModel):
+    icon: ContextIcon
+    text: str
+    refs: list[Ref] = Field(default_factory=list)
+
+
+class Substep(BaseModel):
     id: int
+    title: str
+    summary: str
+    refs: list[Ref]
 
 
 class Step(BaseModel):
@@ -137,6 +176,9 @@ class Validation(BaseModel):
 
 
 class Guide(BaseModel):
+    label: str = ""
+    scope: Scope | None = None
+    brief: str = ""
     tldr: str
     context: list[ContextItem]
     steps: list[Step]

@@ -22,12 +22,12 @@ from . import __version__
 PORT_SPAN = 20  # ports tried after the first one
 START_TIMEOUT = 60.0
 # Set by a parent agent session (Claude Code, Codex, Cursor) for its shell commands. A detached server is not
-# part of that session, and the CLI it launches for a backend must not look nested or sandboxed in it.
-# Provider settings such as CLAUDE_CODE_USE_BEDROCK are kept, so the backend reaches models the same way the
-# harness does.
+# part of that session, and the agent CLI it runs for chat must not look nested or sandboxed in it. Provider
+# settings such as CLAUDE_CODE_USE_BEDROCK are kept, so chat reaches models the same way the agent does.
 HARNESS_ENV = (
     "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_SSE_PORT",
-    "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_THREAD_ID", "CURSOR_AGENT",
+    "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
+    "CURSOR_AGENT", "CURSOR_CONVERSATION_ID", "CURSOR_REQUEST_ID",
 )  # fmt: skip
 
 PortState = Literal["free", "diffusion", "other"]
@@ -40,8 +40,6 @@ class LaunchError(RuntimeError):
 @dataclass(frozen=True)
 class Server:
     port: int
-    backend: str
-    profile: str
     started: bool
     log: Path | None = None
     pid: int | None = None
@@ -50,8 +48,9 @@ class Server:
     def base_url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
 
-    def review_url(self, target: str) -> str:
-        return f"{self.base_url}/?pr={quote(target, safe='')}"
+    def review_url(self, target: str, version: int | None = None) -> str:
+        url = f"{self.base_url}/?pr={quote(target, safe='')}"
+        return f"{url}&v={version}" if version else url
 
 
 def probe(port: int, timeout: float = 1.0) -> tuple[PortState, dict]:
@@ -59,7 +58,7 @@ def probe(port: int, timeout: float = 1.0) -> tuple[PortState, dict]:
     try:
         r = httpx.get(f"http://127.0.0.1:{port}/api/health", timeout=timeout)
         data = r.json() if r.status_code == 200 else {}
-        if isinstance(data, dict) and data.get("ok") and "backend" in data:
+        if isinstance(data, dict) and data.get("ok") and data.get("app") == "diffusion":
             return "diffusion", data
         return "other", {}
     except httpx.ConnectError:
@@ -77,40 +76,29 @@ def _bindable(port: int) -> bool:
             return False
 
 
-def _matches(health: dict, backend: str | None, profile: str | None) -> bool:
+def _matches(health: dict) -> bool:
     """A server this launcher can hand a review link to: same version, serving the UI (not a `make dev` API
-    server), on the requested backend and profile."""
-    return (
-        health.get("version") == __version__
-        and health.get("ui") is True
-        and (backend is None or health.get("backend") == backend)
-        and (profile is None or health.get("profile") == profile)
-    )
+    server)."""
+    return health.get("version") == __version__ and health.get("ui") is True
 
 
-def find_or_start(
-    first_port: int, log_dir: Path, backend: str | None = None, profile: str | None = None
-) -> Server:
+def find_or_start(first_port: int, log_dir: Path) -> Server:
     """Reuse a Diffusion server on ``first_port``..+``PORT_SPAN`` that matches (see ``_matches``), else start one
     on the first free port. Other servers are left alone, never reused."""
     free: int | None = None
     for port in range(first_port, first_port + PORT_SPAN + 1):
         state, health = probe(port)
-        if state == "diffusion" and _matches(health, backend, profile):
-            return Server(port, health["backend"], health.get("profile", ""), started=False)
+        if state == "diffusion" and _matches(health):
+            return Server(port, started=False)
         if state == "free" and free is None:
             free = port
     if free is None:
         raise LaunchError(f"No free port in {first_port}-{first_port + PORT_SPAN}; pass --port.")
-    return start(free, log_dir, backend, profile)
+    return start(free, log_dir)
 
 
-def start(port: int, log_dir: Path, backend: str | None = None, profile: str | None = None) -> Server:
+def start(port: int, log_dir: Path) -> Server:
     cmd = [sys.executable, "-m", "diffusion.cli", "serve", "--port", str(port)]
-    if backend:
-        cmd += ["--backend", backend]
-    if profile:
-        cmd += ["--profile", profile]
     env = {k: v for k, v in os.environ.items() if k not in HARNESS_ENV}
     log_dir.mkdir(parents=True, exist_ok=True)
     log = log_dir / f"serve-{port}.log"
@@ -130,7 +118,7 @@ def start(port: int, log_dir: Path, backend: str | None = None, profile: str | N
             raise LaunchError("The Diffusion server exited on startup:\n" + "\n".join(tail))
         state, health = probe(port, timeout=0.5)
         if state == "diffusion":
-            return Server(port, health["backend"], health.get("profile", ""), True, log, proc.pid)
+            return Server(port, True, log, proc.pid)
         time.sleep(0.25)
     proc.terminate()
     raise LaunchError(

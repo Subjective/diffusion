@@ -1,9 +1,12 @@
-"""Chat about a PR: one Agent SDK session per chat, seeded with the PR, hunk table, and guide.
+"""Chat about a PR: one agent session per chat, seeded with the PR, hunk table, and guide.
 
-A turn carries one or more questions (queued line comments are sent together). Multi-question turns ask the
-model for ``### Q<n>`` sections; ``SectionSplitter`` routes streamed text to each question as it arrives.
-The model can point the reviewer's diff at a region with ``show_code``; each accepted call becomes a
-``ChatFocus`` attached to the question being answered at that moment.
+The first turn forks the session that wrote the guide when the agent can (so chat starts from everything that
+session read); otherwise it starts fresh. A turn carries one or more questions (queued line comments are sent
+together). Multi-question turns ask the model for ``### Q<n>`` sections; ``SectionSplitter`` routes streamed
+text to each question as it arrives. The model can point the reviewer's diff at a region with ``show_code``;
+each accepted call becomes a ``ChatFocus`` attached to the question being answered at that moment. Asked to
+change the guide, it ends its answer with the whole updated guide in a ``diffusion-guide`` block, which
+``GuideBlock`` keeps out of the streamed answer and the caller stores as a new version.
 """
 
 from __future__ import annotations
@@ -13,17 +16,19 @@ import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from importlib.resources import files
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from .agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ToolEvent, ToolSpec
-from .guide_agent import Submissions, guide_tools
-from .hunks import DiffIndex, FileDiff
+from .hunks import DiffIndex
 from .pipeline import Prepared
 
 SYSTEM_PROMPT = files("diffusion.prompts").joinpath("chat.md").read_text()
 MAX_ANCHOR_LINES = 80
 MAX_SHOWS_PER_TURN = 6
+MAX_HUNKS_PER_CALL = 12
+GUIDE_FENCE = "```diffusion-guide"
 SHOW_REMINDER = "(If a question asks where something is or happens, or to show code, call `show_code` first.)"
 
 
@@ -44,7 +49,8 @@ class Question(BaseModel):
 
 
 def seed_context(prep: Prepared, guide: dict | None) -> str:
-    """Stable per-PR prefix appended to the system prompt (prompt-cached across turns)."""
+    """Stable per-PR prefix appended to the system prompt (prompt-cached across turns). The guide is given as
+    its draft (refs by path and line), the form an updated guide is written back in."""
     m = prep.meta
     parts = [
         f"# {_title(m)}: {m.title}",
@@ -57,10 +63,10 @@ def seed_context(prep: Prepared, guide: dict | None) -> str:
         "```",
     ]
     if guide:
-        slim = {
-            k: guide[k] for k in ("tldr", "context", "steps", "flow", "skippable", "uncovered") if k in guide
+        draft = guide.get("draft") or {
+            k: guide[k] for k in ("tldr", "context", "steps", "flow", "skippable") if k in guide
         }
-        parts += ["## Reviewer's guide (JSON)", "```json", json.dumps(slim, ensure_ascii=False), "```"]
+        parts += ["## Reviewer's guide (JSON)", "```json", json.dumps(draft, ensure_ascii=False), "```"]
     return "\n".join(parts)
 
 
@@ -178,20 +184,87 @@ class ChatFocus:
                 "label": self.label}  # fmt: skip
 
 
-def resolve_file(idx: DiffIndex, path: str) -> FileDiff | None:
-    """Exact path, else the unique diff file whose path ends with ``/path`` (models often cite short paths)."""
-    path = path.strip().removeprefix("./")
-    if f := idx.file(path):
-        return f
-    hits = [f for f in idx.files if f.path.endswith("/" + path)]
-    return hits[0] if len(hits) == 1 else None
+def _could_open(partial: str) -> bool:
+    head = partial.lstrip()
+    return GUIDE_FENCE.startswith(head) or head.startswith(GUIDE_FENCE)
+
+
+class GuideBlock:
+    """Pass streamed text through, holding back a ``diffusion-guide`` fenced block and keeping its body.
+
+    Text is cut into lines; a partial line is passed on at once unless it could still become the fence."""
+
+    def __init__(self) -> None:
+        self.partial = ""
+        self.inside = False
+        self.body: list[str] = []
+        self.found: str | None = None
+
+    def _line(self, line: str) -> str:
+        if self.inside:
+            if line.strip() == "```":
+                self.inside, self.found = False, "".join(self.body)
+            else:
+                self.body.append(line)
+            return ""
+        if line.strip().startswith(GUIDE_FENCE):
+            self.inside, self.body = True, []
+            return ""
+        return line
+
+    def feed(self, text: str) -> str:
+        out = []
+        for piece in re.split(r"(?<=\n)", text):
+            if not piece:
+                continue
+            self.partial += piece
+            if self.partial.endswith("\n"):
+                out.append(self._line(self.partial))
+                self.partial = ""
+            elif not self.inside and not _could_open(self.partial):
+                out.append(self.partial)
+                self.partial = ""
+        return "".join(out)
+
+    def flush(self) -> str:
+        rest, self.partial = self.partial, ""
+        out = self._line(rest) if rest else ""
+        if self.inside:  # the answer ended before the closing fence
+            self.inside, self.found = False, "".join(self.body)
+        return out
+
+
+def hunk_tool(idx: DiffIndex) -> ToolSpec:
+    async def get_hunk(args: dict) -> str:
+        ids = args.get("ids") or []
+        ids = [ids] if isinstance(ids, str) else ids
+        out = []
+        for hid in ids[:MAX_HUNKS_PER_CALL]:
+            h = idx.by_id.get(str(hid).strip().upper())
+            out.append(h.annotated() if h else f"[{hid}] unknown hunk")
+        if len(ids) > MAX_HUNKS_PER_CALL:
+            out.append(f"(only first {MAX_HUNKS_PER_CALL} returned; request the rest separately)")
+        return "\n\n".join(out)
+
+    return ToolSpec(
+        "get_hunk",
+        "Return the annotated diff for hunks by ID (new line, old line, +/-, code).",
+        {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "string"}, "description": "e.g. ['H1','H4']"}
+            },
+            "required": ["ids"],
+        },
+        get_hunk,
+    )
 
 
 def show_code_tool(idx: DiffIndex, shown: list[dict]) -> ToolSpec:
     async def show_code(args: dict) -> str:
         if len(shown) >= MAX_SHOWS_PER_TURN:
             return f"rejected: at most {MAX_SHOWS_PER_TURN} regions per answer"
-        f = resolve_file(idx, str(args.get("file", "")))
+        f = idx.resolve(str(args.get("file", "")))
         if not f:
             return "rejected: file is not in the diff; cite it as `path:line` in the answer instead"
         side = "old" if args.get("side") == "old" else "new"
@@ -251,22 +324,26 @@ async def run_turn(
     runner: Runner,
     model: str,
     resume: str | None,
+    fork: bool = False,
+    cwd: Path | None = None,
+    block: GuideBlock | None = None,
     max_turns: int = 24,
 ) -> AsyncIterator[ChatDelta | ChatFocus | ToolEvent | DoneEvent]:
+    """``block`` collects an updated guide the answer ends with (``block.found``)."""
     shown: list[dict] = []
-    tools = [t for t in guide_tools(prep.index, Submissions(prep.index)) if t.name == "get_hunk"] + [
-        show_code_tool(prep.index, shown)
-    ]
+    tools = [hunk_tool(prep.index), show_code_tool(prep.index, shown)]
     req = AgentRequest(
         system_prompt=SYSTEM_PROMPT + "\n\n" + seed_context(prep, guide),
         prompt=format_turn(questions, prep.index),
         model=model,
-        cwd=prep.checkout.worktree,
+        cwd=cwd or prep.checkout.worktree,
         tools=tools,
         max_turns=max_turns,
         resume=resume,
+        fork=fork,
         include_partial=True,
     )
+    block = block if block is not None else GuideBlock()
     split = SectionSplitter([q.n for q in questions])
     drained = 0
 
@@ -286,7 +363,7 @@ async def run_turn(
         for f in focuses():
             yield f
         if isinstance(ev, TextEvent):
-            for n, t in split.feed(ev.text):
+            for n, t in split.feed(block.feed(ev.text)):
                 yield ChatDelta(n, t)
         elif isinstance(ev, ToolEvent):
             # Text before a tool call is narration ("Let me check…"); reset so it doesn't glue to the answer.
@@ -294,7 +371,7 @@ async def run_turn(
                 yield ChatDelta(n, t)
             yield ev
         elif isinstance(ev, DoneEvent):
-            for n, t in split.flush():
+            for n, t in split.feed(block.flush()) + split.flush():
                 yield ChatDelta(n, t)
             for f in focuses():
                 yield f

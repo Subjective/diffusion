@@ -1,14 +1,26 @@
-import { errorText, postSSE, type SSEEvent } from "./lib/sse";
-import type { PRPayload } from "./types";
+import { errorText } from "./lib/sse";
+import type { Guide, GuideVersion, PRPayload } from "./types";
 
-export async function fetchPR(url: string): Promise<PRPayload> {
-  const res = await fetch(`/api/pr?url=${encodeURIComponent(url)}`);
+/** The diff and a guide: version `v`, or the latest. */
+export async function fetchPR(url: string, v?: number | null): Promise<PRPayload> {
+  const q = new URLSearchParams({ url });
+  if (v) q.set("v", String(v));
+  const res = await fetch(`/api/pr?${q}`);
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }
 
-export function streamGuide(url: string, force: boolean, onEvent: (e: SSEEvent) => void, signal?: AbortSignal) {
-  return postSSE("/api/guide", { url, force }, onEvent, signal);
+/** The guide versions saved for the target's current head. Cheap; polled to pick up new ones. */
+export async function fetchVersions(url: string): Promise<{ head_sha: string; versions: GuideVersion[] }> {
+  const res = await fetch(`/api/guides?url=${encodeURIComponent(url)}`);
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+export async function fetchGuide(url: string, v: number): Promise<Guide> {
+  const res = await fetch(`/api/guide?url=${encodeURIComponent(url)}&v=${v}`);
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
 }
 
 export async function fetchFile(url: string, path: string): Promise<string> {

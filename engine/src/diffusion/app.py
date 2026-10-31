@@ -1,4 +1,5 @@
-"""HTTP API (localhost only). Guide generation streams progress over SSE."""
+"""HTTP API (localhost only). Guides arrive from ``diffusion submit`` (or a chat answer) as versions in the store;
+chat answers stream over SSE."""
 
 from __future__ import annotations
 
@@ -9,7 +10,6 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -19,27 +19,37 @@ from pydantic import BaseModel
 
 from . import __version__
 from .agent import DoneEvent, Runner, ToolEvent, make_runner
-from .chat_agent import ChatDelta, ChatFocus, Question, run_turn
-from .config import Config, load_config
+from .chat_agent import ChatDelta, ChatFocus, GuideBlock, Question, run_turn
+from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
-from .guide_agent import GuideDone, GuideError, generate_guide
-from .jobs import Emit, Jobs
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
 from .symbols import NAME, SymbolIndex
+from .validate import DraftError, check
 
 PrepareFn = Callable[[Config, str], Prepared]
+RunnerFor = Callable[[str], Runner]
 MAX_FILE_CHARS = 2_000_000
 
 
 @dataclass
 class Deps:
     cfg: Config
-    runner: Runner
+    runner_for: RunnerFor  # agent name → its runner
     prepare: PrepareFn
     store: Store
-    jobs: Jobs
+
+
+def default_deps(cfg: Config) -> Deps:
+    runners: dict[str, Runner] = {}
+
+    def runner_for(harness: str) -> Runner:
+        if harness not in runners:
+            runners[harness] = make_runner(harness, cfg.cli_path(harness))
+        return runners[harness]
+
+    return Deps(cfg, runner_for, prepare, Store(cfg.cache_dir))
 
 
 def sse(event: str, data: dict) -> str:
@@ -58,11 +68,6 @@ def sse_response(events: AsyncIterator[tuple[str, dict]]) -> StreamingResponse:
     )
 
 
-class GuideReq(BaseModel):
-    url: str
-    force: bool = False
-
-
 class ChatCreate(BaseModel):
     url: str
 
@@ -70,6 +75,7 @@ class ChatCreate(BaseModel):
 class TurnReq(BaseModel):
     url: str
     questions: list[Question]
+    version: int | None = None  # the guide version on screen
 
 
 def chat_summary(c: dict) -> dict:
@@ -91,8 +97,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
 
     def d() -> Deps:
         if not _deps:
-            cfg = load_config()
-            _deps.append(Deps(cfg, make_runner(cfg), prepare, Store(cfg.cache_dir), Jobs()))
+            _deps.append(default_deps(load_config()))
         return _deps[0]
 
     _prepared: dict[str, Prepared] = {}
@@ -105,6 +110,11 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             key = target_ref(url).key
         except GitHubError as e:
             raise HTTPException(400, str(e)) from e
+        latest = d().store.latest_head(key)
+        if latest and key in _prepared and _prepared[key].meta.head_sha != latest:
+            refresh = (
+                True  # a guide arrived for a newer head (a new push, or a new snapshot of uncommitted work)
+            )
         if refresh or key not in _prepared:
             try:
                 _prepared[key] = await asyncio.to_thread(d().prepare, d().cfg, url)
@@ -116,41 +126,30 @@ def create_app(deps: Deps | None = None) -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> dict:
-        cfg = d().cfg
-        return {
-            "ok": True,
-            "profile": cfg.profile,
-            "backend": cfg.backend,
-            "guide_model": cfg.guide_model,
-            "chat_model": cfg.chat_model,
-            "version": __version__,
-            "ui": dist is not None,
-        }
+        return {"ok": True, "app": "diffusion", "version": __version__, "ui": dist is not None}
+
+    def versions(prep: Prepared) -> list[dict]:
+        return d().store.list_guides(prep.meta.ref.key, prep.meta.head_sha)
 
     @app.get("/api/pr")
-    async def pr(url: str) -> dict:
+    async def pr(url: str, v: int | None = None) -> dict:
         prep = await get_prepared(url, refresh=True)
-        cached = d().store.load_guide(prep.meta.ref.key, prep.meta.head_sha)
-        return {**prep.to_dict(), "guide": cached}
+        guide = d().store.load_guide(prep.meta.ref.key, prep.meta.head_sha, v)
+        return {**prep.to_dict(), "guide": guide, "versions": versions(prep)}
 
-    @app.post("/api/guide")
-    async def guide(req: GuideReq) -> StreamingResponse:
-        deps = d()
-        prep = await get_prepared(req.url)
-        key, sha = prep.meta.ref.key, prep.meta.head_sha
-        job_key = f"guide:{key}:{sha}"
+    @app.get("/api/guides")
+    async def guides(url: str) -> dict:
+        """The versions there are for the target's current head, cheap enough to poll for new ones."""
+        prep = await get_prepared(url)
+        return {"head_sha": prep.meta.head_sha, "versions": versions(prep)}
 
-        if not req.force and (cached := deps.store.load_guide(key, sha)):
-
-            async def replay():
-                yield "guide", cached
-
-            return sse_response(replay())
-
-        if req.force:
-            deps.jobs.drop(job_key)
-        job = deps.jobs.start(job_key, partial(run_guide, deps, prep))
-        return sse_response(job.follow())
+    @app.get("/api/guide")
+    async def guide(url: str, v: int) -> dict:
+        prep = await get_prepared(url)
+        g = d().store.load_guide(prep.meta.ref.key, prep.meta.head_sha, v)
+        if g is None:
+            raise HTTPException(404, f"no version {v}")
+        return g
 
     @app.get("/api/file")
     async def file(url: str, path: str) -> dict:
@@ -231,7 +230,10 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         if len({q.n for q in req.questions}) != len(req.questions):
             raise HTTPException(400, "duplicate question numbers")
         prep = await get_prepared(req.url)
-        guide = deps.store.load_guide(key, prep.meta.head_sha)
+        sha = prep.meta.head_sha
+        guide = deps.store.load_guide(key, sha, req.version)
+        if guide and guide.get("version"):
+            guide = {**guide, "draft": deps.store.load_draft(key, sha, guide["version"])}
         lock = chat_locks.setdefault(chat_id, asyncio.Lock())
 
         async def events():
@@ -243,7 +245,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     return
                 record = {
                     "at": time.time(),
-                    "head_sha": prep.meta.head_sha,
+                    "head_sha": sha,
                     "questions": [q.model_dump() for q in req.questions],
                     "answers": {str(q.n): "" for q in req.questions},
                     "tools": [],
@@ -251,26 +253,50 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     "status": "streaming",
                 }
                 chat["turns"].append(record)
-                chat["head_sha"] = prep.meta.head_sha
+                chat["head_sha"] = sha
                 chat["updated_at"] = record["at"]
                 deps.store.save_chat(key, chat)
+                meta = (guide or {}).get("meta") or {}
+                harness = chat.get("harness") or meta.get("harness") or installed_harness(dict(os.environ))
+                chat["harness"] = harness = harness or "claude-code"  # the SDK bundles Claude Code
+                block = GuideBlock()
                 try:
-                    async for ev in run_turn(
-                        prep, guide, req.questions, deps.runner, deps.cfg.chat_model, chat.get("session_id")
-                    ):
-                        if isinstance(ev, ChatDelta):
-                            record["answers"][str(ev.n)] += ev.text
-                            yield "delta", {"n": ev.n, "text": ev.text}
-                        elif isinstance(ev, ChatFocus):
-                            record["shows"].append(ev.to_dict())
-                            yield "focus", ev.to_dict()
-                        elif isinstance(ev, ToolEvent):
-                            record["tools"].append(ev.summary)
-                            yield "tool", {"name": ev.name, "summary": ev.summary}
-                        elif isinstance(ev, DoneEvent):
-                            if ev.is_error:
-                                raise RuntimeError(ev.result or "agent error")
-                            chat["session_id"] = ev.session_id or chat.get("session_id")
+                    for resume, fork, cwd in _sessions(chat, meta, harness):
+                        said = False
+                        try:
+                            async for ev in run_turn(
+                                prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
+                                resume, fork=fork, cwd=cwd, block=block,
+                            ):  # fmt: skip
+                                if isinstance(ev, ChatDelta):
+                                    said = True
+                                    record["answers"][str(ev.n)] += ev.text
+                                    yield "delta", {"n": ev.n, "text": ev.text}
+                                elif isinstance(ev, ChatFocus):
+                                    record["shows"].append(ev.to_dict())
+                                    yield "focus", ev.to_dict()
+                                elif isinstance(ev, ToolEvent):
+                                    said = True
+                                    record["tools"].append(ev.summary)
+                                    yield "tool", {"name": ev.name, "summary": ev.summary}
+                                elif isinstance(ev, DoneEvent):
+                                    if ev.is_error:
+                                        raise RuntimeError(ev.result or "agent error")
+                                    chat["session_id"] = ev.session_id or chat.get("session_id")
+                                    chat["cwd"] = str(cwd) if cwd else None
+                            break
+                        except Exception:
+                            if said or not fork:
+                                raise
+                            # The guide's session couldn't be forked (moved, deleted): start a fresh one.
+                    if block.found is not None:
+                        n, note = save_chat_guide(deps, prep, block.found, meta, chat)
+                        if n:
+                            record["guide_version"] = n
+                            yield "guide", {"n": req.questions[-1].n, "version": n}
+                        else:
+                            record["answers"][str(req.questions[-1].n)] += note
+                            yield "delta", {"n": req.questions[-1].n, "text": note}
                     record["status"] = "done"
                     yield "done", {"ns": [q.n for q in req.questions]}
                 except Exception as e:  # surface to the client; keep partial answers
@@ -306,31 +332,39 @@ def _web_dist() -> Path | None:
     return next((d for d in candidates if (d / "index.html").is_file()), None)
 
 
-async def run_guide(deps: Deps, prep: Prepared, emit: Emit) -> None:
-    t0 = time.monotonic()
-    done: GuideDone | None = None
-    async for ev in generate_guide(
-        prep.meta, prep.checkout, prep.index, deps.runner, deps.cfg.guide_model, deps.cfg.max_turns
-    ):
-        if isinstance(ev, ToolEvent):
-            emit("tool", {"name": ev.name, "summary": ev.summary})
-        elif isinstance(ev, DoneEvent) and ev.is_error:
-            raise GuideError(ev.result or "agent error")
-        elif isinstance(ev, GuideDone):
-            done = ev
-    assert done is not None
+def _sessions(chat: dict, meta: dict, harness: str) -> list[tuple[str | None, bool, Path | None]]:
+    """Sessions a turn can run in, in order: the chat's own; else a fork of the session that wrote the guide
+    (Claude Code finds a session by the directory it ran in), falling back to a fresh one."""
+    if chat.get("session_id"):
+        return [(chat["session_id"], False, _dir(chat.get("cwd")))]
+    out: list[tuple[str | None, bool, Path | None]] = []
+    if meta.get("session") and harness in FORKABLE:
+        out.append((meta["session"], True, _dir(meta.get("cwd")) if harness == "claude-code" else None))
+    return [*out, (None, False, None)]
+
+
+def _dir(path: str | None) -> Path | None:
+    return Path(path) if path and Path(path).is_dir() else None
+
+
+def save_chat_guide(deps: Deps, prep: Prepared, raw: str, meta: dict, chat: dict) -> tuple[int | None, str]:
+    """Store a guide a chat answer ended with as a new version: (its number, ""), or (None, why it wasn't)."""
+    try:
+        draft, g = check(raw, prep.index)
+    except DraftError:
+        return None, "\n\n_The updated guide didn't match the guide format, so it wasn't saved._"
+    if not g.steps:
+        return None, "\n\n_None of the updated guide's refs matched the diff, so it wasn't saved._"
     record = {
-        **done.guide.model_dump(by_alias=True),
+        **g.model_dump(by_alias=True),
+        "label": g.label or "Edited in chat",
         "meta": {
+            **{k: meta.get(k) for k in ("harness", "session", "cwd")},
             "head_sha": prep.meta.head_sha,
-            "backend": deps.cfg.backend,
-            "model": deps.cfg.guide_model,
-            "turns": done.turns,
-            "cost_usd": done.cost_usd,
-            "attempts": done.attempts,
-            "seconds": round(time.monotonic() - t0, 1),
+            "source": "chat",
+            "chat": chat["id"],
             "created_at": time.time(),
         },
     }
-    deps.store.save_guide(prep.meta.ref.key, prep.meta.head_sha, record)
-    emit("guide", record)
+    n = deps.store.save_guide(prep.meta.ref.key, prep.meta.head_sha, record, draft.model_dump(by_alias=True))
+    return n, ""

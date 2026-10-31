@@ -1,211 +1,62 @@
-"""Configuration: which model backend to use, and how to reach it.
+"""Configuration: where Diffusion keeps its cache, and which agent CLI answers chat.
 
-A *profile* says how to talk to models:
+Guides are written by the agent you run Diffusion from (Claude Code, Codex or Cursor). Chat in the browser runs
+on that same agent's CLI, picking up the session that wrote the guide where the agent can fork one. Nothing
+needs configuring; a few environment variables override the defaults:
 
-- ``backend = "api"``: a Pydantic AI agent calling a model API directly. ``protocol`` is ``"anthropic"``
-  (Messages API) or ``"openai"`` (Chat Completions: OpenAI, OpenRouter, Gemini, Ollama, vLLM, most gateways).
-- ``backend = "claude-code"``: the Claude Agent SDK, using your Claude Code setup and login.
-- ``backend = "codex"``: the Codex CLI (``codex exec``), using your Codex setup and login.
-- ``backend = "cursor"``: the Cursor CLI (``cursor-agent -p``), using your Cursor setup and login.
-
-Profiles live in ``~/.config/diffusion/config.toml`` (or ``$DIFFUSION_CONFIG``)::
-
-    default = "openrouter"
-
-    [profiles.openrouter]
-    backend = "api"
-    protocol = "openai"
-    base_url = "https://openrouter.ai/api/v1"
-    api_key_env = "OPENROUTER_API_KEY"
-    guide_model = "anthropic/claude-opus-5.5"
-    chat_model = "anthropic/claude-sonnet-5.5"
-
-With no config file, a review opened from an agent (Claude Code, Codex, Cursor) runs on that agent's CLI, and
-otherwise a profile is auto-detected from the environment; ``diffusion doctor`` shows what was chosen.
+- ``DIFFUSION_CACHE_DIR``: checkouts, guides and chats (default ``~/.cache/diffusion``).
+- ``DIFFUSION_CHAT_MODEL``: the model chat asks the agent CLI for (default: per agent, below).
+- ``DIFFUSION_CLI``: the agent CLI to run, e.g. a wrapper script (default: the Claude Code bundled with the SDK,
+  or ``codex`` / ``cursor-agent`` on ``PATH``).
 """
 
 from __future__ import annotations
 
-import json
 import os
-import shlex
 import shutil
-import subprocess
-import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-Backend = Literal["api", "claude-code", "codex", "cursor"]
-Protocol = Literal["anthropic", "openai"]
-AuthStyle = Literal["x-api-key", "bearer"]
-
-DEFAULT_MODELS: dict[tuple[str, str | None], tuple[str, str]] = {
-    ("api", "anthropic"): ("claude-opus-5-5", "claude-sonnet-5-5"),
-    ("api", "openai"): ("gpt-5", "gpt-5-mini"),
-    ("claude-code", None): ("opus", "sonnet"),
-    ("codex", None): ("", ""),  # empty = the CLI's configured default model
-    ("cursor", None): ("auto", "auto"),  # the CLI's own default can be a model the user's plan excludes
+Harness = Literal["claude-code", "codex", "cursor"]
+HARNESSES: tuple[Harness, ...] = ("claude-code", "codex", "cursor")
+CHAT_MODELS: dict[str, str] = {
+    "claude-code": "sonnet",
+    "codex": "",  # empty = the CLI's configured default model
+    "cursor": "auto",  # the CLI's own default can be a model the user's plan excludes
 }
-DEFAULT_BASE_URLS: dict[str, str] = {
-    "anthropic": "https://api.anthropic.com",
-    "openai": "https://api.openai.com/v1",
+CLI_NAMES = {"claude-code": "claude", "codex": "codex", "cursor": "cursor-agent"}
+# The variable each agent sets, for the commands it runs, to the id its CLI resumes the session by.
+SESSION_ENV = {
+    "claude-code": "CLAUDE_CODE_SESSION_ID",
+    "codex": "CODEX_THREAD_ID",
+    "cursor": "CURSOR_CONVERSATION_ID",
 }
-
-
-class ConfigError(RuntimeError):
-    pass
-
-
-def config_path(environ: dict[str, str]) -> Path:
-    if environ.get("DIFFUSION_CONFIG"):
-        return Path(environ["DIFFUSION_CONFIG"]).expanduser()
-    home = Path(environ.get("HOME") or Path.home())
-    return Path(environ.get("XDG_CONFIG_HOME") or home / ".config") / "diffusion" / "config.toml"
-
-
-def mask(secret: str | None) -> str:
-    if not secret:
-        return "<unset>"
-    return secret[:4] + "…" + f"({len(secret)} chars)"
+# Agents whose CLI can branch a session, so chat builds on the guide's session without writing into it.
+FORKABLE = ("claude-code", "codex")
 
 
 @dataclass(frozen=True)
 class Config:
-    profile: str
-    source: str  # config file path, or why the profile was auto-detected
-    backend: Backend
-    guide_model: str
-    chat_model: str
-    protocol: Protocol | None = None
-    base_url: str | None = None
-    api_key: str | None = field(default=None, repr=False)
-    key_source: str | None = None
-    auth: AuthStyle = "x-api-key"
-    headers: dict[str, str] = field(default_factory=dict, repr=False)
-    cli_path: str | None = None
-    env: dict[str, str] = field(default_factory=dict, repr=False)  # extra env for CLI backends
-    cache_dir: Path = Path.home() / ".cache" / "diffusion"
-    max_turns: int = 40
+    cache_dir: Path
+    chat_model_override: str | None = None
+    cli_override: str | None = None
 
-    def describe(self) -> list[tuple[str, str]]:
-        rows = [("profile", f"{self.profile}  ({self.source})"), ("backend", self.backend)]
-        if self.backend == "api":
-            rows += [
-                ("protocol", str(self.protocol)),
-                ("base_url", str(self.base_url)),
-                ("key", f"{mask(self.api_key)}  from {self.key_source}  (auth: {self.auth})"),
-            ]
-        else:
-            rows.append(("cli", self.cli_path or "<bundled with the SDK>"))
-            if self.env:
-                rows.append(("env", ", ".join(sorted(self.env))))
-        rows.append(
-            (
-                "models",
-                f"guide={self.guide_model or '(cli default)'}  chat={self.chat_model or '(cli default)'}",
-            )
-        )
-        rows.append(("cache", str(self.cache_dir)))
-        return rows
+    def chat_model(self, harness: str) -> str:
+        return self.chat_model_override or CHAT_MODELS.get(harness, "")
+
+    def cli_path(self, harness: str) -> str | None:
+        """The CLI to run; None for Claude Code means the SDK's bundled one."""
+        if self.cli_override:
+            return shutil.which(self.cli_override) or self.cli_override
+        if harness == "claude-code":
+            return None
+        return shutil.which(CLI_NAMES[harness]) or CLI_NAMES[harness]
 
 
-def _read_toml(path: Path) -> dict:
-    try:
-        return tomllib.loads(path.read_text())
-    except FileNotFoundError:
-        return {}
-    except (OSError, tomllib.TOMLDecodeError) as e:
-        raise ConfigError(f"{path}: {e}") from e
-
-
-def env_from_files(paths: list[str]) -> dict[str, str]:
-    """Merge the ``env`` table of JSON settings files (e.g. Claude Code settings). Earlier files win."""
-    out: dict[str, str] = {}
-    for p in reversed(paths):
-        try:
-            data = json.loads(Path(p).expanduser().read_text())
-        except (OSError, ValueError):
-            continue
-        env = data.get("env") if isinstance(data, dict) else None
-        if isinstance(env, dict):
-            out.update({k: str(v) for k, v in env.items()})
-    return out
-
-
-def _resolve_key(
-    p: dict, environ: dict[str, str], inherited: dict[str, str]
-) -> tuple[str | None, str | None]:
-    if p.get("api_key_cmd"):
-        cmd = p["api_key_cmd"]
-        try:
-            out = subprocess.run(
-                shlex.split(cmd) if isinstance(cmd, str) else cmd, capture_output=True, text=True, timeout=30
-            )
-        except (OSError, subprocess.TimeoutExpired) as e:
-            raise ConfigError(f"api_key_cmd failed: {e}") from e
-        if out.returncode != 0 or not out.stdout.strip():
-            raise ConfigError(f"api_key_cmd failed: {out.stderr.strip() or 'no output'}")
-        return out.stdout.strip(), "api_key_cmd"
-    names = p.get("api_key_env") or []
-    for name in [names] if isinstance(names, str) else names:
-        if environ.get(name):
-            return environ[name], f"env:{name}"
-        if inherited.get(name):
-            return inherited[name], f"inherited:{name}"
-    return None, None
-
-
-def _autodetect(environ: dict[str, str]) -> tuple[str, dict]:
-    if environ.get("ANTHROPIC_API_KEY"):
-        return "ANTHROPIC_API_KEY", {
-            "protocol": "anthropic",
-            "base_url": environ.get("ANTHROPIC_BASE_URL"),
-            "api_key_env": "ANTHROPIC_API_KEY",
-        }
-    if environ.get("ANTHROPIC_AUTH_TOKEN"):  # gateways that take a bearer token on the Anthropic protocol
-        return "ANTHROPIC_AUTH_TOKEN", {
-            "protocol": "anthropic",
-            "base_url": environ.get("ANTHROPIC_BASE_URL"),
-            "api_key_env": "ANTHROPIC_AUTH_TOKEN",
-            "auth": "bearer",
-        }
-    if environ.get("OPENROUTER_API_KEY"):
-        return "OPENROUTER_API_KEY", {
-            "protocol": "openai",
-            "base_url": "https://openrouter.ai/api/v1",
-            "api_key_env": "OPENROUTER_API_KEY",
-            "guide_model": "anthropic/claude-opus-5.5",
-            "chat_model": "anthropic/claude-sonnet-5.5",
-        }
-    if environ.get("OPENAI_API_KEY"):
-        return "OPENAI_API_KEY", {
-            "protocol": "openai",
-            "base_url": environ.get("OPENAI_BASE_URL"),
-            "api_key_env": "OPENAI_API_KEY",
-        }
-    if shutil.which("claude", path=environ.get("PATH")):
-        return "claude CLI on PATH", {"backend": "claude-code"}
-    if shutil.which("codex", path=environ.get("PATH")):
-        return "codex CLI on PATH", {"backend": "codex"}
-    if shutil.which("cursor-agent", path=environ.get("PATH")):
-        return "cursor-agent CLI on PATH", {"backend": "cursor"}
-    raise ConfigError(
-        "No model backend found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY, install the "
-        "`claude`, `codex` or `cursor-agent` CLI, or add a profile to ~/.config/diffusion/config.toml (see "
-        "docs/configuration.md)."
-    )
-
-
-PINNABLE = ("claude-code", "codex", "cursor")
-HARNESS_SOURCE = "the agent that launched Diffusion"
-BACKENDS = ("api", *PINNABLE)
-CLI_NAMES = {"codex": "codex", "cursor": "cursor-agent"}  # claude-code defaults to the SDK's bundled CLI
-
-
-def detect_harness(environ: dict[str, str]) -> str | None:
-    """The CLI backend matching the agent this process runs under, from the variables each agent sets for its
-    shell commands. Claude Code and Codex come first: either can run inside Cursor's terminal."""
+def detect_harness(environ: dict[str, str]) -> Harness | None:
+    """The agent this process runs under, from the variables each agent sets for its shell commands. Claude Code
+    and Codex come first: either can run inside Cursor's terminal."""
     if environ.get("CLAUDECODE"):
         return "claude-code"
     if environ.get("CODEX_SANDBOX") or environ.get("CODEX_THREAD_ID") or environ.get("CODEX_CI"):
@@ -215,93 +66,21 @@ def detect_harness(environ: dict[str, str]) -> str | None:
     return None
 
 
-def _harness_usable(harness: str, environ: dict[str, str]) -> bool:
-    return harness not in CLI_NAMES or bool(shutil.which(CLI_NAMES[harness], path=environ.get("PATH")))
+def harness_session(harness: str | None, environ: dict[str, str]) -> str | None:
+    """The session id the running agent's CLI can resume, if the agent exposes one."""
+    return environ.get(SESSION_ENV[harness]) or None if harness in SESSION_ENV else None
 
 
-def load_config(
-    environ: dict[str, str] | None = None,
-    profile: str | None = None,
-    backend: str | None = None,
-    harness: str | None = None,
-) -> Config:
-    """Which profile wins, first to last: a named profile (``profile`` or ``$DIFFUSION_PROFILE``); a pinned CLI
-    backend (``backend`` or ``$DIFFUSION_BACKEND``); the config file's default or only profile; the CLI of the
-    agent that launched Diffusion (``harness``), if installed; auto-detection.
+def installed_harness(environ: dict[str, str]) -> Harness | None:
+    """The first agent CLI on ``PATH``, for chat about a guide no agent session wrote."""
+    return next((h for h in HARNESSES if shutil.which(CLI_NAMES[h], path=environ.get("PATH"))), None)
 
-    So an agent plugin runs on that agent's own login, never on an API key that happens to be set, unless the
-    config file says otherwise."""
+
+def load_config(environ: dict[str, str] | None = None) -> Config:
     env = dict(os.environ if environ is None else environ)
-    path = config_path(env)
-    data = _read_toml(path)
-    profiles: dict[str, dict] = data.get("profiles", {})
-    pinned = backend or env.get("DIFFUSION_BACKEND")
-    if pinned and pinned not in PINNABLE:
-        raise ConfigError(f"Can't pin backend {pinned!r} ({', '.join(PINNABLE)}).")
-    name = profile or env.get("DIFFUSION_PROFILE") or (None if pinned else data.get("default"))
-
-    if pinned and not name:
-        name, source = pinned, "pinned by --backend or DIFFUSION_BACKEND"
-        p: dict = {"backend": pinned}
-    elif name:
-        if name not in profiles:
-            raise ConfigError(
-                f"Profile {name!r} not found in {path} (have: {', '.join(profiles) or 'none'})."
-            )
-        p, source = dict(profiles[name]), str(path)
-    elif len(profiles) == 1:
-        name, p = next(iter(profiles.items()))
-        p, source = dict(p), str(path)
-    elif harness in PINNABLE and _harness_usable(harness, env):
-        name, source = harness, HARNESS_SOURCE
-        p = {"backend": harness}
-    else:
-        reason, p = _autodetect(env)
-        name, source = "auto", f"auto-detected from {reason}"
-
-    backend = p.get("backend", "api")
-    if backend not in BACKENDS:
-        raise ConfigError(f"Profile {name!r}: unknown backend {backend!r} ({', '.join(BACKENDS)}).")
-    protocol = p.get("protocol", "anthropic") if backend == "api" else None
-    if protocol not in (None, "anthropic", "openai"):
-        raise ConfigError(f"Profile {name!r}: unknown protocol {protocol!r} (anthropic, openai).")
-
-    inherited = env_from_files(p.get("inherit_env_from", []))
-    extra_env = {**inherited, **{k: str(v) for k, v in p.get("env", {}).items()}}
-
-    guide_default, chat_default = DEFAULT_MODELS[(backend, protocol)]
-    guide_model = env.get("DIFFUSION_GUIDE_MODEL") or p.get("guide_model") or guide_default
-    chat_model = env.get("DIFFUSION_CHAT_MODEL") or p.get("chat_model") or chat_default
-
-    api_key = key_source = base_url = None
-    auth = p.get("auth") or ("x-api-key" if protocol == "anthropic" else "bearer")
-    if auth not in ("x-api-key", "bearer"):
-        raise ConfigError(f"Profile {name!r}: unknown auth {auth!r} (x-api-key, bearer).")
-    if protocol is not None:  # set exactly when backend == "api"
-        api_key, key_source = _resolve_key(p, env, inherited)
-        if not api_key and not p.get("no_key"):
-            raise ConfigError(f"Profile {name!r}: no API key ({p.get('api_key_env') or 'set api_key_env'}).")
-        inherited_url = inherited.get("ANTHROPIC_BASE_URL" if protocol == "anthropic" else "OPENAI_BASE_URL")
-        base_url = (p.get("base_url") or inherited_url or DEFAULT_BASE_URLS[protocol]).rstrip("/")
-
-    cli = env.get("DIFFUSION_CLI") or p.get("cli_path") or CLI_NAMES.get(backend)
-    cli_path = (shutil.which(cli, path=env.get("PATH")) or cli) if cli else None
     home = Path(env.get("HOME") or Path.home())
-
     return Config(
-        profile=name,
-        source=source,
-        backend=backend,
-        guide_model=guide_model,
-        chat_model=chat_model,
-        protocol=protocol,
-        base_url=base_url,
-        api_key=api_key,
-        key_source=key_source,
-        auth=auth,
-        headers={str(k): str(v) for k, v in p.get("headers", {}).items()},
-        cli_path=cli_path if backend != "api" else None,
-        env=extra_env if backend != "api" else {},
         cache_dir=Path(env.get("DIFFUSION_CACHE_DIR") or home / ".cache" / "diffusion"),
-        max_turns=int(p.get("max_turns", 40)),
+        chat_model_override=env.get("DIFFUSION_CHAT_MODEL") or None,
+        cli_override=env.get("DIFFUSION_CLI") or None,
     )

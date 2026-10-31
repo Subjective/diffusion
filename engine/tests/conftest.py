@@ -7,13 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from sample import build_sample_repo
 
-from diffusion.sample import build_sample_repo
-
-DIFFUSION_ENV = (
-    "DIFFUSION_CONFIG", "DIFFUSION_PROFILE", "DIFFUSION_CACHE_DIR", "DIFFUSION_CLI", "DIFFUSION_GUIDE_MODEL", "DIFFUSION_CHAT_MODEL",
-    "DIFFUSION_BACKEND",
-)  # fmt: skip
+DIFFUSION_ENV = ("DIFFUSION_CACHE_DIR", "DIFFUSION_CLI", "DIFFUSION_CHAT_MODEL")
 
 
 @dataclass
@@ -30,7 +26,7 @@ class Upstream:
 
 @pytest.fixture(autouse=True)
 def _isolated_home(tmp_path, monkeypatch, request):
-    """Tests never see the developer's real config or caches (live tests keep the real environment)."""
+    """Tests never see the developer's real caches (live tests keep the real environment)."""
     if request.node.get_closest_marker("live"):
         return
     home = tmp_path / "home"

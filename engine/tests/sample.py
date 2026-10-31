@@ -1,4 +1,4 @@
-"""A small built-in repository with a known change, used by ``diffusion doctor --eval`` (and the tests)."""
+"""A small built-in repository with a known change, used by the tests."""
 
 from __future__ import annotations
 

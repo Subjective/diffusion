@@ -1,11 +1,11 @@
 import subprocess
 
 import pytest
+from sample import build_sample_repo
 
 from diffusion.config import Config
-from diffusion.pipeline import is_local, local_target, prepare, target_ref
+from diffusion.pipeline import WORKTREE, is_local, local_target, prepare, target_ref
 from diffusion.repo import RepoError
-from diffusion.sample import build_sample_repo
 
 
 @pytest.fixture
@@ -16,9 +16,7 @@ def sample(tmp_path):
 
 
 def cfg(tmp_path):
-    return Config(
-        profile="t", source="t", backend="api", guide_model="m", chat_model="m", cache_dir=tmp_path / "c"
-    )
+    return Config(cache_dir=tmp_path / "c")
 
 
 def test_target_identity(sample):
@@ -59,3 +57,29 @@ def test_prepare_local_errors(tmp_path):
     plain.mkdir()
     with pytest.raises(RepoError):
         prepare(cfg(tmp_path), local_target(plain))
+
+
+def git(repo, *args):
+    return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def test_uncommitted_changes_are_a_snapshot(sample, tmp_path):
+    git(sample, "checkout", "-q", "feature")
+    (sample / "src/auth/session.ts").write_text((sample / "src/auth/session.ts").read_text() + "// wip\n")
+    (sample / "NEW.md").write_text("new\n")
+    status = git(sample, "status", "--porcelain")
+    target = local_target(sample, "main", WORKTREE)
+
+    prep = prepare(cfg(tmp_path), target, fresh=True)
+    assert prep.meta.head_ref == "feature (uncommitted)"
+    assert "NEW.md" in {f.path for f in prep.index.files}
+    assert (prep.checkout.worktree / "NEW.md").exists()
+    assert prep.meta.head_sha != git(sample, "rev-parse", "HEAD")
+    assert git(sample, "status", "--porcelain") == status  # the user's index and files are untouched
+    assert all(c["sha"] != prep.meta.head_sha[:12] for c in prep.to_dict()["pr"]["commits"])
+
+    # unchanged: the same snapshot (so its guide versions carry over); without fresh, the saved one is reused
+    assert prepare(cfg(tmp_path), target, fresh=True).meta.head_sha == prep.meta.head_sha
+    (sample / "NEW.md").write_text("changed\n")
+    assert prepare(cfg(tmp_path), target).meta.head_sha == prep.meta.head_sha
+    assert prepare(cfg(tmp_path), target, fresh=True).meta.head_sha != prep.meta.head_sha

@@ -9,7 +9,8 @@ vi.mock("../lib/highlight", () => ({
 }));
 vi.mock("../api", () => ({
   fetchPR: vi.fn(async () => payload),
-  streamGuide: vi.fn(),
+  fetchVersions: vi.fn(async () => ({ head_sha: payload.pr.head_sha, versions: payload.versions })),
+  fetchGuide: vi.fn(),
   fetchFile: vi.fn(async () => Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")),
   fetchDefinition: vi.fn(),
 }));
@@ -215,4 +216,46 @@ test("a definition already in the diff is jumped to instead of previewed", async
   fireEvent.click(document.querySelector('tr[data-rk="src/auth/session.ts:2"] .src')!, { metaKey: true });
   await waitFor(() => expect(nums(".flash")).toEqual(["types.ts:2"]));
   expect(document.querySelector(".peek")).toBeNull();
+});
+
+async function mountWith(data: typeof payload) {
+  vi.mocked(api.fetchPR).mockResolvedValueOnce(data);
+  useApp.setState({ url: data.pr.url, pr: null, guide: null, versions: [] });
+  render(<App />);
+  await waitFor(() => expect(screen.getByText("Add token refresh")).toBeTruthy());
+}
+
+test("version history: shown once there are two, and picking one swaps the guide", async () => {
+  const v2 = { ...payload.guide!, version: 2, tldr: "second", label: "Split config" };
+  const versions = [
+    ...payload.versions,
+    { version: 2, label: "Split config", scope: null, source: "chat" as const, created_at: 0 },
+  ];
+  await mountWith({ ...payload, guide: v2, versions });
+  expect(document.querySelector(".tldr")!.textContent).toBe("second");
+  fireEvent.click(document.querySelector(".ver-btn")!);
+  const items = [...document.querySelectorAll<HTMLElement>(".ver-menu .h-item")];
+  expect(items.map((i) => i.querySelector(".h-t")!.textContent)).toEqual(["v2Split config", "v1Guide"]);
+  vi.mocked(api.fetchGuide).mockResolvedValueOnce({ ...payload.guide!, version: 1, tldr: "first" });
+  fireEvent.click(items[1]);
+  await waitFor(() => expect(document.querySelector(".tldr")!.textContent).toBe("first"));
+  expect(api.fetchGuide).toHaveBeenCalledWith(payload.pr.url, 1);
+  expect(new URLSearchParams(location.search).get("v")).toBe("1");
+  expect(useApp.getState().following).toBe(false); // an older version stays put when new ones arrive
+});
+
+test("scope chip names what the guide covers", async () => {
+  const scoped = { ...payload.guide!, scope: { files: ["src/auth/"], note: "auth only" } };
+  await mountWith({ ...payload, guide: scoped });
+  expect(document.querySelector(".scope-chip")!.textContent).toBe("auth only");
+  expect(document.querySelector(".ver-btn")).toBeNull(); // one version: no history
+});
+
+test("no guide yet: says how to get one, then shows it when it's submitted", async () => {
+  await mountWith({ ...payload, guide: null, versions: [] });
+  expect(document.querySelector(".no-guide code")!.textContent).toBe("/diffusion:review");
+  vi.mocked(api.fetchGuide).mockResolvedValueOnce({ ...payload.guide!, version: 1 });
+  await useApp.getState().refresh();
+  await waitFor(() => expect(document.querySelector(".tldr")).toBeTruthy());
+  expect(document.querySelector(".no-guide")).toBeNull();
 });

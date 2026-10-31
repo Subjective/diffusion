@@ -1,14 +1,10 @@
 import { create } from "zustand";
-import { fetchPR, streamGuide } from "./api";
+import { fetchGuide, fetchPR, fetchVersions } from "./api";
 import { storage } from "./lib/storage";
-import type { FileDiff, Guide, PRMeta } from "./types";
-
-export interface ToolActivity {
-  name: string;
-  summary: string;
-}
+import type { FileDiff, Guide, GuideVersion, PRMeta } from "./types";
 
 interface State {
+  /** The review target: a PR URL or a `local:` target, from the link `diffusion open` prints. */
   url: string;
   theme: "light" | "dark";
   chatOpen: boolean;
@@ -18,22 +14,33 @@ interface State {
   pr: PRMeta | null;
   files: FileDiff[];
   guide: Guide | null;
-  generating: boolean;
-  tools: ToolActivity[];
+  versions: GuideVersion[];
+  /** Show new versions as they arrive; off while an earlier version is picked from history. */
+  following: boolean;
 
-  setUrl(url: string): void;
   toggleTheme(): void;
   toggleChat(open?: boolean): void;
   load(url?: string): Promise<void>;
-  generate(force?: boolean): Promise<void>;
+  showVersion(v: number): Promise<void>;
+  /** Pick up versions saved since the page loaded (a resubmit, or an edit from chat). */
+  refresh(): Promise<void>;
 }
 
-let abort: AbortController | null = null;
+const params = () => new URLSearchParams(location.search);
+const versionParam = () => Number(params().get("v")) || null;
 
-const urlParam = () => new URLSearchParams(location.search).get("pr") ?? "";
+function setParams(url: string, v: number | null) {
+  const q = params();
+  q.set("pr", url);
+  if (v) q.set("v", String(v));
+  else q.delete("v");
+  history.replaceState(null, "", `?${q}`);
+}
+
+const latest = (vs: GuideVersion[]) => vs.at(-1)?.version ?? null;
 
 export const useApp = create<State>((set, get) => ({
-  url: urlParam() || storage.get("rv-url", ""),
+  url: params().get("pr") ?? storage.get("rv-url", ""),
   theme: storage.get("rv-theme", matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
   chatOpen: storage.get("rv-chat-open", true),
 
@@ -42,10 +49,9 @@ export const useApp = create<State>((set, get) => ({
   pr: null,
   files: [],
   guide: null,
-  generating: false,
-  tools: [],
+  versions: [],
+  following: true,
 
-  setUrl: (url) => set({ url }),
   toggleTheme: () => {
     const theme = get().theme === "dark" ? "light" : "dark";
     storage.set("rv-theme", theme);
@@ -60,46 +66,59 @@ export const useApp = create<State>((set, get) => ({
   async load(url) {
     url = (url ?? get().url).trim();
     if (!url) return;
-    abort?.abort();
-    set({ url, loading: true, error: null, guide: null, generating: false, tools: [] });
+    const v = url === get().url ? versionParam() : null;
+    set({ url, loading: true, error: null });
     storage.set("rv-url", url);
-    const q = new URLSearchParams(location.search);
-    q.set("pr", url);
-    history.replaceState(null, "", `?${q}`);
     try {
-      const data = await fetchPR(url);
-      set({ pr: data.pr, files: data.files, guide: data.guide, loading: false });
-      if (!data.guide) void get().generate();
+      let data = await fetchPR(url, v);
+      if (!data.guide && v && data.versions.length) data = await fetchPR(url); // a version of an older head
+      const shown = data.guide?.version ?? null;
+      set({
+        pr: data.pr,
+        files: data.files,
+        guide: data.guide,
+        versions: data.versions,
+        following: shown === latest(data.versions),
+        loading: false,
+      });
+      setParams(url, shown);
     } catch (e) {
       set({ loading: false, error: String((e as Error).message ?? e) });
     }
   },
 
-  async generate(force = false) {
-    const { url } = get();
-    abort?.abort();
-    abort = new AbortController();
-    set({ generating: true, error: null, tools: [] });
+  async showVersion(v) {
+    const { url, guide, versions } = get();
+    if (guide?.version === v) return;
     try {
-      await streamGuide(
-        url,
-        force,
-        ({ event, data }) => {
-          const d = data as Record<string, unknown>;
-          if (event === "tool") {
-            set((s) => ({ tools: [...s.tools, d as unknown as ToolActivity] }));
-          } else if (event === "guide") {
-            set({ guide: d as unknown as Guide, generating: false });
-          } else if (event === "error") {
-            set({ error: String(d.message), generating: false });
-          }
-        },
-        abort.signal,
-      );
+      const g = await fetchGuide(url, v);
+      set({ guide: g, following: v === latest(versions), error: null });
+      setParams(url, v);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") set({ error: String((e as Error).message ?? e) });
-    } finally {
-      set({ generating: false });
+      set({ error: String((e as Error).message ?? e) });
     }
+  },
+
+  async refresh() {
+    const { url, pr, versions, following } = get();
+    if (!url || !pr) return;
+    let next: Awaited<ReturnType<typeof fetchVersions>>;
+    try {
+      next = await fetchVersions(url);
+    } catch {
+      return; // the server may be restarting; try again on the next tick
+    }
+    if (next.head_sha !== pr.head_sha) {
+      // A guide arrived for a new head (a push, or new uncommitted work): the diff changed too.
+      if (next.versions.length) {
+        setParams(url, null);
+        await get().load();
+      }
+      return;
+    }
+    if (latest(next.versions) === latest(versions)) return;
+    set({ versions: next.versions });
+    const v = latest(next.versions);
+    if (v && following) await get().showVersion(v);
   },
 }));

@@ -1,7 +1,7 @@
 """Split a unified diff into files and hunks with stable IDs.
 
 Hunk IDs (``H1..Hn``) are assigned in diff order, which is deterministic for a given merge-base/head pair,
-so references the model makes against them can be checked exactly.
+so the refs a guide makes against them can be checked exactly.
 """
 
 from __future__ import annotations
@@ -98,6 +98,14 @@ class DiffIndex:
 
     def file(self, path: str) -> FileDiff | None:
         return next((f for f in self.files if f.path == path), None)
+
+    def resolve(self, path: str) -> FileDiff | None:
+        """Exact path, else the unique diff file whose path ends with ``/path`` (agents often cite short paths)."""
+        path = path.strip().removeprefix("./")
+        if f := self.file(path):
+            return f
+        hits = [f for f in self.files if f.path.endswith("/" + path)]
+        return hits[0] if len(hits) == 1 else None
 
     def to_dict(self) -> dict:
         return {"files": [asdict(f) for f in self.files]}

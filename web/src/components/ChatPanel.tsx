@@ -22,6 +22,7 @@ import { useHunkIndex } from "../lib/linking";
 import { InlineCodeContext, Markdown } from "../lib/md";
 import { CHAT_W, startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
+import { ago } from "../lib/time";
 import { useApp } from "../store";
 import type { StepKind } from "../types";
 import { useUI } from "../ui";
@@ -199,11 +200,6 @@ function Resizer({ onWidth }: { onWidth: (w: number) => void }) {
   );
 }
 
-const ago = (t: number) => {
-  const m = Math.round((Date.now() / 1000 - t) / 60);
-  return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
-};
-
 function HistoryList() {
   const { history, chat, openChat } = useChat();
   return (
@@ -332,6 +328,7 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
                 {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
               </div>
               {q.shows.length > 0 && <Shows shows={q.shows} />}
+              {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
             </div>
           ))}
           {tools.length > 0 && (
@@ -347,6 +344,23 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
         </div>
       </div>
     </>
+  );
+}
+
+/** An answer that changed the guide links to the version it saved. */
+function GuideUpdated({ v }: { v: number }) {
+  const current = useApp((s) => s.guide?.version);
+  return (
+    <button
+      type="button"
+      className={`guide-upd${current === v ? " on" : ""}`}
+      title={current === v ? "Showing this version" : "Show this version"}
+      onClick={() => void useApp.getState().showVersion(v)}
+    >
+      {ic(History, 13)}
+      Updated the guide
+      <span>v{v}</span>
+    </button>
   );
 }
 

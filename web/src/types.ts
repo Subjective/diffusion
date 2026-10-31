@@ -89,7 +89,15 @@ export interface FlowEdge {
   label: string | null;
   kind: "normal" | "error";
 }
+export interface Scope {
+  files: string[];
+  note: string;
+}
 export interface Guide {
+  version?: number;
+  label?: string;
+  scope?: Scope | null;
+  brief?: string;
   tldr: string;
   context: { icon: ContextIcon; text: string; refs?: Ref[] }[];
   steps: Step[];
@@ -97,11 +105,21 @@ export interface Guide {
   skippable: { file: string; hunks: string[]; reason: SkipReason }[];
   uncovered: string[];
   validation: { total_refs: number; invalid_refs: number; clamped_refs: number };
-  meta?: { head_sha: string; model: string; turns: number; cost_usd: number | null; seconds: number };
+  meta?: { head_sha: string; source?: "agent" | "chat"; harness?: string | null; created_at?: number };
+}
+
+/** One saved version of the guide for the current head: every submit, and every edit made from chat. */
+export interface GuideVersion {
+  version: number;
+  label: string;
+  scope: Scope | null;
+  source: "agent" | "chat";
+  created_at: number | null;
 }
 
 export interface PRPayload {
   pr: PRMeta;
   files: FileDiff[];
   guide: Guide | null;
+  versions: GuideVersion[];
 }

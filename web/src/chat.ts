@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import type { CodeLoc } from "./lib/cite";
 import { errorText, postSSE } from "./lib/sse";
+import { useApp } from "./store";
 import type { Ref } from "./types";
 import { diffActivity } from "./ui";
 
@@ -33,6 +34,8 @@ export interface Question {
   turn: number | null;
   /** Diff regions the model chose to show for this question (`show_code`). */
   shows: Show[];
+  /** The guide version this answer saved, when it was asked to change the guide. */
+  guideVersion?: number;
 }
 
 export interface Show extends CodeLoc {
@@ -151,7 +154,7 @@ export const useChat = create<State>((set, get) => {
       const id = await ensureChat();
       await postSSE(
         `/api/chats/${id}/turn`,
-        { url: get().pr, questions: wire },
+        { url: get().pr, questions: wire, version: useApp.getState().guide?.version ?? null },
         ({ event, data }) => {
           const d = data as Record<string, unknown>;
           if (event === "delta") {
@@ -173,6 +176,14 @@ export const useChat = create<State>((set, get) => {
               autoShown = true;
               set((s) => ({ autoShow: { q: target, i, n: (s.autoShow?.n ?? 0) + 1 } }));
             }
+          } else if (event === "guide") {
+            const target = byN.get(d.n as number);
+            const v = Number(d.version);
+            if (target) patch(get().chat, [target], () => ({ guideVersion: v }));
+            void useApp
+              .getState()
+              .refresh()
+              .then(() => useApp.getState().showVersion(v));
           } else if (event === "tool") {
             patch(get().chat, ids, (q) => (q.status === "pending" ? { tools: [...q.tools, d.summary as string] } : {}));
           } else if (event === "done") {
@@ -301,6 +312,7 @@ interface WireChat {
     answers: Record<string, string>;
     tools: string[];
     shows?: (Show & { n: number })[];
+    guide_version?: number;
     status: string;
   }[];
 }
@@ -327,6 +339,7 @@ export function fromWire(c: WireChat): Chat {
         answer: t.answers[String(q.n)] ?? "",
         tools: t.tools,
         shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
+        guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
       });
     });
   });

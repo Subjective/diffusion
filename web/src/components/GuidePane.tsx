@@ -3,19 +3,18 @@ import {
   Circle,
   CircleAlert,
   CircleCheck,
+  Copy,
   EyeOff,
   FileCode,
+  Focus,
   GitPullRequest,
   Info,
   ListOrdered,
-  LoaderCircle,
   MessageCircle,
-  Sparkles,
   Workflow,
   Zap,
 } from "lucide-react";
-import { useEffect } from "react";
-import { describeActivity } from "../lib/activity";
+import { useEffect, useState } from "react";
 import { readingOrder, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { Inline } from "../lib/md";
 import { GUIDE_W, startResize } from "../lib/panes";
@@ -56,17 +55,18 @@ export function GuidePane({ onAskStep, onWidth }: GuidePaneProps) {
 }
 
 function GuideBody({ onAskStep }: GuidePaneProps) {
-  const { pr, guide, generating, error } = useApp();
+  const { pr, guide } = useApp();
   if (!pr) return <aside className="guide" />;
   return (
     <aside className="guide">
-      {generating || (!guide && !error) ? (
-        <Generating />
-      ) : guide ? (
-        <div className="fade-in">
+      {guide ? (
+        <div className="fade-in" key={guide.version}>
           <Header />
           <section className="sec">
-            <div className="sec-h">{ic(Zap, 13)}TL;DR</div>
+            <div className="sec-h">
+              {ic(Zap, 13)}TL;DR
+              <ScopeChip />
+            </div>
             <p className="tldr">
               <Inline text={guide.tldr} />
             </p>
@@ -83,7 +83,10 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
           <Uncovered />
         </div>
       ) : (
-        <Header />
+        <>
+          <Header />
+          <NoGuide />
+        </>
       )}
     </aside>
   );
@@ -156,20 +159,42 @@ function Header() {
   );
 }
 
-function Generating() {
-  const now = useApp((s) => describeActivity(s.tools, s.files));
+/** What the guide covers, when the reviewer narrowed it (the rest of the diff is context). */
+function ScopeChip() {
+  const scope = useApp((s) => s.guide?.scope);
+  if (!scope?.files.length) return null;
+  const files = scope.files.map((f) => f.replace(/\/$/, "").split("/").pop()).join(", ");
   return (
-    <div className="gen">
-      <div className="gen-row cur">
-        <span className="dot-i">{ic(Sparkles, 15)}</span>
-        <span className="gen-text">
-          Read & plan
-          <span key={now} className="gen-now">
-            {now}
-          </span>
-        </span>
-        <span className="spin">{ic(LoaderCircle, 15)}</span>
+    <span className="scope-chip" title={`Covers ${scope.files.join(", ")}; the rest of the diff is context.`}>
+      {ic(Focus, 11)}
+      {scope.note || files}
+    </span>
+  );
+}
+
+/** Guides are written by the reviewer's coding agent; this page shows one as soon as it's submitted. */
+export function NoGuide({ landing = false }: { landing?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const cmd = "/diffusion:review";
+  return (
+    <div className="no-guide">
+      {landing ? "Ask your coding agent for a review:" : "No guide yet. Ask your coding agent for one:"}
+      <div className="cmd">
+        <code>{cmd}</code>
+        <button
+          type="button"
+          className="icon-btn sm"
+          title="Copy"
+          onClick={() => {
+            void navigator.clipboard?.writeText(cmd);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          }}
+        >
+          {ic(copied ? Check : Copy, 13)}
+        </button>
       </div>
+      {landing ? "It opens the review here when the guide is ready." : "It appears here when it's ready."}
     </div>
   );
 }

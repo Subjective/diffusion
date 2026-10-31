@@ -1,7 +1,7 @@
 """Backend: Claude Agent SDK (drives the Claude Code CLI as a subprocess).
 
 Uses whatever Claude Code is configured to use (Anthropic API key, Bedrock, Vertex, a gateway, or your
-login), plus any profile ``env``. Read-only built-in tools (Read/Grep/Glob) are confined to the repository by a
+login). Read-only built-in tools (Read/Grep/Glob) are confined to the repository by a
 PreToolUse hook; our custom tools are served in-process over the SDK's MCP bridge.
 """
 
@@ -23,7 +23,6 @@ from ..agent import (
     summarize_tool,
     within,
 )
-from ..config import Config
 
 if TYPE_CHECKING:
     from claude_agent_sdk.types import HookContext, HookInput, HookJSONOutput
@@ -65,7 +64,7 @@ def sandbox_decision(tool_name: str, tool_input: dict, root: Path) -> str | None
     return None
 
 
-def claude_code_runner(cfg: Config) -> Runner:
+def claude_code_runner(cli_path: str | None = None) -> Runner:
     async def run(req: AgentRequest) -> AsyncIterator[Event]:
         from claude_agent_sdk import (
             AssistantMessage,
@@ -119,9 +118,10 @@ def claude_code_runner(cfg: Config) -> Runner:
             hooks={"PreToolUse": [HookMatcher(matcher="Read|Grep|Glob", hooks=[guard])]},
             max_turns=req.max_turns,
             resume=req.resume,
+            fork_session=req.fork,
             include_partial_messages=req.include_partial,
-            env={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", **cfg.env, "ENABLE_TOOL_SEARCH": "false"},
-            cli_path=cfg.cli_path,
+            env={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "ENABLE_TOOL_SEARCH": "false"},
+            cli_path=cli_path,
         )
         async with ClaudeSDKClient(options=opts) as client:
             await client.query(req.prompt)
