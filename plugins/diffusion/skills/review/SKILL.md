@@ -27,11 +27,8 @@ the review fast and correct: what matters, in what order, and what can be skippe
 
 ## 2. Explore
 
-For a local target, the base is the first of `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`
-that exists (or the `--base` the user gave); diff with `git diff BASE...HEAD` (three dots), and pass the same
-`--base` to submit if you chose a different one. Start with `git diff --stat` (or `gh pr diff --name-only`),
-then read the diff a few files at a time so no single output is huge, and don't read the same diff twice.
-Quote paths with special characters. Then read just enough of the surrounding code to understand entry points,
+Start from the list of changed files, then read the diff in pieces you can keep in mind (`gh pr diff`, or
+`git diff origin/HEAD...` for a local branch unless the user gave a base). Then read just enough of the surrounding code to understand entry points,
 contracts and how the pieces connect. Prefer searching for callers and usages of changed symbols. Keep it
 focused, and read more where the scope is narrow and deep. For a large diff you may hand exploration to a
 subagent, one that inherits this conversation when it matters or a fresh one to keep your context small; write
@@ -56,8 +53,7 @@ invent paths or line numbers.
   - `title`: 1–3 words. `summary`: ≤ 25 words on what to look at and why. Inline `code` is fine.
   - `substeps`: when a step covers more than about 15 changed lines, 2–6 specific pieces of logic to read in
     order (one function, block or decision each). A substep may cite several ranges when one piece of logic
-    is split across files. Don't make catch-all substeps ("remaining edits", "misc"): give small leftovers
-    their own short substep, or list them in `skippable` if they are safe.
+    is split across files. Avoid catch-all substeps like "remaining edits".
   - `refs`: narrow to the lines that matter (typically 2–15). Cite a whole change only if it is small. A step
     with substeps can leave its own `refs` empty.
   - Every non-trivial change in scope must appear in some step. A change may appear in several steps with
