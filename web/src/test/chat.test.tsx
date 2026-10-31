@@ -7,7 +7,7 @@ vi.mock("../lib/highlight", () => ({
   highlightHunk: async () => new Map(),
   highlightLines: async () => [],
 }));
-vi.mock("../api", () => ({ fetchPR: vi.fn(async () => payload), streamGuide: vi.fn() }));
+vi.mock("../api", () => ({ fetchPR: vi.fn(async () => payload), fetchVersions: vi.fn(), fetchGuide: vi.fn() }));
 
 // Minimal fake engine for /api/chats*
 type Turn = {
@@ -19,7 +19,7 @@ type Turn = {
 };
 const chats = new Map<string, { id: string; turns: Turn[]; updated_at: number }>();
 let release: (() => void) | null = null;
-const turnBodies: { questions: { n: number; text: string }[] }[] = [];
+const turnBodies: { questions: { n: number; text: string }[]; version?: number | null }[] = [];
 const sse = (events: [string, unknown][]) =>
   events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join("");
 
@@ -78,8 +78,21 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     const gate = new Promise<void>((r) => (release = r));
     const deltas = body.questions.map((q: { n: number; text: string }) => sse([["delta", { n: q.n, text: text(q) }]]));
     deltas.push(...shows.map((f: unknown) => sse([["focus", f]])));
+    // "change…" questions: the answer saved a new guide version
+    const edit = body.questions.find((q: { text: string }) => q.text.startsWith("change"));
+    if (edit) deltas.push(sse([["guide", { n: edit.n, version: 2 }]]));
+    // "think…" questions: the agent reasons first, and the turn reports how long it took
+    const think = body.questions.some((q: { text: string }) => q.text.startsWith("think"));
+    if (think) deltas.unshift(sse([["thinking", { text: "Check **who** calls it." }]]));
     return new Response(
-      streamBody([sse([["tool", { name: "Grep", summary: "Grep x" }]]), ...deltas, sse([["done", {}]])], gate),
+      streamBody(
+        [
+          sse([["tool", { name: "Grep", summary: "Grep x" }]]),
+          ...deltas,
+          sse([["done", think ? { seconds: 12 } : {}]]),
+        ],
+        gate,
+      ),
       {
         headers: { "content-type": "text/event-stream" },
       },
@@ -90,6 +103,7 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
 
 const { App } = await import("../App");
 const { useApp } = await import("../store");
+const api = await import("../api");
 
 async function mount() {
   useApp.setState({ url: payload.pr.url, chatOpen: true });
@@ -103,11 +117,11 @@ const type = (text: string) => {
   fireEvent.keyDown(ta, { key: "Enter" });
 };
 
-test("composer sends immediately; answer streams; tool chips show while pending", async () => {
+test("composer sends immediately; answer streams; the latest step shows while pending", async () => {
   await mount();
   expect(document.querySelector(".empty")).toBeTruthy();
   type("What does this do?");
-  await waitFor(() => expect(document.querySelector(".tool-chip")?.textContent).toBe("Grep x"));
+  await waitFor(() => expect(document.querySelector(".trace-h")?.textContent).toBe("Grep x"));
   expect(document.querySelector(".bubble")!.textContent).toBe("What does this do?");
   expect(document.querySelector(".cursor")).toBeTruthy();
   await act(async () => release!());
@@ -275,4 +289,46 @@ test("answers link citations to diff rows; show_code chips focus the diff, auto-
   await waitFor(() => expect(document.querySelectorAll(".h-item").length).toBeGreaterThan(1));
   fireEvent.click([...document.querySelectorAll(".h-item")].find((h) => h.textContent!.includes("where again?"))!);
   await waitFor(() => expect(document.querySelector(".show-chip .loc")!.textContent).toBe("session.ts:6–7"));
+});
+
+test("an answer that changes the guide switches to the new version and links to it", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  const v2 = { version: 2, label: "Edited in chat", scope: null, source: "chat" as const, created_at: 0 };
+  vi.mocked(api.fetchVersions).mockResolvedValue({
+    head_sha: payload.pr.head_sha,
+    versions: [...payload.versions, v2],
+  });
+  vi.mocked(api.fetchGuide).mockResolvedValue({ ...payload.guide!, version: 2, tldr: "edited" });
+  type("change step 2 to cover the timer");
+  await waitFor(() => expect(document.querySelector(".trace-live")).toBeTruthy());
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelector(".tldr")!.textContent).toBe("edited"));
+  expect(turnBodies.at(-1)!.version).toBe(1); // asked about the version on screen
+  const link = document.querySelector<HTMLElement>(".guide-upd")!;
+  expect(link.textContent).toBe("Updated the guidev2");
+  expect(link.classList.contains("on")).toBe(true);
+  expect(document.querySelector(".ver-btn")!.textContent).toBe("v2");
+});
+
+test("a turn's reasoning and tools fold into one line that opens to a timeline", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  type("think about the callers");
+  await waitFor(() => expect(document.querySelector(".trace-live")).toBeTruthy());
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelector(".trace-h")?.textContent).toBe("Thought for 12s · 1 tool"));
+  expect(document.querySelector(".trace-b")).toBeNull();
+  fireEvent.click(document.querySelector(".trace-h")!);
+  // a timeline, in the order things happened
+  const items = [...document.querySelectorAll(".trace-b > li")];
+  expect(items.map((li) => li.className)).toEqual(["trace-tool", "trace-think"]);
+  expect(items[0].querySelector("code")!.textContent).toBe("x"); // a tool call: verb, then what it acted on
+  expect(items[1].textContent).toBe("Check who calls it.");
+});
+
+test("reasoning headlines: first bold phrase, else first sentence", async () => {
+  const { headline } = await import("../components/ChatPanel");
+  expect(headline("**Finding callers**\n\nI'll grep.")).toBe("Finding callers");
+  expect(headline("Check the timer. Then the API.")).toBe("Check the timer.");
 });

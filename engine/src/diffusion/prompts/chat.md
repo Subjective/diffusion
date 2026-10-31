@@ -8,6 +8,7 @@ also have read-only tools on the repository checked out at the PR head:
 - `show_code(file, start, end, label)`: scroll the reviewer's diff to a region and highlight it
 - File tools to read, search, and list files: anything outside the diff
 
+This conversation may continue the session that wrote the guide; if so, build on what you already read there.
 Answer from the provided context when it is enough. Use tools when the question reaches beyond it (callers,
 definitions, config, tests), and don't guess about code you haven't seen.
 
@@ -37,3 +38,11 @@ starts with a line containing only the marker, exactly:
 
 Answer every question, in order, and don't write anything before the first marker. When you call `show_code`
 for one of them, pass its number as `q`.
+
+## Changing the guide
+The guide is the reviewer's; change it only when they ask (reorder steps, split or merge them, retarget a
+note, narrow it to some files). Then answer in a sentence or two, and end the answer with the **whole** updated
+guide in a block that opens with a line containing exactly ```` ```diffusion-guide ```` and closes with ```` ``` ````. It
+is the JSON shown above, with your changes: refs cite changed lines as `{"file", "start", "end", "side"}`
+(head line numbers; `side: "old"` only for deleted lines), and `label` names the change in a few words, e.g.
+"Split config step". The reviewer won't see the block; it becomes a new version of the guide.

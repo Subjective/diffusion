@@ -1,0 +1,418 @@
+{
+  "$defs": {
+    "ContextDraft": {
+      "properties": {
+        "icon": {
+          "enum": [
+            "fact",
+            "dependency",
+            "risk",
+            "history",
+            "config",
+            "security",
+            "performance"
+          ],
+          "title": "Icon",
+          "type": "string"
+        },
+        "text": {
+          "description": "One sentence, \u2264 18 words. Inline `code` allowed.",
+          "title": "Text",
+          "type": "string"
+        },
+        "refs": {
+          "description": "Optional: the changed lines this note is about.",
+          "items": {
+            "$ref": "#/$defs/LineRef"
+          },
+          "title": "Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "icon",
+        "text"
+      ],
+      "title": "ContextDraft",
+      "type": "object"
+    },
+    "Flow": {
+      "properties": {
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/FlowNode"
+          },
+          "maxItems": 12,
+          "title": "Nodes",
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/FlowEdge"
+          },
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "title": "Flow",
+      "type": "object"
+    },
+    "FlowEdge": {
+      "properties": {
+        "from": {
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "\u2264 2 words, e.g. 'timer', 'ok'.",
+          "title": "Label"
+        },
+        "kind": {
+          "default": "normal",
+          "enum": [
+            "normal",
+            "error"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "FlowEdge",
+      "type": "object"
+    },
+    "FlowNode": {
+      "properties": {
+        "id": {
+          "description": "Short unique id, e.g. 'refresh'.",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "description": "Function/component name, e.g. 'refresh()'.",
+          "title": "Label",
+          "type": "string"
+        },
+        "step": {
+          "description": "1-based index of the step this node belongs to.",
+          "title": "Step",
+          "type": "integer"
+        },
+        "substep": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1-based substep index within the step, if specific.",
+          "title": "Substep"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "step"
+      ],
+      "title": "FlowNode",
+      "type": "object"
+    },
+    "LineRef": {
+      "description": "Changed lines as an agent cites them: a path and line numbers in the diff.",
+      "properties": {
+        "file": {
+          "description": "Path of a changed file, relative to the repository root.",
+          "title": "File",
+          "type": "string"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "First line on `side`; omit for every change in the file.",
+          "title": "Start"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Last line, inclusive; defaults to `start`.",
+          "title": "End"
+        },
+        "side": {
+          "default": "new",
+          "description": "'new' for added and unchanged lines (head numbers), 'old' for deleted lines.",
+          "enum": [
+            "new",
+            "old"
+          ],
+          "title": "Side",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "title": "LineRef",
+      "type": "object"
+    },
+    "Scope": {
+      "properties": {
+        "files": {
+          "description": "Paths or globs the guide covers; empty means the whole diff.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "note": {
+          "default": "",
+          "description": "What the reviewer asked to focus on, in a few words.",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "Scope",
+      "type": "object"
+    },
+    "SkipDraft": {
+      "properties": {
+        "file": {
+          "description": "Path of a changed file, relative to the repository root.",
+          "title": "File",
+          "type": "string"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "First line on `side`; omit for every change in the file.",
+          "title": "Start"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Last line, inclusive; defaults to `start`.",
+          "title": "End"
+        },
+        "side": {
+          "default": "new",
+          "description": "'new' for added and unchanged lines (head numbers), 'old' for deleted lines.",
+          "enum": [
+            "new",
+            "old"
+          ],
+          "title": "Side",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "formatting",
+            "trivial"
+          ],
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "reason"
+      ],
+      "title": "SkipDraft",
+      "type": "object"
+    },
+    "StepDraft": {
+      "properties": {
+        "title": {
+          "description": "1\u20133 words, e.g. 'Refresh loop'.",
+          "title": "Title",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "entry",
+            "core",
+            "contract",
+            "wiring",
+            "cleanup",
+            "test",
+            "config",
+            "docs"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "summary": {
+          "description": "\u2264 25 words of markdown explaining what to look for. Inline `code` allowed.",
+          "title": "Summary",
+          "type": "string"
+        },
+        "refs": {
+          "description": "Refs for the step as a whole. May be empty when substeps carry them.",
+          "items": {
+            "$ref": "#/$defs/LineRef"
+          },
+          "title": "Refs",
+          "type": "array"
+        },
+        "substeps": {
+          "description": "Ordered parts of this step to read one at a time.",
+          "items": {
+            "$ref": "#/$defs/SubstepDraft"
+          },
+          "maxItems": 8,
+          "title": "Substeps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "kind",
+        "summary"
+      ],
+      "title": "StepDraft",
+      "type": "object"
+    },
+    "SubstepDraft": {
+      "properties": {
+        "title": {
+          "description": "1\u20134 words, e.g. 'Load affinity'.",
+          "title": "Title",
+          "type": "string"
+        },
+        "summary": {
+          "description": "\u2264 20 words: what this part does and what to check.",
+          "title": "Summary",
+          "type": "string"
+        },
+        "refs": {
+          "description": "Narrow line ranges; several if the logic is split.",
+          "items": {
+            "$ref": "#/$defs/LineRef"
+          },
+          "minItems": 1,
+          "title": "Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "summary",
+        "refs"
+      ],
+      "title": "SubstepDraft",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "label": {
+      "default": "",
+      "description": "A few words naming this version, e.g. 'Split config step'.",
+      "title": "Label",
+      "type": "string"
+    },
+    "scope": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Scope"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Set when the review is narrowed to part of the diff."
+    },
+    "brief": {
+      "default": "",
+      "description": "What the reviewer cares about or already knows, passed on to chat.",
+      "title": "Brief",
+      "type": "string"
+    },
+    "tldr": {
+      "description": "1\u20132 sentences: what changes and why it matters.",
+      "title": "Tldr",
+      "type": "string"
+    },
+    "context": {
+      "description": "Notes: what the reviewer can't see in the diff.",
+      "items": {
+        "$ref": "#/$defs/ContextDraft"
+      },
+      "maxItems": 5,
+      "title": "Context",
+      "type": "array"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/StepDraft"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "title": "Steps",
+      "type": "array"
+    },
+    "flow": {
+      "$ref": "#/$defs/Flow"
+    },
+    "skippable": {
+      "description": "Changes that are pure formatting or trivially safe.",
+      "items": {
+        "$ref": "#/$defs/SkipDraft"
+      },
+      "title": "Skippable",
+      "type": "array"
+    }
+  },
+  "required": [
+    "tldr",
+    "steps"
+  ],
+  "title": "GuideDraft",
+  "type": "object"
+}

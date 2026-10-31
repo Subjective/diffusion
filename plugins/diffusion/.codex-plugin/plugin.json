@@ -1,7 +1,7 @@
 {
   "name": "diffusion",
   "version": "0.1.2",
-  "description": "Open a guided, linked review of a pull request or branch in Diffusion.",
+  "description": "Guided, linked review walkthroughs of a pull request, branch or uncommitted changes, written by your coding agent.",
   "author": {
     "name": "Subjective"
   },

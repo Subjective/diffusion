@@ -1,5 +1,5 @@
 interface:
   display_name: "Diffusion review"
-  short_description: "Open a guided review of a PR or branch"
+  short_description: "Write a guided review of a PR, branch or uncommitted changes"
 policy:
   allow_implicit_invocation: false

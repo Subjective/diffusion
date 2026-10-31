@@ -4,7 +4,7 @@ import { type Question, useChat } from "./chat";
 import { AskPopup } from "./components/AskPopup";
 import { type ChatLinkProps, ChatPanel } from "./components/ChatPanel";
 import { DiffPane } from "./components/DiffPane";
-import { GuidePane } from "./components/GuidePane";
+import { GuidePane, NoGuide } from "./components/GuidePane";
 import { ic } from "./components/icons";
 import { useQuestionBadges } from "./components/QuestionBadges";
 import { TopBar } from "./components/TopBar";
@@ -15,6 +15,8 @@ import { useAsk } from "./lib/useAsk";
 import { useApp } from "./store";
 import type { Step } from "./types";
 import { useUI } from "./ui";
+
+const POLL_MS = 2500;
 
 /** Row keys an anchored question covers. */
 export function questionRows(q: Question, idx: HunkIndex): { keys: string[]; files: string[] } {
@@ -36,10 +38,20 @@ export function App() {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: load a URL restored from storage once, on mount.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load the target from the link once, on mount.
   useEffect(() => {
     if (url && !pr) void load();
   }, []);
+
+  // New guide versions (a resubmit, an edit from chat) show up without a reload.
+  const loaded = !!pr;
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void useApp.getState().refresh();
+    }, POLL_MS);
+    return () => clearInterval(t);
+  }, [loaded]);
 
   const files = useApp((s) => s.files);
   const skippable = useApp((s) => s.guide?.skippable);
@@ -140,9 +152,13 @@ export function App() {
       )}
       {!pr ? (
         <main className="landing">
-          <div className="landing-i">
-            {loading ? <span className="spin">{ic(GitPullRequest, 22)}</span> : ic(GitPullRequest, 22)}
-          </div>
+          {url || loading ? (
+            <div className="landing-i">
+              {loading ? <span className="spin">{ic(GitPullRequest, 22)}</span> : ic(GitPullRequest, 22)}
+            </div>
+          ) : (
+            <NoGuide landing />
+          )}
         </main>
       ) : (
         <main

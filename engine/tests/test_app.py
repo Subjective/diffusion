@@ -9,7 +9,6 @@ from diffusion.app import Deps, create_app
 from diffusion.config import Config
 from diffusion.github import PRMeta, PRRef
 from diffusion.hunks import parse_diff
-from diffusion.jobs import Jobs
 from diffusion.pipeline import Prepared
 from diffusion.store import Store
 
@@ -24,28 +23,27 @@ def parse_sse(text):
     return out
 
 
-class GatedRunner:
-    """Fake agent that waits on a gate so tests can attach mid-run."""
+def guide_for(prep, tldr="t"):
+    """A draft that covers every changed file whole, as an agent would cite it."""
+    files = [f.path for f in prep.index.files]
+    return {
+        "label": "Everything",
+        "tldr": tldr,
+        "steps": [{"title": "All", "kind": "core", "summary": "s", "refs": [{"file": f} for f in files]}],
+    }
 
-    def __init__(self):
-        self.gate = asyncio.Event()
-        self.calls = 0
 
-    async def __call__(self, req):
-        self.calls += 1
-        yield ToolEvent("Grep", "Grep refreshTokens")
-        await self.gate.wait()
-        submit = next(t for t in req.tools if t.name == "submit_guide")
-        idx_ids = [line.split()[0] for line in req.prompt.split("```")[1].strip().splitlines()]
-        await submit.handler(
-            {
-                "tldr": "t",
-                "steps": [
-                    {"title": "All", "kind": "core", "summary": "s", "refs": [{"hunk": h} for h in idx_ids]}
-                ],
-            }
-        )
-        yield DoneEvent(2, 0.01, False, "s1")
+def submit(deps, prep, raw, source="agent", **meta):
+    from diffusion.validate import check
+
+    draft, g = check(raw, prep.index)
+    record = {
+        **g.model_dump(by_alias=True),
+        "meta": {"head_sha": prep.meta.head_sha, "source": source, **meta},
+    }
+    return deps.store.save_guide(
+        prep.meta.ref.key, prep.meta.head_sha, record, draft.model_dump(by_alias=True)
+    )
 
 
 @pytest.fixture
@@ -53,18 +51,11 @@ def setup(upstream, checkout, tmp_path):
     meta = PRMeta(PRRef("github.com", "acme", "web", 7), "T", "", "jy", "main", "feature",
                   upstream.base_sha, upstream.head_sha, 1, 1, 1)  # fmt: skip
     prep = Prepared(meta, checkout, parse_diff(checkout.diff()))
-    cfg = Config(
-        profile="test",
-        source="test",
-        backend="api",
-        guide_model="g",
-        chat_model="c",
-        cache_dir=tmp_path / "c",
-    )
-    runner = GatedRunner()
-    deps = Deps(cfg, runner, lambda cfg, url: prep, Store(cfg.cache_dir), Jobs())
+    cfg = Config(cache_dir=tmp_path / "c")
+    runners: dict = {}
+    deps = Deps(cfg, lambda h: runners["chat"], lambda cfg, url: prep, Store(cfg.cache_dir))
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(deps)), base_url="http://t")
-    return client, runner, deps, prep
+    return client, runners, deps, prep
 
 
 async def test_pr_endpoint_returns_files_and_hunks(setup):
@@ -108,55 +99,135 @@ async def test_bad_url_is_400(setup):
     assert r.status_code == 400
 
 
-async def test_guide_stream_order_reattach_and_cache(setup):
-    client, runner, deps, prep = setup
+async def test_guide_versions(setup):
+    client, _, deps, prep = setup
+    assert (await client.get("/api/guides", params={"url": URL})).json()["versions"] == []
+    assert submit(deps, prep, guide_for(prep, "one")) == 1
+    assert submit(deps, prep, guide_for(prep, "two"), source="chat") == 2
 
-    async def stream():
-        r = await client.post("/api/guide", json={"url": URL})
-        return parse_sse(r.text)
-
-    first = asyncio.create_task(stream())
-    await asyncio.sleep(0.05)
-    second = asyncio.create_task(stream())  # attaches to the same running job
-    await asyncio.sleep(0.05)
-    runner.gate.set()
-    a, b = await first, await second
-
-    names = [e for e, _ in a]
-    assert "tool" in names and names[-1] == "guide"
-    assert a == b
-    assert runner.calls == 1
-    guide = a[-1][1]
-    assert guide["uncovered"] == [] and guide["meta"]["head_sha"] == prep.meta.head_sha
-
-    # cached: no new agent run, single guide event; /api/pr includes it
-    again = parse_sse((await client.post("/api/guide", json={"url": URL})).text)
-    assert [e for e, _ in again] == ["guide"] and runner.calls == 1
-    assert (await client.get("/api/pr", params={"url": URL})).json()["guide"]["tldr"] == "t"
-
-    # force regenerates
-    forced = parse_sse((await client.post("/api/guide", json={"url": URL, "force": True})).text)
-    assert forced[-1][0] == "guide" and runner.calls == 2
+    body = (await client.get("/api/pr", params={"url": URL})).json()
+    assert body["guide"]["tldr"] == "two" and body["guide"]["version"] == 2
+    assert [(v["version"], v["source"], v["label"]) for v in body["versions"]] == [
+        (1, "agent", "Everything"),
+        (2, "chat", "Everything"),
+    ]
+    assert body["guide"]["uncovered"] == []
+    first = (await client.get("/api/pr", params={"url": URL, "v": 1})).json()["guide"]
+    assert first["tldr"] == "one"
+    assert (await client.get("/api/guide", params={"url": URL, "v": 1})).json()["tldr"] == "one"
+    assert (await client.get("/api/guide", params={"url": URL, "v": 9})).status_code == 404
+    polled = (await client.get("/api/guides", params={"url": URL})).json()
+    assert polled["head_sha"] == prep.meta.head_sha and len(polled["versions"]) == 2
 
 
-async def test_agent_error_emits_error_and_allows_retry(setup):
-    client, runner, deps, _ = setup
+async def test_polling_after_a_push_does_not_re_prepare(setup):
+    """After a push with no new guide yet, the latest guide is for the old head; polls mustn't prepare again."""
+    import dataclasses
 
-    async def failing(req):
-        yield DoneEvent(1, None, True, None, "API Error: 400 too old")
+    client, _, deps, prep = setup
+    submit(deps, prep, guide_for(prep))
+    pushed = dataclasses.replace(prep, meta=dataclasses.replace(prep.meta, head_sha="f" * 40))
+    calls = []
 
-    deps.runner = failing
-    evs = parse_sse((await client.post("/api/guide", json={"url": URL})).text)
-    assert evs[-1] == ("error", {"message": "API Error: 400 too old"})
+    def prepare(cfg, url):
+        calls.append(url)
+        return pushed
 
-    deps.runner = runner
-    runner.gate.set()
-    evs = parse_sse((await client.post("/api/guide", json={"url": URL})).text)
-    assert evs[-1][0] == "guide"
+    deps.prepare = prepare
+    assert (await client.get("/api/pr", params={"url": URL})).json()["pr"]["head_sha"] == "f" * 40
+    for _ in range(3):
+        assert (await client.get("/api/guides", params={"url": URL})).status_code == 200
+    assert len(calls) == 1
+
+
+async def test_health_marks_the_app(setup):
+    client, *_ = setup
+    h = (await client.get("/api/health")).json()
+    assert h["ok"] and h["app"] == "diffusion"
+
+
+async def test_chat_answer_can_edit_the_guide(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep, "before"), harness="codex", session="th_1")
+    seen = []
+    edited = json.dumps({**guide_for(prep, "after"), "label": ""})
+
+    async def runner(req):
+        seen.append(req)
+        yield TextEvent(f"Done, I split it.\n```diffusion-guide\n{edited}\n```\n")
+        yield DoneEvent(1, 0.0, False, "fork-1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    r = await client.post(
+        f"/api/chats/{cid}/turn", json={"url": URL, "version": 1, "questions": [{"n": 1, "text": "Split it"}]}
+    )
+    evs = parse_sse(r.text)
+    assert ("guide", {"n": 1, "version": 2}) in evs and evs[-1][0] == "done"
+    text = "".join(d["text"] for e, d in evs if e == "delta")
+    assert "diffusion-guide" not in text and text.startswith("Done")
+    # the guide's codex session is forked, not written into
+    assert seen[0].resume == "th_1" and seen[0].fork is True
+
+    g = (await client.get("/api/pr", params={"url": URL})).json()
+    assert g["guide"]["tldr"] == "after" and g["guide"]["label"] == "Edited in chat"
+    assert g["guide"]["meta"]["source"] == "chat" and g["guide"]["meta"]["chat"] == cid
+    stored = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()
+    assert stored["turns"][0]["guide_version"] == 2 and stored["session_id"] == "fork-1"
+
+
+async def test_chat_bad_guide_block_is_explained_not_saved(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    async def runner(req):
+        yield TextEvent('ok\n```diffusion-guide\n{"steps": 3}\n```')
+        yield DoneEvent(1, 0.0, False, "s")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    evs = parse_sse(
+        (
+            await client.post(
+                f"/api/chats/{cid}/turn", json={"url": URL, "questions": [{"n": 1, "text": "x"}]}
+            )
+        ).text
+    )
+    assert "wasn't saved" in "".join(d["text"] for e, d in evs if e == "delta")
+    assert (await client.get("/api/guides", params={"url": URL})).json()["versions"] == []
+
+
+async def test_fork_failure_falls_back_to_a_fresh_session(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="gone", cwd="/nope")
+    seen = []
+
+    async def runner(req):
+        seen.append((req.resume, req.fork))
+        if req.fork:
+            yield DoneEvent(0, None, True, None, "No conversation found")
+            return
+        yield TextEvent("hi")
+        yield DoneEvent(1, 0.0, False, "fresh")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    evs = parse_sse(
+        (
+            await client.post(
+                f"/api/chats/{cid}/turn", json={"url": URL, "questions": [{"n": 1, "text": "x"}]}
+            )
+        ).text
+    )
+    assert evs[-1][0] == "done" and seen == [("gone", True), (None, False)]
 
 
 async def test_chat_lifecycle(setup):
-    client, runner, deps, prep = setup
+    client, runners, deps, prep = setup
     seen = []
 
     async def chat_runner(req):
@@ -172,7 +243,7 @@ async def test_chat_lifecycle(setup):
             yield TextEvent("only answer")
         yield DoneEvent(1, 0.0, False, f"sess-{len(seen)}")
 
-    deps.runner = chat_runner
+    runners["chat"] = chat_runner
     assert (await client.get("/api/chats", params={"url": URL})).json() == []
     chat = (await client.post("/api/chats", json={"url": URL})).json()
     cid = chat["id"]
@@ -208,7 +279,7 @@ async def test_chat_lifecycle(setup):
 
 
 async def test_chat_errors(setup):
-    client, _, deps, _ = setup
+    client, runners, deps, _ = setup
     assert (
         await client.post("/api/chats/nope/turn", json={"url": URL, "questions": [{"n": 1, "text": "x"}]})
     ).status_code == 404
@@ -224,7 +295,7 @@ async def test_chat_errors(setup):
         yield TextEvent("partial")
         yield DoneEvent(1, None, True, None, "boom")
 
-    deps.runner = failing
+    runners["chat"] = failing
     evs = parse_sse(
         (
             await client.post(
@@ -237,8 +308,29 @@ async def test_chat_errors(setup):
     assert t["status"] == "error" and t["answers"]["1"] == "partial"
 
 
+async def test_thinking_streams_and_is_kept_with_the_turn(setup):
+    client, runners, deps, _ = setup
+    from diffusion.agent import TextEvent, ThinkingEvent
+
+    async def runner(req):
+        yield ThinkingEvent("Look at ")
+        yield ThinkingEvent("the timer.")
+        yield ToolEvent("Read", "Read session.ts")
+        yield TextEvent("ans")
+        yield DoneEvent(1, 0, False, "s")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 0, "text": "x"}]}
+    evs = parse_sse((await client.post(f"/api/chats/{cid}/turn", json=body)).text)
+    assert [e for e, _ in evs] == ["thinking", "thinking", "tool", "delta", "done"]
+    assert "seconds" in evs[-1][1]
+    t = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()["turns"][0]
+    assert t["trace"] == [{"think": "Look at the timer."}, {"tool": "Read session.ts"}] and t["seconds"] >= 0
+
+
 async def test_overlapping_turns_serialize_and_both_persist(setup):
-    client, _, deps, _ = setup
+    client, runners, deps, _ = setup
     from diffusion.agent import TextEvent
 
     gate = asyncio.Event()
@@ -251,7 +343,7 @@ async def test_overlapping_turns_serialize_and_both_persist(setup):
         yield TextEvent("ans")
         yield DoneEvent(1, 0, False, f"sess-{len(resumes)}")
 
-    deps.runner = runner
+    runners["chat"] = runner
     cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
 
     def turn(text):
@@ -271,41 +363,22 @@ async def test_overlapping_turns_serialize_and_both_persist(setup):
     assert all(t["status"] == "done" for t in stored["turns"]) and stored["session_id"] == "sess-2"
 
 
-async def test_local_target_end_to_end_with_api_backend(tmp_path):
-    """Real prepare + real api backend loop (scripted model) + real run_guide, through HTTP."""
-    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+async def test_local_target_end_to_end(tmp_path):
+    """Real prepare of a local branch, a guide saved for it, served over HTTP."""
+    from sample import build_sample_repo
 
-    from diffusion.backends.api import SessionStore, api_runner
     from diffusion.pipeline import local_target, prepare
-    from diffusion.sample import build_sample_repo
 
     repo = tmp_path / "sample"
     build_sample_repo(repo)
     target = local_target(repo, "main", "feature")
-
-    async def model(messages, info):
-        if len(messages) == 1:
-            prompt = messages[0].parts[-1].content
-            table = prompt.split("## Hunk table")[1].split("```")[1].strip()
-            ids = [ln.split()[0] for ln in table.splitlines()]
-            step = {"title": "All", "kind": "core", "summary": "s", "refs": [{"hunk": h} for h in ids]}
-            yield {0: DeltaToolCall("submit_guide", json.dumps({"tldr": "local!", "steps": [step]}))}
-        else:
-            yield "done"
-
-    cfg = Config(
-        profile="t", source="t", backend="api", guide_model="m", chat_model="m", cache_dir=tmp_path / "c"
-    )
-    runner = api_runner(
-        cfg, model=FunctionModel(stream_function=model), sessions=SessionStore(tmp_path / "s")
-    )
-    deps = Deps(cfg, runner, prepare, Store(cfg.cache_dir), Jobs())
+    cfg = Config(cache_dir=tmp_path / "c")
+    deps = Deps(cfg, lambda h: None, prepare, Store(cfg.cache_dir))  # type: ignore[arg-type]
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(deps)), base_url="http://t")
 
     pr = (await client.get("/api/pr", params={"url": target})).json()
-    assert pr["pr"]["local"] is True and pr["pr"]["url"] == target
-    evs = parse_sse((await client.post("/api/guide", json={"url": target})).text)
-    assert evs[-1][0] == "guide", evs[-1]
-    g = evs[-1][1]
-    assert g["tldr"] == "local!" and g["uncovered"] == [] and g["meta"]["backend"] == "api"
-    assert (await client.get("/api/pr", params={"url": target})).json()["guide"]["tldr"] == "local!"
+    assert pr["pr"]["local"] is True and pr["pr"]["url"] == target and pr["guide"] is None
+    prep = prepare(cfg, target)
+    submit(deps, prep, guide_for(prep, "local!"))
+    g = (await client.get("/api/pr", params={"url": target})).json()["guide"]
+    assert g["tldr"] == "local!" and g["uncovered"] == []

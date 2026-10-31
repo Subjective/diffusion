@@ -1,14 +1,19 @@
-"""Check a model-submitted guide against the hunk table.
+"""Check a submitted guide against the diff.
 
-Every reference in the output resolves to real lines: unknown hunks are dropped, ranges are clamped into
-their hunk, and hunks no step covers (and that aren't skippable) are reported as ``uncovered``.
+Agents cite changed lines by path and line number. Each citation is mapped onto the hunks it touches and
+clamped into them; citations that touch no change are dropped and reported, and hunks in scope that no step
+covers (and that aren't skippable) are reported as ``uncovered``.
 """
 
 from __future__ import annotations
 
+import fnmatch
+
+from pydantic import ValidationError
+
 from .classify import classify
 from .hunks import DiffIndex, Hunk
-from .schema import Flow, Guide, GuideDraft, Issue, Ref, SkipGroup, Step, Substep, Validation
+from .schema import Flow, Guide, GuideDraft, Issue, LineRef, Ref, Scope, SkipGroup, Step, Substep, Validation
 
 # A ref is "coarse" if it spans a whole hunk this big (or a range this long). Steps should break these up.
 COARSE_LINES = 25
@@ -20,36 +25,52 @@ def _span(h: Hunk, side: str) -> tuple[int, int] | None:
     return (h.old_start, h.old_end) if h.old_len else None
 
 
-def _fix_ref(ref: Ref, idx: DiffIndex, where: str, issues: list[Issue]) -> tuple[Ref | None, bool]:
-    """Return (fixed ref or None if invalid, clamped?)."""
-    h = idx.by_id.get(ref.hunk.strip().upper())
-    if h is None:
-        issues.append(Issue(where=where, problem=f"unknown hunk {ref.hunk!r}"))
-        return None, False
-    side = ref.side
-    span = _span(h, side)
-    if span is None:  # e.g. 'new' on a deletion-only hunk: use the side that has lines
-        side = "old" if side == "new" else "new"
-        span = _span(h, side)
-        if span is None:
-            return Ref(hunk=h.id, side=ref.side), False
-        ref = Ref(hunk=h.id, side=side)  # line numbers were for the wrong side; reference whole hunk
-    if ref.start is None and ref.end is None:
-        return Ref(hunk=h.id, side=side), False
+def _ranges(hunks: list[Hunk], side: str) -> str:
+    spans = [s for h in hunks if (s := _span(h, side))]
+    return ", ".join(f"{lo}–{hi}" for lo, hi in spans) or "none"
 
-    lo, hi = span
-    start = ref.start if ref.start is not None else lo
-    end = ref.end if ref.end is not None else start
-    if start > end:
-        start, end = end, start
-    if end < lo or start > hi:
-        issues.append(Issue(where=where, problem=f"{h.id} lines {start}–{end} outside {lo}–{hi}"))
-        return None, False
-    cs, ce = max(start, lo), min(end, hi)
-    clamped = (cs, ce) != (start, end)
+
+def map_ref(ref: LineRef, idx: DiffIndex, where: str, issues: list[Issue]) -> tuple[list[Ref], bool]:
+    """The hunk refs a citation covers (empty if it touches no change), and whether it was clamped."""
+    f = idx.resolve(ref.file)
+    if f is None:
+        issues.append(Issue(where=where, problem=f"{ref.file} isn't a changed file in this diff"))
+        return [], False
+    if ref.start is None:  # every change in the file
+        return [Ref(hunk=h.id, side="new" if h.new_len else "old") for h in f.hunks], False
+
+    start, end = ref.start, ref.end if ref.end is not None else ref.start
+    start, end = min(start, end), max(start, end)
+    hits = [(h, s) for h in f.hunks if (s := _span(h, ref.side)) and start <= s[1] and end >= s[0]]
+    if not hits:
+        issues.append(
+            Issue(
+                where=where,
+                problem=f"{f.path}:{start}–{end} ({ref.side} side) touches no change; "
+                f"changed ranges: {_ranges(f.hunks, ref.side)}",
+            )
+        )
+        return [], False
+    lo, hi = min(s[0] for _, s in hits), max(s[1] for _, s in hits)
+    clamped = start < lo or end > hi
     if clamped:
-        issues.append(Issue(where=where, problem=f"{h.id} lines {start}–{end} clamped to {cs}–{ce}"))
-    return Ref(hunk=h.id, side=side, start=cs, end=ce), clamped
+        issues.append(
+            Issue(
+                where=where,
+                problem=f"{f.path}:{start}–{end} clamped to {max(start, lo)}–{min(end, hi)}",
+            )
+        )
+    return [
+        Ref(hunk=h.id, side=ref.side, start=max(start, s[0]), end=min(end, s[1])) for h, s in hits
+    ], clamped
+
+
+def in_scope(path: str, scope: Scope | None) -> bool:
+    if not scope or not scope.files:
+        return True
+    return any(
+        path == p or fnmatch.fnmatch(path, p) or path.startswith(p.rstrip("/") + "/") for p in scope.files
+    )
 
 
 def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
@@ -66,18 +87,17 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
             skippable.append(SkipGroup(file=f.path, hunks=ids, reason=reason))
             skip_ids.update(ids)
 
-    def fix_refs(raw: list[Ref], where: str) -> list[Ref]:
+    def fix_refs(raw: list[LineRef], where: str) -> list[Ref]:
         nonlocal total, invalid, clamped
         out: list[Ref] = []
         for j, r in enumerate(raw):
             total += 1
-            fixed, was_clamped = _fix_ref(r, idx, f"{where} ref {j + 1}", issues)
-            if fixed is None:
+            mapped, was_clamped = map_ref(r, idx, f"{where} ref {j + 1}", issues)
+            if not mapped:
                 invalid += 1
                 continue
             clamped += was_clamped
-            if fixed not in out:
-                out.append(fixed)
+            out += [m for m in mapped if m not in out]
         return out
 
     # Steps, renumbered 1..n in order; old index → new id for flow mapping.
@@ -111,18 +131,14 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
         for r in (st.refs if not st.substeps else [x for sb in st.substeps for x in sb.refs])
     )
 
-    # Model-flagged skippable hunks (formatting/trivial), excluding ones already covered by a step.
+    # Agent-flagged skippable changes (formatting/trivial), excluding hunks a step already covers.
     covered = {r.hunk for s in steps for r in s.refs}
-    for g in draft.skippable:
-        by_file: dict[str, list[str]] = {}
-        for hid in g.hunks:
-            h = idx.by_id.get(hid.strip().upper())
-            if h is None:
-                issues.append(Issue(where="skippable", problem=f"unknown hunk {hid!r}"))
-            elif h.id not in skip_ids and h.id not in covered:
-                by_file.setdefault(h.file, []).append(h.id)
-                skip_ids.add(h.id)
-        skippable += [SkipGroup(file=f, hunks=ids, reason=g.reason) for f, ids in by_file.items()]
+    for j, g in enumerate(draft.skippable, start=1):
+        mapped, _ = map_ref(g, idx, f"skippable {j}", issues)
+        ids = [r.hunk for r in mapped if r.hunk not in skip_ids and r.hunk not in covered]
+        if ids:
+            skippable.append(SkipGroup(file=idx.by_id[ids[0]].file, hunks=ids, reason=g.reason))
+            skip_ids.update(ids)
 
     # Flow: nodes must point at surviving steps; edges at surviving nodes.
     nodes, node_ids = [], set()
@@ -139,23 +155,36 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
     if len(edges) != len(draft.flow.edges):
         issues.append(Issue(where="flow", problem=f"{len(draft.flow.edges) - len(edges)} edges dropped"))
 
-    uncovered = [h.id for h in idx.hunks if h.id not in covered and h.id not in skip_ids]
+    uncovered = [
+        h.id
+        for h in idx.hunks
+        if h.id not in covered and h.id not in skip_ids and in_scope(h.file, draft.scope)
+    ]
 
     context = [
-        c.model_copy(update={"refs": fix_refs(c.refs, f"note {i}")})
+        {"icon": c.icon, "text": c.text, "refs": fix_refs(c.refs, f"note {i}")}
         for i, c in enumerate(draft.context, start=1)
     ]
 
-    return Guide(
-        tldr=draft.tldr,
-        context=context,
-        steps=steps,
-        flow=Flow(nodes=nodes, edges=edges),
-        skippable=skippable,
-        uncovered=uncovered,
-        validation=Validation(
-            total_refs=total, invalid_refs=invalid, clamped_refs=clamped, coarse_refs=coarse, issues=issues
-        ),
+    return Guide.model_validate(
+        {
+            "label": draft.label,
+            "scope": draft.scope,
+            "brief": draft.brief,
+            "tldr": draft.tldr,
+            "context": context,
+            "steps": steps,
+            "flow": Flow(nodes=nodes, edges=edges),
+            "skippable": skippable,
+            "uncovered": uncovered,
+            "validation": Validation(
+                total_refs=total,
+                invalid_refs=invalid,
+                clamped_refs=clamped,
+                coarse_refs=coarse,
+                issues=issues,
+            ),
+        }
     )
 
 
@@ -166,16 +195,42 @@ def _is_coarse(r: Ref, idx: DiffIndex) -> bool:
     return (r.end or r.start) - r.start + 1 > COARSE_LINES
 
 
-def feedback(g: Guide) -> str | None:
-    """What the model should fix before its guide is accepted, or None if every reference is clean."""
+def _where(h: Hunk) -> str:
+    if h.new_len:
+        return f"{h.file}:{h.new_start}–{h.new_end}"
+    return f"{h.file}:{h.old_start}–{h.old_end} (old side)"
+
+
+def feedback(g: Guide, idx: DiffIndex) -> str | None:
+    """What the agent should fix before its guide is accepted, or None if every reference is clean."""
     lines = [f"- {i.where}: {i.problem}" for i in g.validation.issues]
     if not g.steps:
         lines.append("- no steps survived validation")
     if g.uncovered:
-        lines.append(f"- uncovered hunks (add them to a step or mark skippable): {', '.join(g.uncovered)}")
+        where = ", ".join(_where(idx.by_id[hid]) for hid in g.uncovered)
+        lines.append(f"- changes no step covers (add them to a step, or mark them skippable): {where}")
     if not lines:
         return None
     return (
-        "Some references don't match the diff. Use only hunk IDs and line numbers from the annotated hunks.\n"
-        + "\n".join(lines)
+        "Some references don't match the diff. Cite changed lines by path and head line number "
+        "(side 'old' for deleted lines).\n" + "\n".join(lines)
     )
+
+
+class DraftError(ValueError):
+    pass
+
+
+def check(raw: dict | str, idx: DiffIndex) -> tuple[GuideDraft, Guide]:
+    """Parse a draft (a dict or JSON text) and check it against the diff. Raises ``DraftError`` with what to fix
+    when it doesn't match the schema."""
+    try:
+        draft = (
+            GuideDraft.model_validate_json(raw) if isinstance(raw, str) else GuideDraft.model_validate(raw)
+        )
+    except ValidationError as e:
+        problems = "\n".join(
+            f"- {'.'.join(str(p) for p in err['loc']) or 'guide'}: {err['msg']}" for err in e.errors()
+        )
+        raise DraftError(f"The guide doesn't match the schema:\n{problems}") from e
+    return draft, validate(draft, idx)

@@ -167,5 +167,6 @@ export const payload: PRPayload = {
     changed_files: 3,
   },
   files,
-  guide,
+  guide: { ...guide, version: 1 },
+  versions: [{ version: 1, label: "", scope: null, source: "agent", created_at: 0 }],
 };

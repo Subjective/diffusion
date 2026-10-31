@@ -38,7 +38,10 @@ $diffusion:review https://github.com/owner/repo/pull/123   # Codex
 /diffusion:review https://github.com/owner/repo/pull/123   # Cursor (Agent mode)
 ```
 
-The guide is written by the agent you ran it from, on its own login.
+Your agent explores the change, writes the guide, and opens it in the browser. Say what you care about and it
+shapes the guide around it: `/diffusion:review just the parser`, or `/diffusion:review my uncommitted changes`.
+Ask it (or the chat next to the guide) to regroup steps or refocus, and the page switches to the new version;
+earlier versions stay in its history.
 
 For a short narrated, animated video of the change instead, run `/diffusion:video` the same way (`$diffusion:video`
 in Codex). It renders locally with [HyperFrames](https://github.com/heygen-com/hyperframes) and a Kokoro voice, and
@@ -46,8 +49,7 @@ needs Node 22+, ffmpeg and uv.
 
 ## Prerequisites
 
-- **Model access**: an Anthropic, OpenAI, or OpenRouter API key, or a signed-in Claude Code, Codex, or Cursor CLI. Gateways
-  and local models work too; see [configuration](docs/configuration.md).
+- **Claude Code, Codex or Cursor**, signed in. Chat runs on the same agent; see [configuration](docs/configuration.md).
 - **git**, and for GitHub PRs `gh` signed in or a `GITHUB_TOKEN`.
 - **[`uv`](https://docs.astral.sh/uv/)**.
 
@@ -61,18 +63,19 @@ make build
 make serve          # http://127.0.0.1:8787
 ```
 
-Paste a PR URL into the top bar, or `local:/path/to/repo` to review the current branch against its base
-(`local:/path/to/repo#main..my-branch` to choose both).
-
 ## CLI
+
+The plugin's skill drives these; you rarely need them yourself.
 
 ```bash
 cd engine
-uv run diffusion doctor                # which model it will use; pings it
-uv run diffusion open [target]         # start or reuse the web UI and open a review
-uv run diffusion guide <target>        # print a guide (--json for the raw guide)
-uv run diffusion serve                 # web UI + API
+uv run diffusion submit GUIDE.json [target]   # check a guide against the diff, save it as a version, open it
+uv run diffusion open [target]                # open a review; prints where the latest guide's JSON is
+uv run diffusion serve                        # web UI + API
 ```
+
+A target is a PR URL or a repository directory (default: the current directory), compared with its base;
+`--base`/`--head` choose the refs, and `--uncommitted` includes work that isn't committed yet.
 
 ## Contributing
 

@@ -1,7 +1,8 @@
 """Backend-neutral agent interface: requests, events, custom tools, and the runner seam.
 
-A *runner* takes an ``AgentRequest`` and yields ``Event``s. Backends (``backends/``) implement it on top of a
-model API (Pydantic AI) or an agent CLI (Claude Code, Codex, Cursor). Everything else in the engine only sees this.
+A *runner* takes an ``AgentRequest`` and yields ``Event``s. Backends (``backends/``) implement it on top of an
+agent CLI (Claude Code, Codex, Cursor). Chat is the only thing in the engine that runs an agent; guides are
+written by the agent Diffusion is launched from.
 """
 
 from __future__ import annotations
@@ -9,28 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
-
-from .config import Config
-
-
-def inline_refs(schema: dict) -> dict:
-    """Inline ``$defs`` so tool schemas are flat (some tool-callers handle ``$ref`` poorly)."""
-    defs = schema.get("$defs", {})
-
-    def walk(node: Any, is_props: bool = False) -> Any:
-        if isinstance(node, list):
-            return [walk(v) for v in node]
-        if not isinstance(node, dict):
-            return node
-        if is_props:  # {property name: schema}: keys are names (e.g. "title"), not keywords
-            return {k: walk(v) for k, v in node.items()}
-        if "$ref" in node:
-            return walk(defs[node["$ref"].rsplit("/", 1)[-1]])
-        return {k: walk(v, k == "properties") for k, v in node.items() if k not in ("$defs", "title")}
-
-    return walk(schema)
-
+from typing import Protocol
 
 # ---------- events surfaced to callers (CLI progress, SSE) ----------
 
@@ -47,6 +27,13 @@ class TextEvent:
 
 
 @dataclass
+class ThinkingEvent:
+    """Reasoning the agent shows (Claude's thinking summaries, Codex reasoning items, Cursor thinking)."""
+
+    text: str
+
+
+@dataclass
 class DoneEvent:
     turns: int
     cost_usd: float | None
@@ -55,11 +42,19 @@ class DoneEvent:
     result: str | None = None
 
 
-Event = ToolEvent | TextEvent | DoneEvent
+Event = ToolEvent | TextEvent | ThinkingEvent | DoneEvent
+
+
+def ran(command: str) -> str:
+    """A shell command as one short line: ``Ran git diff --stat``."""
+    cmd = " ".join(command.split())
+    return f"Ran {cmd if len(cmd) <= 60 else cmd[:57] + '…'}"
 
 
 def summarize_tool(name: str, args: dict) -> str:
     short = name.rsplit("__", 1)[-1]
+    if short == "Bash" and args.get("command"):
+        return ran(str(args["command"]))
     if short.lower() in ("grep", "glob"):
         return f"{short.capitalize()} {args.get('pattern', '')}".strip()
     if short.lower() in ("read", "read_file"):
@@ -74,17 +69,12 @@ def summarize_tool(name: str, args: dict) -> str:
 
 @dataclass
 class ToolSpec:
-    """A custom tool the engine exposes to the agent (e.g. ``get_hunk``, ``submit_guide``).
-
-    ``terminal`` tools end the task: backends that support structured final output (Codex) may use the tool's
-    schema as the output schema and call the handler with the final result instead of exposing it as a tool.
-    """
+    """A custom tool the engine exposes to the agent (e.g. ``get_hunk``, ``show_code``)."""
 
     name: str
     description: str
     schema: dict
     handler: Callable[[dict], Awaitable[str]]
-    terminal: bool = False
 
 
 @dataclass
@@ -96,6 +86,7 @@ class AgentRequest:
     tools: list[ToolSpec] = field(default_factory=list)
     max_turns: int = 40
     resume: str | None = None
+    fork: bool = False  # branch the resumed session instead of adding to it
     include_partial: bool = False
 
 
@@ -117,22 +108,18 @@ def within(root: Path, path: str | Path) -> Path:
     return p
 
 
-def make_runner(cfg: Config) -> Runner:
-    """The runner for the configured backend."""
-    if cfg.backend == "api":
-        from .backends.api import api_runner
-
-        return api_runner(cfg)
-    if cfg.backend == "claude-code":
+def make_runner(harness: str, cli_path: str | None) -> Runner:
+    """The runner for an agent CLI."""
+    if harness == "claude-code":
         from .backends.claude_code import claude_code_runner
 
-        return claude_code_runner(cfg)
-    if cfg.backend == "codex":
+        return claude_code_runner(cli_path)
+    if harness == "codex":
         from .backends.codex import codex_runner
 
-        return codex_runner(cfg)
-    if cfg.backend == "cursor":
+        return codex_runner(cli_path)
+    if harness == "cursor":
         from .backends.cursor import cursor_runner
 
-        return cursor_runner(cfg)
-    raise ValueError(f"unknown backend {cfg.backend!r}")
+        return cursor_runner(cli_path)
+    raise ValueError(f"unknown agent {harness!r}")

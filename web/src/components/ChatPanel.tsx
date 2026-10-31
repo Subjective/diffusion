@@ -1,18 +1,22 @@
 import {
   ArrowUp,
+  ChevronRight,
   Clock,
   FileCode,
+  FileText,
   FlaskConical,
   History,
   Layers,
-  LoaderCircle,
   LocateFixed,
   MessageCircle,
+  Search,
   ShieldAlert,
   Sparkles,
   SquarePen,
+  SquareTerminal,
   Trash2,
   Workflow,
+  Wrench,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -22,6 +26,7 @@ import { useHunkIndex } from "../lib/linking";
 import { InlineCodeContext, Markdown } from "../lib/md";
 import { CHAT_W, startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
+import { ago } from "../lib/time";
 import { useApp } from "../store";
 import type { StepKind } from "../types";
 import { useUI } from "../ui";
@@ -199,11 +204,6 @@ function Resizer({ onWidth }: { onWidth: (w: number) => void }) {
   );
 }
 
-const ago = (t: number) => {
-  const m = Math.round((Date.now() / 1000 - t) / 60);
-  return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
-};
-
 function HistoryList() {
   const { history, chat, openChat } = useChat();
   return (
@@ -288,7 +288,6 @@ export const Qn = ({ q }: { q: Question }) =>
 function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
   const multi = qs.length > 1 || qs.some((q) => q.n);
   const pending = qs.some((q) => q.status === "pending");
-  const tools = pending ? qs[0].tools : [];
   const linked = (q: Question) =>
     q.anchor
       ? {
@@ -314,6 +313,7 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
       <div className="msg ai">
         <div className="ai-av">{ic(Sparkles, 14)}</div>
         <div className="ai-body">
+          <Trace q={qs[0]} pending={pending} />
           {qs.map((q) => (
             <div
               key={q.id}
@@ -332,21 +332,114 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
                 {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
               </div>
               {q.shows.length > 0 && <Shows shows={q.shows} />}
+              {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
             </div>
           ))}
-          {tools.length > 0 && (
-            <div className="tool-log in-chat">
-              {tools.slice(-4).map((t, i) => (
-                <span key={i} className="tool-chip">
-                  {t}
-                </span>
-              ))}
-              <span className="spin">{ic(LoaderCircle, 12)}</span>
-            </div>
-          )}
         </div>
       </div>
     </>
+  );
+}
+
+const secs = (s: number) => (s < 60 ? `${Math.max(1, Math.round(s))}s` : `${Math.round(s / 60)}m`);
+
+/** A reasoning summary's headline: its first bold phrase, else its first sentence. */
+export const headline = (think: string) => {
+  const bold = think.match(/\*\*(.+?)\*\*/);
+  const first = (bold ? bold[1] : think.trim().split(/(?<=[.!?])\s|\n/)[0]).trim();
+  return first.length > 60 ? `${first.slice(0, 57)}…` : first;
+};
+
+const TOOL_ICONS: Partial<Record<string, typeof Wrench>> = {
+  Ran: SquareTerminal,
+  Read: FileText,
+  Grep: Search,
+  Glob: Search,
+  Search: Search,
+  Hunk: FileCode,
+  Show: FileCode,
+};
+
+/** One tool call as a quiet line, the way chat apps show them: an icon, a verb, and what it acted on. */
+function ToolRow({ summary }: { summary: string }) {
+  const sp = summary.indexOf(" ");
+  const verb = sp < 0 ? summary : summary.slice(0, sp);
+  const Icon = TOOL_ICONS[verb];
+  return (
+    <li className="trace-tool" title={summary}>
+      {ic(Icon ?? Wrench, 12)}
+      {Icon ? (
+        <>
+          <span>{verb}</span>
+          <code>{summary.slice(sp + 1)}</code>
+        </>
+      ) : (
+        <span>{summary}</span>
+      )}
+    </li>
+  );
+}
+
+/** What the agent did for a turn, folded into one quiet line that opens to a timeline: reasoning and tool calls in
+ * the order they happened. While it runs, the line shows the latest step. */
+function Trace({ q, pending }: { q: Question; pending: boolean }) {
+  const [open, setOpen] = useState(false);
+  const trace = q.trace ?? [];
+  if (!trace.length) return null;
+  const thought = trace.some((t) => "think" in t);
+  const tools = trace.filter((t) => "tool" in t).length;
+  let label: string;
+  if (pending) {
+    const last = trace.at(-1)!;
+    label = "tool" in last ? last.tool : headline(last.think) || "Thinking";
+  } else {
+    const verb = thought ? "Thought" : "Worked";
+    label = [
+      q.seconds != null ? `${verb} for ${secs(q.seconds)}` : verb,
+      tools ? `${tools} tool${tools === 1 ? "" : "s"}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  return (
+    <div className={`trace${open ? " open" : ""}`}>
+      <button type="button" className="trace-h" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span key={pending ? label : undefined} className={pending ? "trace-live" : undefined}>
+          {label}
+        </span>
+        {ic(ChevronRight, 12)}
+      </button>
+      {open && (
+        <ol className="trace-b">
+          {trace.map((t, i) =>
+            "think" in t ? (
+              <li key={i} className="trace-think">
+                <Markdown text={t.think} />
+              </li>
+            ) : (
+              <ToolRow key={i} summary={t.tool} />
+            ),
+          )}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+/** An answer that changed the guide links to the version it saved. */
+function GuideUpdated({ v }: { v: number }) {
+  const current = useApp((s) => s.guide?.version);
+  return (
+    <button
+      type="button"
+      className={`guide-upd${current === v ? " on" : ""}`}
+      title={current === v ? "Showing this version" : "Show this version"}
+      onClick={() => void useApp.getState().showVersion(v)}
+    >
+      {ic(History, 13)}
+      Updated the guide
+      <span>v{v}</span>
+    </button>
   );
 }
 

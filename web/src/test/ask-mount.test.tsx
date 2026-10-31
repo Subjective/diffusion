@@ -9,7 +9,11 @@ vi.mock("../lib/highlight", () => ({
   highlightHunk: async () => new Map(),
   highlightLines: async () => [],
 }));
-vi.mock("../api", () => ({ fetchPR: vi.fn(() => new Promise((r) => (resolvePR = r))), streamGuide: vi.fn() }));
+vi.mock("../api", () => ({
+  fetchPR: vi.fn(() => new Promise((r) => (resolvePR = r))),
+  fetchVersions: vi.fn(),
+  fetchGuide: vi.fn(),
+}));
 
 const { App } = await import("../App");
 const { useApp } = await import("../store");

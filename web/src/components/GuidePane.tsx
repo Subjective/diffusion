@@ -3,26 +3,25 @@ import {
   Circle,
   CircleAlert,
   CircleCheck,
+  Copy,
   EyeOff,
   FileCode,
+  Focus,
   GitPullRequest,
   Info,
   ListOrdered,
-  LoaderCircle,
   MessageCircle,
-  Sparkles,
   Workflow,
   Zap,
 } from "lucide-react";
-import { useEffect } from "react";
-import { describeActivity } from "../lib/activity";
-import { readingOrder, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
+import { useEffect, useState } from "react";
+import { readingOrder, refsOf, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { Inline } from "../lib/md";
 import { GUIDE_W, startResize } from "../lib/panes";
 import { refLabel } from "../lib/refs";
 import { storage } from "../lib/storage";
 import { useApp } from "../store";
-import type { Step } from "../types";
+import type { Ref, Step } from "../types";
 import { useUI } from "../ui";
 import { FlowGraph } from "./FlowGraph";
 import { CONTEXT_ICON, ic, SKIP_ICON, STEP_ICON } from "./icons";
@@ -56,17 +55,18 @@ export function GuidePane({ onAskStep, onWidth }: GuidePaneProps) {
 }
 
 function GuideBody({ onAskStep }: GuidePaneProps) {
-  const { pr, guide, generating, error } = useApp();
+  const { pr, guide } = useApp();
   if (!pr) return <aside className="guide" />;
   return (
     <aside className="guide">
-      {generating || (!guide && !error) ? (
-        <Generating />
-      ) : guide ? (
-        <div className="fade-in">
+      {guide ? (
+        <div className="fade-in" key={guide.version}>
           <Header />
           <section className="sec">
-            <div className="sec-h">{ic(Zap, 13)}TL;DR</div>
+            <div className="sec-h">
+              {ic(Zap, 13)}TL;DR
+              <ScopeChip />
+            </div>
             <p className="tldr">
               <Inline text={guide.tldr} />
             </p>
@@ -83,7 +83,10 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
           <Uncovered />
         </div>
       ) : (
-        <Header />
+        <>
+          <Header />
+          <NoGuide />
+        </>
       )}
     </aside>
   );
@@ -156,20 +159,42 @@ function Header() {
   );
 }
 
-function Generating() {
-  const now = useApp((s) => describeActivity(s.tools, s.files));
+/** What the guide covers, when the reviewer narrowed it (the rest of the diff is context). */
+function ScopeChip() {
+  const scope = useApp((s) => s.guide?.scope);
+  if (!scope?.files.length) return null;
+  const files = scope.files.map((f) => f.replace(/\/$/, "").split("/").pop()).join(", ");
   return (
-    <div className="gen">
-      <div className="gen-row cur">
-        <span className="dot-i">{ic(Sparkles, 15)}</span>
-        <span className="gen-text">
-          Read & plan
-          <span key={now} className="gen-now">
-            {now}
-          </span>
-        </span>
-        <span className="spin">{ic(LoaderCircle, 15)}</span>
+    <span className="scope-chip" title={`Covers ${scope.files.join(", ")}; the rest of the diff is context.`}>
+      {ic(Focus, 11)}
+      {scope.note || files}
+    </span>
+  );
+}
+
+/** Guides are written by the reviewer's coding agent; this page shows one as soon as it's submitted. */
+export function NoGuide({ landing = false }: { landing?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const cmd = "/diffusion:review";
+  return (
+    <div className="no-guide">
+      {landing ? "Ask your coding agent for a review:" : "No guide yet. Ask your coding agent for one:"}
+      <div className="cmd">
+        <code>{cmd}</code>
+        <button
+          type="button"
+          className="icon-btn sm"
+          title="Copy"
+          onClick={() => {
+            void navigator.clipboard?.writeText(cmd);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          }}
+        >
+          {ic(copied ? Check : Copy, 13)}
+        </button>
       </div>
+      {landing ? "It opens the review here when the guide is ready." : "It appears here when it's ready."}
     </div>
   );
 }
@@ -178,17 +203,54 @@ function Steps({ onAskStep }: GuidePaneProps) {
   const guide = useApp((s) => s.guide!);
   const steps = guide.steps;
   const idx = useHunkIndex();
-  const { readSteps, toggleRead, hoverStep, hoverSub, pinStep, pinSub, clearPin } = useUI();
+  const { readSteps, toggleRead, hoverStep, hoverSub, pinStep, pinSub, refAt, clearPin } = useUI();
+  // The ref h/l is on, so its chip can show it.
+  const active =
+    pinStep != null && refAt != null
+      ? refsOf(guide, pinStep, pinSub).filter((r) => refsTarget([r], idx).keys.length)[refAt]
+      : null;
+  const chip = (stepId: number, r: Ref) =>
+    `ref${
+      active &&
+      stepId === pinStep &&
+      r.hunk === active.hunk &&
+      r.side === active.side &&
+      r.start === active.start &&
+      r.end === active.end
+        ? " on"
+        : ""
+    }`;
   const link = useStepLinking();
   const done = steps.filter((s) => readSteps[s.id]).length;
 
   useEffect(() => {
+    // h/l: move through the pinned step's (or substep's) line ranges, which may be far apart in the diff.
+    const stepRef = (dir: 1 | -1) => {
+      let ui = useUI.getState();
+      if (ui.pinStep == null) {
+        const first = readingOrder(guide)[0];
+        if (!first) return;
+        link.focus(first.step, first.sub);
+        ui = useUI.getState();
+      }
+      const targets = refsOf(guide, ui.pinStep!, ui.pinSub)
+        .map((r) => refsTarget([r], idx))
+        .filter((t) => t.keys.length);
+      if (!targets.length) return;
+      const cur = ui.refAt ?? (dir > 0 ? -1 : targets.length);
+      const i = Math.min(targets.length - 1, Math.max(0, cur + dir));
+      if (i !== ui.refAt) ui.showRef(i, targets[i].keys, targets[i].files);
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         clearPin();
         return;
       }
       if (/input|textarea/i.test((document.activeElement as HTMLElement)?.tagName ?? "")) return;
+      if (e.key === "h" || e.key === "l") {
+        stepRef(e.key === "l" ? 1 : -1);
+        return;
+      }
       if (e.key !== "j" && e.key !== "k") return;
       // Walk steps and substeps in reading order.
       const order = readingOrder(guide);
@@ -203,7 +265,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [guide, link, clearPin]);
+  }, [guide, link, clearPin, idx]);
 
   return (
     <section className="sec">
@@ -282,7 +344,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
                             </div>
                             <div className="refs">
                               {b.refs.map((r, i) => (
-                                <span key={i} className="ref">
+                                <span key={i} className={chip(s.id, r)}>
                                   {refLabel(r, idx)}
                                 </span>
                               ))}
@@ -295,7 +357,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
                 ) : (
                   <div className="refs">
                     {s.refs.map((r, i) => (
-                      <span key={i} className="ref">
+                      <span key={i} className={chip(s.id, r)}>
                         {refLabel(r, idx)}
                       </span>
                     ))}

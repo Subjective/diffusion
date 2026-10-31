@@ -7,10 +7,10 @@ from diffusion.chat_agent import (
     Anchor,
     ChatDelta,
     ChatFocus,
+    GuideBlock,
     Question,
     SectionSplitter,
     format_turn,
-    resolve_file,
     run_turn,
     seed_context,
     show_code_tool,
@@ -150,9 +150,9 @@ async def test_show_code_validates_against_diff(prep):
     assert (await tool.handler({"file": "src/legacy.ts", "start": 1, "side": "old"})).startswith("shown")
     assert "line numbers" in await tool.handler({"file": "src/auth/types.ts", "start": "x"})
     assert len(shown) == 2
-    f = resolve_file(prep.index, "./src/auth/types.ts")
+    f = prep.index.resolve("./src/auth/types.ts")
     assert f and f.path == "src/auth/types.ts"
-    assert resolve_file(prep.index, ".auth/types.ts") is None  # a leading dot is part of the name
+    assert prep.index.resolve(".auth/types.ts") is None  # a leading dot is part of the name
     assert set(tool.schema["properties"]) == {"file", "start", "end", "side", "label", "q"}
 
 
@@ -189,6 +189,17 @@ async def test_run_turn_focus_prefers_named_question(prep):
     assert [(f.n, f.start) for f in focus] == [(2, 2), (1, 3)]
 
 
+def test_guide_block_is_held_back_and_kept():
+    b = GuideBlock()
+    text = "Done.\n``" + "`diffusion-guide\n" + '{"a":' + " 1}\n``" + "`\nAnything else?"
+    out = "".join(b.feed(text[i : i + 3]) for i in range(0, len(text), 3)) + b.flush()
+    assert out == "Done.\nAnything else?" and b.found == '{"a": 1}\n'
+    # other fences pass through, and an unclosed block still counts
+    b = GuideBlock()
+    out = b.feed("```ts\nx\n```\n```diffusion-guide\n{}\n") + b.flush()
+    assert out == "```ts\nx\n```\n" and b.found == "{}\n"
+
+
 @pytest.mark.live
 async def test_live_chat_multi(prep):
     from diffusion.agent import make_runner
@@ -202,7 +213,14 @@ async def test_live_chat_multi(prep):
     ]  # fmt: skip
     text: dict[int, str] = {}
     done = None
-    async for e in run_turn(prep, None, qs, make_runner(cfg), cfg.chat_model, None):
+    async for e in run_turn(
+        prep,
+        None,
+        qs,
+        make_runner("claude-code", cfg.cli_path("claude-code")),
+        cfg.chat_model("claude-code"),
+        None,
+    ):
         if isinstance(e, ChatDelta):
             text[e.n] = text.get(e.n, "") + e.text
         elif isinstance(e, DoneEvent):

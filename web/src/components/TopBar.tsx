@@ -1,41 +1,17 @@
-import { Moon, PanelRight, RefreshCw, Route, Sparkles, Sun } from "lucide-react";
+import { Check, GitBranch, History, Moon, PanelRight, Route, Sun } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ago } from "../lib/time";
 import { useApp } from "../store";
 import { GithubIcon, ic } from "./icons";
 
 export function TopBar() {
-  const { url, setUrl, load, generate, theme, toggleTheme, chatOpen, toggleChat, guide, generating, pr } = useApp();
-  const loaded = pr && url.trim() === pr.url;
-  const canRegen = loaded && guide && !generating;
-
+  const { theme, toggleTheme, chatOpen, toggleChat } = useApp();
   return (
     <header className="top">
       <div className="brand">{ic(Route, 16)}</div>
-      <form
-        className="url"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void load();
-        }}
-      >
-        <GithubIcon />
-        <input
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="PR URL, or local:/path/to/repo#main..feature"
-          spellCheck={false}
-          aria-label="Pull request URL"
-        />
-        {canRegen ? (
-          <button type="button" className="icon-btn solid" title="Regenerate guide" onClick={() => void generate(true)}>
-            {ic(RefreshCw, 15)}
-          </button>
-        ) : (
-          <button type="submit" className="icon-btn solid" title="Generate guide" disabled={!url.trim()}>
-            {ic(Sparkles, 16)}
-          </button>
-        )}
-      </form>
+      <Target />
       <div className="top-r">
+        <Versions />
         <button type="button" className="icon-btn" title="Theme" onClick={toggleTheme}>
           {ic(theme === "dark" ? Sun : Moon, 17)}
         </button>
@@ -44,5 +20,103 @@ export function TopBar() {
         </button>
       </div>
     </header>
+  );
+}
+
+/** What's under review: the PR (linking out), or the local repository and branch. */
+function Target() {
+  const pr = useApp((s) => s.pr);
+  if (!pr) return <div className="target" />;
+  return (
+    <div className="target">
+      {pr.local ? (
+        <span title={pr.url}>
+          {ic(GitBranch, 15)}
+          <b>{localName(pr.url)}</b>
+          <span className="target-ref">{pr.head_ref}</span>
+        </span>
+      ) : (
+        <a href={pr.url} target="_blank" rel="noreferrer" title={pr.url}>
+          <GithubIcon size={15} />
+          <b>
+            {pr.owner}/{pr.repo}
+          </b>
+          <span className="target-ref">#{pr.number}</span>
+        </a>
+      )}
+    </div>
+  );
+}
+
+/** `local:/path/to/repo#base..head` → `repo`. */
+export const localName = (target: string) =>
+  target
+    .replace(/^local:/, "")
+    .replace(/#.*$/, "")
+    .replace(/\/+$/, "")
+    .split("/")
+    .pop() || target;
+
+/** Earlier versions of the guide (each submit, and each edit from chat); shown once there is more than one. */
+function Versions() {
+  const { versions, guide, showVersion } = useApp();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    addEventListener("mousedown", close);
+    addEventListener("keydown", close);
+    return () => {
+      removeEventListener("mousedown", close);
+      removeEventListener("keydown", close);
+    };
+  }, [open]);
+  if (versions.length < 2) return null;
+  const current = guide?.version;
+  return (
+    <div className="versions" ref={ref}>
+      <button
+        type="button"
+        className={`icon-btn ver-btn${open ? " on" : ""}`}
+        title="Guide versions"
+        onClick={() => setOpen(!open)}
+      >
+        {ic(History, 16)}
+        <span>v{current}</span>
+      </button>
+      {open && (
+        <div className="ver-menu" role="menu">
+          {[...versions].reverse().map((v) => (
+            <button
+              type="button"
+              key={v.version}
+              role="menuitem"
+              className={`h-item${v.version === current ? " active" : ""}`}
+              onClick={() => {
+                setOpen(false);
+                void showVersion(v.version);
+              }}
+            >
+              <div className="h-t">
+                <span className="ver-n">v{v.version}</span>
+                {v.label || (v.source === "chat" ? "Edited in chat" : "Guide")}
+                {v.version === current && ic(Check, 13)}
+              </div>
+              <div className="h-m">
+                <span>{v.source === "chat" ? "chat" : "agent"}</span>
+                {v.scope?.files.length ? (
+                  <span title={v.scope.files.join("\n")}>{v.scope.note || "scoped"}</span>
+                ) : null}
+                <span className="grow" />
+                {v.created_at != null && <span>{ago(v.created_at)}</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

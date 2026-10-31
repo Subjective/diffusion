@@ -2,7 +2,15 @@ import pytest
 
 from diffusion.hunks import parse_diff
 from diffusion.schema import GuideDraft
-from diffusion.validate import feedback, validate
+from diffusion.validate import DraftError, check, feedback, in_scope, validate
+
+CODE = [
+    "src/auth/session.ts",
+    "src/auth/types.ts",
+    "src/api/client.ts",
+    "tests/session.test.ts",
+    "src/legacy.ts",
+]
 
 
 @pytest.fixture
@@ -14,13 +22,14 @@ def hid(idx, path, n=0):
     return [h for h in idx.hunks if h.file == path][n].id
 
 
-def draft(steps, flow=None, skippable=None):
+def draft(steps, flow=None, skippable=None, **extra):
     return GuideDraft.model_validate(
         {
             "tldr": "t",
             "steps": steps,
             "flow": flow or {"nodes": [], "edges": []},
             "skippable": skippable or [],
+            **extra,
         }
     )
 
@@ -29,19 +38,12 @@ def step(*refs, title="S", kind="core"):
     return {"title": title, "kind": kind, "summary": "s", "refs": list(refs)}
 
 
-def all_code_steps(idx):
-    code = [
-        "src/auth/session.ts",
-        "src/auth/types.ts",
-        "src/api/client.ts",
-        "tests/session.test.ts",
-        "src/legacy.ts",
-    ]
-    return [step({"hunk": h.id}) for h in idx.hunks if h.file in code]
+def all_code_steps():
+    return [step({"file": f}) for f in CODE]
 
 
 def test_clean_guide_has_full_coverage(idx):
-    g = validate(draft(all_code_steps(idx)), idx)
+    g = validate(draft(all_code_steps()), idx)
     assert g.uncovered == []
     assert g.validation.invalid_refs == 0
     assert [s.id for s in g.steps] == list(range(1, len(g.steps) + 1))
@@ -51,74 +53,108 @@ def test_clean_guide_has_full_coverage(idx):
         "docs/guide.md": "rename",
         "assets/logo.png": "binary",
     }
-    assert feedback(g) is None
+    assert feedback(g, idx) is None
 
 
-def test_unknown_hunk_dropped(idx):
-    s = hid(idx, "src/auth/types.ts")
-    g = validate(draft([step({"hunk": "H99"}, {"hunk": s})]), idx)
-    assert [r.hunk for r in g.steps[0].refs] == [s]
+def test_whole_file_ref_maps_to_its_hunks_and_deletions_to_the_old_side(idx):
+    g = validate(draft([step({"file": "src/auth/types.ts"}), step({"file": "src/legacy.ts"})]), idx)
+    assert [(r.hunk, r.side, r.start) for r in g.steps[0].refs] == [
+        (hid(idx, "src/auth/types.ts"), "new", None)
+    ]
+    assert g.steps[1].refs[0].side == "old"
+
+
+def test_unknown_file_dropped(idx):
+    g = validate(draft([step({"file": "nope.ts", "start": 1}, {"file": "src/auth/types.ts"})]), idx)
+    assert [r.hunk for r in g.steps[0].refs] == [hid(idx, "src/auth/types.ts")]
     assert g.validation.invalid_refs == 1
-    assert "unknown hunk 'H99'" in g.validation.issues[0].problem
+    assert "nope.ts isn't a changed file" in g.validation.issues[0].problem
 
 
-def test_lowercase_hunk_id_normalised(idx):
-    s = hid(idx, "src/auth/types.ts")
-    g = validate(draft([step({"hunk": s.lower()})]), idx)
-    assert g.steps[0].refs[0].hunk == s
+def test_short_paths_resolve_when_unique(idx):
+    g = validate(draft([step({"file": "./auth/types.ts", "start": 2})]), idx)
+    assert g.steps[0].refs[0].hunk == hid(idx, "src/auth/types.ts")
 
 
-def test_range_clamped_into_hunk(idx):
+def test_range_clamped_into_the_change(idx):
     h = idx.by_id[hid(idx, "src/auth/types.ts")]
-    g = validate(draft([step({"hunk": h.id, "start": h.new_start - 50, "end": h.new_end + 50})]), idx)
+    g = validate(draft([step({"file": h.file, "start": h.new_start, "end": h.new_end + 50})]), idx)
     r = g.steps[0].refs[0]
     assert (r.start, r.end) == (h.new_start, h.new_end)
-    assert g.validation.clamped_refs == 1
+    assert g.validation.clamped_refs == 1 and "clamped" in g.validation.issues[0].problem
 
 
-def test_range_outside_hunk_is_invalid(idx):
-    h = idx.by_id[hid(idx, "src/auth/types.ts")]
-    g = validate(draft([step({"hunk": h.id, "start": 900, "end": 950})]), idx)
+def test_range_outside_the_change_is_invalid_and_says_where_changes_are(idx):
+    g = validate(draft([step({"file": "src/auth/types.ts", "start": 900, "end": 950})]), idx)
     assert g.steps == []
-    assert "no steps survived" in (feedback(g) or "")
+    fb = feedback(g, idx) or ""
+    assert "touches no change; changed ranges: 1–5" in fb and "no steps survived" in fb
 
 
 def test_reversed_range_swapped(idx):
-    h = idx.by_id[hid(idx, "src/auth/session.ts")]
-    g = validate(draft([step({"hunk": h.id, "start": h.new_start + 2, "end": h.new_start})]), idx)
+    g = validate(draft([step({"file": "src/auth/session.ts", "start": 4, "end": 2})]), idx)
     r = g.steps[0].refs[0]
-    assert (r.start, r.end) == (h.new_start, h.new_start + 2)
+    assert (r.start, r.end) == (2, 4)
 
 
-def test_deletion_only_hunk_switches_to_old_side(idx):
-    h = idx.by_id[hid(idx, "src/legacy.ts")]
-    g = validate(draft([step({"hunk": h.id, "start": 1, "end": 1})]), idx)
+def test_old_side_lines(idx):
+    g = validate(draft([step({"file": "src/legacy.ts", "start": 1, "side": "old"})]), idx)
     r = g.steps[0].refs[0]
-    assert r.side == "old" and r.start is None
+    assert (r.side, r.start, r.end) == ("old", 1, 1)
+    g = validate(draft([step({"file": "src/legacy.ts", "start": 1})]), idx)  # nothing on the new side
+    assert (
+        g.steps == []
+        and "(new side) touches no change; changed ranges: none" in g.validation.issues[0].problem
+    )
 
 
 def test_uncovered_reported_and_skippable_excluded(idx):
-    s = hid(idx, "src/auth/types.ts")
-    g = validate(draft([step({"hunk": s})]), idx)
-    assert s not in g.uncovered
+    g = validate(draft([step({"file": "src/auth/types.ts"})]), idx)
+    assert hid(idx, "src/auth/types.ts") not in g.uncovered
     assert hid(idx, "src/auth/session.ts") in g.uncovered
     assert hid(idx, "package-lock.json") not in g.uncovered
+    assert "src/auth/session.ts:1–25" in (feedback(g, idx) or "")
 
 
-def test_model_skippable_merged(idx):
-    t = hid(idx, "tests/session.test.ts")
+def test_scope_limits_coverage(idx):
+    scope = {"files": ["src/auth/"], "note": "auth only"}
+    g = validate(draft([step({"file": "src/auth/types.ts"})], scope=scope), idx)
+    assert g.uncovered == [hid(idx, "src/auth/session.ts")]
+    g = validate(
+        draft([step({"file": "src/auth/types.ts"}, {"file": "src/auth/session.ts"})], scope=scope), idx
+    )
+    assert g.uncovered == [] and g.scope and g.scope.note == "auth only"
+    # refs outside the scope are still fine: context from elsewhere in the diff
+    g = validate(
+        draft([step({"file": "src/auth/types.ts"}, {"file": "src/api/client.ts"})], scope=scope), idx
+    )
+    assert g.validation.invalid_refs == 0
+
+
+def test_in_scope():
+    from diffusion.schema import Scope
+
+    assert in_scope("a/b.ts", None) and in_scope("a/b.ts", Scope())
+    s = Scope(files=["src/*.ts", "lib", "x.py"])
+    assert in_scope("src/a.ts", s) and in_scope("lib/deep/b.go", s) and in_scope("x.py", s)
+    assert not in_scope("library/a", s) and not in_scope("y.py", s)
+
+
+def test_agent_skippable_merged(idx):
     g = validate(
         draft(
-            [step({"hunk": hid(idx, "src/auth/types.ts")})], skippable=[{"hunks": [t], "reason": "trivial"}]
+            [step({"file": "src/auth/types.ts"})],
+            skippable=[{"file": "tests/session.test.ts", "reason": "trivial"}],
         ),
         idx,
     )
+    t = hid(idx, "tests/session.test.ts")
     assert any(s.reason == "trivial" and s.hunks == [t] for s in g.skippable)
     assert t not in g.uncovered
 
 
 def test_flow_nodes_remapped_and_dangling_dropped(idx):
-    good, bad = hid(idx, "src/auth/types.ts"), "H99"
+    good = {"file": "src/auth/types.ts"}
     flow = {
         "nodes": [
             {"id": "a", "label": "a()", "step": 2},
@@ -127,26 +163,16 @@ def test_flow_nodes_remapped_and_dangling_dropped(idx):
         ],
         "edges": [{"from": "a", "to": "b"}, {"from": "a", "to": "x", "kind": "error"}],
     }
-    g = validate(
-        draft([step({"hunk": bad}), step({"hunk": good}), step({"hunk": good, "start": 1})], flow), idx
-    )
+    g = validate(draft([step({"file": "nope.ts"}), step(good), step({**good, "start": 1})], flow), idx)
     assert [s.id for s in g.steps] == [1, 2]
     assert [(n.id, n.step) for n in g.flow.nodes] == [("a", 1), ("b", 2)]
     assert [(e.source, e.target) for e in g.flow.edges] == [("a", "b")]
 
 
-def test_feedback_lists_issues_and_uncovered(idx):
-    s = hid(idx, "src/auth/types.ts")
-    g = validate(draft([step({"hunk": "H99"}, {"hunk": s})]), idx)
-    fb = feedback(g) or ""
-    assert "unknown hunk 'H99'" in fb
-    assert "uncovered hunks" in fb and g.uncovered[0] in fb
-
-
 def test_edge_alias_serialises_as_from_to(idx):
     g = validate(
         draft(
-            all_code_steps(idx),
+            all_code_steps(),
             {"nodes": [{"id": "a", "label": "a", "step": 1}, {"id": "b", "label": "b", "step": 2}],
              "edges": [{"from": "a", "to": "b"}]},
         ),
@@ -161,14 +187,15 @@ def test_edge_alias_serialises_as_from_to(idx):
 
 
 def test_substeps_validated_and_folded_into_step(idx):
-    h = idx.by_id[hid(idx, "src/auth/session.ts")]
-    t = hid(idx, "src/auth/types.ts")
-    first = {"hunk": h.id, "start": h.new_start, "end": h.new_start + 1}
-    last = {"hunk": h.id, "start": h.new_end, "end": h.new_end}
+    f = "src/auth/session.ts"
     subs = [
-        {"title": "Schedule", "summary": "a", "refs": [first]},
-        {"title": "Split logic", "summary": "b", "refs": [{"hunk": t}, last]},
-        {"title": "Bogus", "summary": "c", "refs": [{"hunk": "H99"}]},
+        {"title": "Schedule", "summary": "a", "refs": [{"file": f, "start": 1, "end": 2}]},
+        {
+            "title": "Split logic",
+            "summary": "b",
+            "refs": [{"file": "src/auth/types.ts"}, {"file": f, "start": 25}],
+        },
+        {"title": "Bogus", "summary": "c", "refs": [{"file": "nope.ts"}]},
     ]
     nodes = [
         {"id": "a", "label": "a", "step": 1, "substep": 2},
@@ -185,7 +212,10 @@ def test_substeps_validated_and_folded_into_step(idx):
         "Split logic",
     ]
     assert len(s.substeps[1].refs) == 2  # multi-location substep
-    assert {r.hunk for r in s.refs} == {h.id, t}  # step refs = union of substeps
+    assert {r.hunk for r in s.refs} == {
+        hid(idx, f),
+        hid(idx, "src/auth/types.ts"),
+    }  # step refs = union of substeps
     assert [(n.id, n.substep) for n in g.flow.nodes] == [
         ("a", 2),
         ("b", None),
@@ -194,22 +224,40 @@ def test_substeps_validated_and_folded_into_step(idx):
 
 
 def test_coarse_refs_counted(idx):
-    big = max(idx.hunks, key=lambda x: len(x.lines))
-    g = validate(draft([step({"hunk": big.id})]), idx)
-    assert g.validation.coarse_refs == (1 if len(big.lines) > 25 else 0)
+    g = validate(draft([step({"file": "src/auth/session.ts"})]), idx)
+    assert g.validation.coarse_refs == 0  # 25 lines isn't over the limit
+    g = validate(draft([step({"file": "src/auth/session.ts", "start": 1, "end": 25})]), idx)
+    assert g.validation.coarse_refs == 0
 
 
 def test_note_refs_validated(idx):
-    t = hid(idx, "src/auth/types.ts")
-    d = GuideDraft.model_validate(
-        {
-            "tldr": "t",
-            "steps": [step({"hunk": t})],
-            "context": [
-                {"icon": "risk", "text": "a", "refs": [{"hunk": t}, {"hunk": "H99"}]},
-                {"icon": "fact", "text": "b"},
-            ],
-        }
+    t = {"file": "src/auth/types.ts"}
+    d = draft(
+        [step(t)],
+        context=[
+            {"icon": "risk", "text": "a", "refs": [t, {"file": "nope.ts"}]},
+            {"icon": "fact", "text": "b"},
+        ],
     )
     g = validate(d, idx)
-    assert [r.hunk for r in g.context[0].refs] == [t] and g.context[1].refs == []
+    assert [r.hunk for r in g.context[0].refs] == [hid(idx, "src/auth/types.ts")] and g.context[1].refs == []
+
+
+def test_check_parses_text_and_explains_schema_errors(idx):
+    _, g = check(
+        '{"tldr": "t", "steps": [{"title": "A", "kind": "core", "summary": "s", "refs": [{"file": "src/auth/types.ts"}]}]}',
+        idx,
+    )
+    assert len(g.steps) == 1
+    with pytest.raises(DraftError) as e:
+        check({"tldr": "t", "steps": [{"title": "A", "refs": [{"hunk": "H1"}]}]}, idx)
+    assert "steps.0.refs.0.file: Field required" in str(e.value)
+
+
+def test_plugin_schema_is_current():
+    """The skill ships the draft schema; regenerate it with `diffusion schema > .../schema.json`."""
+    import json
+    from pathlib import Path
+
+    shipped = Path(__file__).parents[2] / "plugins/diffusion/skills/review/schema.json"
+    assert json.loads(shipped.read_text()) == GuideDraft.model_json_schema(by_alias=True)

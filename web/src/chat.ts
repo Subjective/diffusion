@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import type { CodeLoc } from "./lib/cite";
 import { errorText, postSSE } from "./lib/sse";
+import { useApp } from "./store";
 import type { Ref } from "./types";
 import { diffActivity } from "./ui";
 
@@ -33,6 +34,22 @@ export interface Question {
   turn: number | null;
   /** Diff regions the model chose to show for this question (`show_code`). */
   shows: Show[];
+  /** What the agent did this turn, in order: reasoning as its CLI reports it, and tool calls (shared by the turn's
+   * questions). */
+  trace?: TraceItem[];
+  /** How long the turn took, once it's done. */
+  seconds?: number;
+  /** The guide version this answer saved, when it was asked to change the guide. */
+  guideVersion?: number;
+}
+
+export type TraceItem = { think: string } | { tool: string };
+
+/** Add a tool call, or a piece of streamed reasoning (joined to the reasoning just before it). */
+export function extendTrace(trace: TraceItem[] = [], item: TraceItem): TraceItem[] {
+  const last = trace.at(-1);
+  if ("think" in item && last && "think" in last) return [...trace.slice(0, -1), { think: last.think + item.think }];
+  return [...trace, item];
 }
 
 export interface Show extends CodeLoc {
@@ -151,7 +168,7 @@ export const useChat = create<State>((set, get) => {
       const id = await ensureChat();
       await postSSE(
         `/api/chats/${id}/turn`,
-        { url: get().pr, questions: wire },
+        { url: get().pr, questions: wire, version: useApp.getState().guide?.version ?? null },
         ({ event, data }) => {
           const d = data as Record<string, unknown>;
           if (event === "delta") {
@@ -173,10 +190,28 @@ export const useChat = create<State>((set, get) => {
               autoShown = true;
               set((s) => ({ autoShow: { q: target, i, n: (s.autoShow?.n ?? 0) + 1 } }));
             }
+          } else if (event === "guide") {
+            const target = byN.get(d.n as number);
+            const v = Number(d.version);
+            if (target) patch(get().chat, [target], () => ({ guideVersion: v }));
+            void useApp
+              .getState()
+              .refresh()
+              .then(() => useApp.getState().showVersion(v));
           } else if (event === "tool") {
-            patch(get().chat, ids, (q) => (q.status === "pending" ? { tools: [...q.tools, d.summary as string] } : {}));
+            patch(get().chat, ids, (q) =>
+              q.status === "pending"
+                ? {
+                    tools: [...q.tools, d.summary as string],
+                    trace: extendTrace(q.trace, { tool: d.summary as string }),
+                  }
+                : {},
+            );
+          } else if (event === "thinking") {
+            patch(get().chat, ids, (q) => ({ trace: extendTrace(q.trace, { think: d.text as string }) }));
           } else if (event === "done") {
-            patch(get().chat, ids, () => ({ status: "answered" }));
+            const seconds = typeof d.seconds === "number" ? d.seconds : undefined;
+            patch(get().chat, ids, () => ({ status: "answered", seconds }));
           } else if (event === "error") {
             patch(get().chat, ids, (q) => ({ status: "error", answer: q.answer || "" }));
             set({ error: String(d.message) });
@@ -301,6 +336,9 @@ interface WireChat {
     answers: Record<string, string>;
     tools: string[];
     shows?: (Show & { n: number })[];
+    guide_version?: number;
+    trace?: TraceItem[];
+    seconds?: number;
     status: string;
   }[];
 }
@@ -327,6 +365,9 @@ export function fromWire(c: WireChat): Chat {
         answer: t.answers[String(q.n)] ?? "",
         tools: t.tools,
         shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
+        guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
+        trace: t.trace ?? t.tools.map((tool) => ({ tool })),
+        seconds: t.seconds,
       });
     });
   });

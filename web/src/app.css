@@ -87,27 +87,6 @@ tr.flash.f1 td.no {
 .pr .meta a:hover {
   color: var(--text);
 }
-.gen-row .spin {
-  margin-left: auto;
-}
-.tool-log {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 10px 0 0 40px;
-}
-.tool-chip {
-  font: 11px var(--mono);
-  color: var(--subtle);
-  background: var(--chip);
-  padding: 2px 7px;
-  border-radius: 6px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  animation: fadeUp 0.25s both;
-}
 .skip-row.uncovered {
   color: var(--t-n);
 }
@@ -250,13 +229,6 @@ tr.flash.f1 td.no {
 }
 .ans-err {
   color: var(--del-fg);
-}
-.tool-log.in-chat {
-  padding: 8px 0 0;
-  align-items: center;
-}
-.tool-log .spin {
-  color: var(--subtle);
 }
 .qflash.f0 {
   animation: ansflash 1.1s ease-out;
@@ -424,4 +396,205 @@ td.mark {
 }
 .note code {
   font-size: 11.5px;
+}
+
+/* Guide versions (top bar) */
+.versions {
+  position: relative;
+}
+.icon-btn.ver-btn {
+  width: auto;
+  gap: 5px;
+  padding: 0 9px;
+  display: inline-flex;
+  font: 12px var(--mono);
+}
+.ver-menu {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  z-index: 20;
+  width: 280px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: pop 0.14s ease-out;
+}
+.ver-menu .h-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.ver-menu .h-t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ver-menu .h-t .ic:last-child {
+  margin-left: auto;
+  color: var(--subtle);
+}
+.ver-n {
+  font: 11.5px var(--mono);
+  color: var(--subtle);
+}
+
+/* Guide scope (beside the TL;DR heading) */
+.scope-chip {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 60%;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* No guide yet */
+.no-guide {
+  margin: 28px 4px 0;
+  color: var(--subtle);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.no-guide .cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 6px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: 12.5px var(--mono);
+}
+.no-guide .cmd code {
+  flex: 1;
+  background: none;
+  padding: 0;
+}
+.landing .no-guide {
+  margin: 0;
+  max-width: 320px;
+  text-align: center;
+}
+
+/* Chat answer that saved a new guide version */
+.guide-upd {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 4px 10px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.guide-upd:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.guide-upd span {
+  font: 11.5px var(--mono);
+  color: var(--subtle);
+}
+.guide-upd.on {
+  background: var(--chip);
+}
+
+/* Chat: what the agent did for a turn (reasoning, tool calls), folded */
+.trace {
+  margin: 0 0 6px;
+}
+.trace-h {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  color: var(--subtle);
+  font-size: 12px;
+}
+.trace-h:hover {
+  color: var(--muted);
+}
+.trace-h .ic:last-child {
+  transition: transform 0.12s;
+}
+.trace.open .trace-h .ic:last-child {
+  transform: rotate(90deg);
+}
+.trace-live {
+  color: transparent;
+  background: linear-gradient(90deg, var(--subtle) 40%, var(--text) 50%, var(--subtle) 60%) 0 0 / 300% 100%;
+  background-clip: text;
+  animation: shimmer 2.4s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+.trace-b {
+  list-style: none;
+  margin: 4px 0 8px 6px;
+  padding: 0 0 0 12px;
+  border-left: 1px solid var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: fadeUp 0.2s both;
+}
+.trace-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--subtle);
+  font-size: 12px;
+}
+.trace-tool code {
+  font: 11.5px var(--mono);
+  color: var(--muted);
+  background: none;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace-think {
+  color: var(--subtle);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.trace-think p {
+  margin: 0 0 4px;
+}
+.trace-think p:last-child {
+  margin: 0;
+}
+.trace-think strong {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* The ref h/l is on */
+.ref.on {
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--hl-bar);
 }

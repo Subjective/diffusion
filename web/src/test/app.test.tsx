@@ -9,7 +9,8 @@ vi.mock("../lib/highlight", () => ({
 }));
 vi.mock("../api", () => ({
   fetchPR: vi.fn(async () => payload),
-  streamGuide: vi.fn(),
+  fetchVersions: vi.fn(async () => ({ head_sha: payload.pr.head_sha, versions: payload.versions })),
+  fetchGuide: vi.fn(),
   fetchFile: vi.fn(async () => Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")),
   fetchDefinition: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock("../lib/definition", async (orig) => ({
 const { App } = await import("../App");
 const api = await import("../api");
 const { useApp } = await import("../store");
+const { useUI } = await import("../ui");
 
 const rows = (sel: string) => [...document.querySelectorAll<HTMLTableRowElement>(`tr.ln${sel}`)];
 const nums = (sel: string) =>
@@ -124,6 +126,29 @@ test("substeps: hover/click highlight just their lines (multi-file); j/k walk su
   expect(nums(".pin")).toEqual(["session.ts:5"]);
 });
 
+test("h/l walk the pinned step's line ranges, keeping the pin", async () => {
+  await mount();
+  useUI.getState().clearPin();
+  fireEvent.click(document.querySelector('.step[data-step="3"]')!);
+  expect(nums(".pin")).toHaveLength(3);
+  fireEvent.keyDown(window, { key: "l" });
+  expect(nums(".flash")).toEqual(["session.ts:5"]);
+  expect(document.querySelector(".ref.on")!.textContent).toBe("session.ts:5");
+  fireEvent.keyDown(window, { key: "l" });
+  fireEvent.keyDown(window, { key: "l" });
+  expect(nums(".flash")).toEqual(["types.ts:2"]);
+  fireEvent.keyDown(window, { key: "l" }); // stays on the last one
+  expect(nums(".flash")).toEqual(["types.ts:2"]);
+  fireEvent.keyDown(window, { key: "h" });
+  expect(nums(".flash")).toEqual(["session.ts:2"]);
+  expect(nums(".pin")).toHaveLength(3); // still the whole step
+  // j moves on, and h/l start again from the new item's first range
+  fireEvent.keyDown(window, { key: "j" });
+  expect(document.querySelector(".ref.on")).toBeNull();
+  fireEvent.keyDown(window, { key: "l" });
+  expect(nums(".flash")).toEqual(["session.ts:5"]);
+});
+
 test("notes with refs link to lines", async () => {
   await mount();
   const note = document.querySelector<HTMLElement>(".note.linked")!;
@@ -215,4 +240,46 @@ test("a definition already in the diff is jumped to instead of previewed", async
   fireEvent.click(document.querySelector('tr[data-rk="src/auth/session.ts:2"] .src')!, { metaKey: true });
   await waitFor(() => expect(nums(".flash")).toEqual(["types.ts:2"]));
   expect(document.querySelector(".peek")).toBeNull();
+});
+
+async function mountWith(data: typeof payload) {
+  vi.mocked(api.fetchPR).mockResolvedValueOnce(data);
+  useApp.setState({ url: data.pr.url, pr: null, guide: null, versions: [] });
+  render(<App />);
+  await waitFor(() => expect(screen.getByText("Add token refresh")).toBeTruthy());
+}
+
+test("version history: shown once there are two, and picking one swaps the guide", async () => {
+  const v2 = { ...payload.guide!, version: 2, tldr: "second", label: "Split config" };
+  const versions = [
+    ...payload.versions,
+    { version: 2, label: "Split config", scope: null, source: "chat" as const, created_at: 0 },
+  ];
+  await mountWith({ ...payload, guide: v2, versions });
+  expect(document.querySelector(".tldr")!.textContent).toBe("second");
+  fireEvent.click(document.querySelector(".ver-btn")!);
+  const items = [...document.querySelectorAll<HTMLElement>(".ver-menu .h-item")];
+  expect(items.map((i) => i.querySelector(".h-t")!.textContent)).toEqual(["v2Split config", "v1Guide"]);
+  vi.mocked(api.fetchGuide).mockResolvedValueOnce({ ...payload.guide!, version: 1, tldr: "first" });
+  fireEvent.click(items[1]);
+  await waitFor(() => expect(document.querySelector(".tldr")!.textContent).toBe("first"));
+  expect(api.fetchGuide).toHaveBeenCalledWith(payload.pr.url, 1);
+  expect(new URLSearchParams(location.search).get("v")).toBe("1");
+  expect(useApp.getState().following).toBe(false); // an older version stays put when new ones arrive
+});
+
+test("scope chip names what the guide covers", async () => {
+  const scoped = { ...payload.guide!, scope: { files: ["src/auth/"], note: "auth only" } };
+  await mountWith({ ...payload, guide: scoped });
+  expect(document.querySelector(".scope-chip")!.textContent).toBe("auth only");
+  expect(document.querySelector(".ver-btn")).toBeNull(); // one version: no history
+});
+
+test("no guide yet: says how to get one, then shows it when it's submitted", async () => {
+  await mountWith({ ...payload, guide: null, versions: [] });
+  expect(document.querySelector(".no-guide code")!.textContent).toBe("/diffusion:review");
+  vi.mocked(api.fetchGuide).mockResolvedValueOnce({ ...payload.guide!, version: 1 });
+  await useApp.getState().refresh();
+  await waitFor(() => expect(document.querySelector(".tldr")).toBeTruthy());
+  expect(document.querySelector(".no-guide")).toBeNull();
 });
