@@ -2,7 +2,7 @@
 name: video
 description: Make a short narrated, animated explainer video of a pull request, or of the current branch, for reviewers.
 argument-hint: "[PR URL | repository directory]"
-allowed-tools: Bash(npx:*), Bash(npm:*), Bash(uv:*), Bash(gh:*), Bash(git:*), Bash(ffprobe:*), Bash(ffmpeg:*)
+allowed-tools: Bash(npx:*), Bash(npm:*), Bash(node:*), Bash(uv:*), Bash(uvx:*), Bash(gh:*), Bash(git:*), Bash(ffprobe:*), Bash(ffmpeg:*)
 disable-model-invocation: true
 ---
 
@@ -15,10 +15,12 @@ of the diff.
 ## Tools
 
 Render with HyperFrames (HTML to MP4) and speak with its local Kokoro voice. Start every shell call with these
-two lines, since variables don't carry between calls:
+three lines, since variables don't carry between calls. The second uses Node 22 from uv when there's no Node 22+
+installed:
 
 ```
 export HYPERFRAMES_NO_TELEMETRY=1 HYPERFRAMES_PYTHON=~/.cache/diffusion/tts/bin/python
+node -e 'process.exit(+(process.versions.node.split(".")[0] < 22))' 2>/dev/null || PATH="$(uvx -q --from 'nodejs-wheel==22.*' python -c 'import sys, os; print(os.path.dirname(sys.executable))'):$PATH"
 HF="npx --yes hyperframes@0.8.217"
 ```
 
@@ -35,7 +37,7 @@ The last line prints where HyperFrames keeps its own guidance. Read `references/
 doesn't render. Skip its storylines, SPEC.md, REVIEW.md, music and preview steps: this skill runs start to
 finish without stopping.
 
-It needs Node 22+, ffmpeg and uv. If one is missing, tell the user which and stop.
+It needs ffmpeg and uv. If one is missing, tell the user which and stop.
 
 ## Steps
 
