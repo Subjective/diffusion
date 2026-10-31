@@ -27,6 +27,13 @@ class TextEvent:
 
 
 @dataclass
+class ThinkingEvent:
+    """Reasoning the agent shows (Claude's thinking summaries, Codex reasoning items, Cursor thinking)."""
+
+    text: str
+
+
+@dataclass
 class DoneEvent:
     turns: int
     cost_usd: float | None
@@ -35,7 +42,7 @@ class DoneEvent:
     result: str | None = None
 
 
-Event = ToolEvent | TextEvent | DoneEvent
+Event = ToolEvent | TextEvent | ThinkingEvent | DoneEvent
 
 
 def summarize_tool(name: str, args: dict) -> str:

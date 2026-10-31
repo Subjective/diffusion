@@ -81,8 +81,18 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     // "change…" questions: the answer saved a new guide version
     const edit = body.questions.find((q: { text: string }) => q.text.startsWith("change"));
     if (edit) deltas.push(sse([["guide", { n: edit.n, version: 2 }]]));
+    // "think…" questions: the agent reasons first, and the turn reports how long it took
+    const think = body.questions.some((q: { text: string }) => q.text.startsWith("think"));
+    if (think) deltas.unshift(sse([["thinking", { text: "Check **who** calls it." }]]));
     return new Response(
-      streamBody([sse([["tool", { name: "Grep", summary: "Grep x" }]]), ...deltas, sse([["done", {}]])], gate),
+      streamBody(
+        [
+          sse([["tool", { name: "Grep", summary: "Grep x" }]]),
+          ...deltas,
+          sse([["done", think ? { seconds: 12 } : {}]]),
+        ],
+        gate,
+      ),
       {
         headers: { "content-type": "text/event-stream" },
       },
@@ -299,4 +309,17 @@ test("an answer that changes the guide switches to the new version and links to 
   expect(link.textContent).toBe("Updated the guidev2");
   expect(link.classList.contains("on")).toBe(true);
   expect(document.querySelector(".ver-btn")!.textContent).toBe("v2");
+});
+
+test("a turn's reasoning and tools fold into one line under the answer", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  type("think about the callers");
+  await waitFor(() => expect(document.querySelector(".tool-chip")).toBeTruthy());
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelector(".trace-h")?.textContent).toBe("Thought for 12s · 1 tool"));
+  expect(document.querySelector(".trace-b")).toBeNull();
+  fireEvent.click(document.querySelector(".trace-h")!);
+  expect(document.querySelector(".trace-think")!.textContent).toBe("Check who calls it.");
+  expect(document.querySelector(".trace-tools")!.textContent).toBe("Grep x");
 });

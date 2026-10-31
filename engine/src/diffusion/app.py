@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
-from .agent import DoneEvent, Runner, ToolEvent, make_runner
+from .agent import DoneEvent, Runner, ThinkingEvent, ToolEvent, make_runner
 from .chat_agent import ChatDelta, ChatFocus, GuideBlock, Question, run_turn
 from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
@@ -249,6 +249,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     "questions": [q.model_dump() for q in req.questions],
                     "answers": {str(q.n): "" for q in req.questions},
                     "tools": [],
+                    "thinking": "",
                     "shows": [],
                     "status": "streaming",
                 }
@@ -275,6 +276,10 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                 elif isinstance(ev, ChatFocus):
                                     record["shows"].append(ev.to_dict())
                                     yield "focus", ev.to_dict()
+                                elif isinstance(ev, ThinkingEvent):
+                                    said = True
+                                    record["thinking"] += ev.text
+                                    yield "thinking", {"text": ev.text}
                                 elif isinstance(ev, ToolEvent):
                                     said = True
                                     record["tools"].append(ev.summary)
@@ -298,7 +303,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                             record["answers"][str(req.questions[-1].n)] += note
                             yield "delta", {"n": req.questions[-1].n, "text": note}
                     record["status"] = "done"
-                    yield "done", {"ns": [q.n for q in req.questions]}
+                    record["seconds"] = round(time.time() - record["at"], 1)
+                    yield "done", {"ns": [q.n for q in req.questions], "seconds": record["seconds"]}
                 except Exception as e:  # surface to the client; keep partial answers
                     record["status"] = "error"
                     record["error"] = str(e) or type(e).__name__

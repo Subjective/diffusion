@@ -24,6 +24,7 @@ vi.mock("../lib/definition", async (orig) => ({
 const { App } = await import("../App");
 const api = await import("../api");
 const { useApp } = await import("../store");
+const { useUI } = await import("../ui");
 
 const rows = (sel: string) => [...document.querySelectorAll<HTMLTableRowElement>(`tr.ln${sel}`)];
 const nums = (sel: string) =>
@@ -123,6 +124,29 @@ test("substeps: hover/click highlight just their lines (multi-file); j/k walk su
   expect(document.querySelector('.step[data-step="3"]')!.classList.contains("active")).toBe(true);
   fireEvent.click(document.querySelector('td.mark .dot[data-step="3"][data-sub="1"]')!);
   expect(nums(".pin")).toEqual(["session.ts:5"]);
+});
+
+test("h/l walk the pinned step's line ranges, keeping the pin", async () => {
+  await mount();
+  useUI.getState().clearPin();
+  fireEvent.click(document.querySelector('.step[data-step="3"]')!);
+  expect(nums(".pin")).toHaveLength(3);
+  fireEvent.keyDown(window, { key: "l" });
+  expect(nums(".flash")).toEqual(["session.ts:5"]);
+  expect(document.querySelector(".ref.on")!.textContent).toBe("session.ts:5");
+  fireEvent.keyDown(window, { key: "l" });
+  fireEvent.keyDown(window, { key: "l" });
+  expect(nums(".flash")).toEqual(["types.ts:2"]);
+  fireEvent.keyDown(window, { key: "l" }); // stays on the last one
+  expect(nums(".flash")).toEqual(["types.ts:2"]);
+  fireEvent.keyDown(window, { key: "h" });
+  expect(nums(".flash")).toEqual(["session.ts:2"]);
+  expect(nums(".pin")).toHaveLength(3); // still the whole step
+  // j moves on, and h/l start again from the new item's first range
+  fireEvent.keyDown(window, { key: "j" });
+  expect(document.querySelector(".ref.on")).toBeNull();
+  fireEvent.keyDown(window, { key: "l" });
+  expect(nums(".flash")).toEqual(["session.ts:5"]);
 });
 
 test("notes with refs link to lines", async () => {

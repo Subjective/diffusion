@@ -15,13 +15,13 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { readingOrder, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
+import { readingOrder, refsOf, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { Inline } from "../lib/md";
 import { GUIDE_W, startResize } from "../lib/panes";
 import { refLabel } from "../lib/refs";
 import { storage } from "../lib/storage";
 import { useApp } from "../store";
-import type { Step } from "../types";
+import type { Ref, Step } from "../types";
 import { useUI } from "../ui";
 import { FlowGraph } from "./FlowGraph";
 import { CONTEXT_ICON, ic, SKIP_ICON, STEP_ICON } from "./icons";
@@ -203,17 +203,54 @@ function Steps({ onAskStep }: GuidePaneProps) {
   const guide = useApp((s) => s.guide!);
   const steps = guide.steps;
   const idx = useHunkIndex();
-  const { readSteps, toggleRead, hoverStep, hoverSub, pinStep, pinSub, clearPin } = useUI();
+  const { readSteps, toggleRead, hoverStep, hoverSub, pinStep, pinSub, refAt, clearPin } = useUI();
+  // The ref h/l is on, so its chip can show it.
+  const active =
+    pinStep != null && refAt != null
+      ? refsOf(guide, pinStep, pinSub).filter((r) => refsTarget([r], idx).keys.length)[refAt]
+      : null;
+  const chip = (stepId: number, r: Ref) =>
+    `ref${
+      active &&
+      stepId === pinStep &&
+      r.hunk === active.hunk &&
+      r.side === active.side &&
+      r.start === active.start &&
+      r.end === active.end
+        ? " on"
+        : ""
+    }`;
   const link = useStepLinking();
   const done = steps.filter((s) => readSteps[s.id]).length;
 
   useEffect(() => {
+    // h/l: move through the pinned step's (or substep's) line ranges, which may be far apart in the diff.
+    const stepRef = (dir: 1 | -1) => {
+      let ui = useUI.getState();
+      if (ui.pinStep == null) {
+        const first = readingOrder(guide)[0];
+        if (!first) return;
+        link.focus(first.step, first.sub);
+        ui = useUI.getState();
+      }
+      const targets = refsOf(guide, ui.pinStep!, ui.pinSub)
+        .map((r) => refsTarget([r], idx))
+        .filter((t) => t.keys.length);
+      if (!targets.length) return;
+      const cur = ui.refAt ?? (dir > 0 ? -1 : targets.length);
+      const i = Math.min(targets.length - 1, Math.max(0, cur + dir));
+      if (i !== ui.refAt) ui.showRef(i, targets[i].keys, targets[i].files);
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         clearPin();
         return;
       }
       if (/input|textarea/i.test((document.activeElement as HTMLElement)?.tagName ?? "")) return;
+      if (e.key === "h" || e.key === "l") {
+        stepRef(e.key === "l" ? 1 : -1);
+        return;
+      }
       if (e.key !== "j" && e.key !== "k") return;
       // Walk steps and substeps in reading order.
       const order = readingOrder(guide);
@@ -228,7 +265,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [guide, link, clearPin]);
+  }, [guide, link, clearPin, idx]);
 
   return (
     <section className="sec">
@@ -307,7 +344,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
                             </div>
                             <div className="refs">
                               {b.refs.map((r, i) => (
-                                <span key={i} className="ref">
+                                <span key={i} className={chip(s.id, r)}>
                                   {refLabel(r, idx)}
                                 </span>
                               ))}
@@ -320,7 +357,7 @@ function Steps({ onAskStep }: GuidePaneProps) {
                 ) : (
                   <div className="refs">
                     {s.refs.map((r, i) => (
-                      <span key={i} className="ref">
+                      <span key={i} className={chip(s.id, r)}>
                         {refLabel(r, idx)}
                       </span>
                     ))}

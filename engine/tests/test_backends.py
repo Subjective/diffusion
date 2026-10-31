@@ -3,7 +3,7 @@ import stat
 
 import pytest
 
-from diffusion.agent import AgentRequest, SandboxError, TextEvent, ToolEvent, ToolSpec, within
+from diffusion.agent import AgentRequest, SandboxError, TextEvent, ThinkingEvent, ToolEvent, ToolSpec, within
 from diffusion.backends.claude_code import sandbox_decision, tool_names_note
 from diffusion.backends.codex import build_args, codex_runner
 from diffusion.backends.codex import compose_prompt as codex_prompt
@@ -77,6 +77,7 @@ def fake_codex(tmp_path, events, code=0):
 async def test_codex_runner_streams_text_and_tools(tmp_path, repo):
     exe = fake_codex(tmp_path, [
         {"type": "thread.started", "thread_id": "th_9"},
+        {"type": "item.completed", "item": {"id": "0", "type": "reasoning", "text": "**Finding callers**"}},
         {"type": "item.started", "item": {"id": "1", "type": "command_execution", "command": "rg refresh", "status": "in_progress"}},
         {"type": "item.completed", "item": {"id": "2", "type": "agent_message", "text": "answer"}},
         {"type": "turn.completed", "usage": {"input_tokens": 1}},
@@ -86,6 +87,7 @@ async def test_codex_runner_streams_text_and_tools(tmp_path, repo):
     assert not done.is_error and done.session_id == "th_9"
     assert [e.summary for e in evs if isinstance(e, ToolEvent)] == ["rg refresh"]
     assert [e.text for e in evs if isinstance(e, TextEvent)] == ["answer\n"]
+    assert [e.text for e in evs if isinstance(e, ThinkingEvent)] == ["**Finding callers**\n"]
     stdin = (tmp_path / "stdin.txt").read_text()
     assert stdin.startswith("SYS") and "PROMPT" in stdin
 
@@ -135,6 +137,9 @@ def fake_cursor(tmp_path, events, code=0):
 async def test_cursor_runner_streams_text_and_tools(tmp_path, repo):
     exe = fake_cursor(tmp_path, [
         {"type": "system", "subtype": "init", "model": "Auto", "session_id": "c9"},
+        {"type": "thinking", "subtype": "delta", "text": "Check the "},
+        {"type": "thinking", "subtype": "delta", "text": "callers."},
+        {"type": "thinking", "subtype": "completed"},
         {"type": "tool_call", "subtype": "started", "call_id": "1", "tool_call": {"grepToolCall": {"args": {"pattern": "refresh"}}}},
         {"type": "tool_call", "subtype": "started", "call_id": "2", "tool_call": {"readToolCall": {"args": {"path": "src/a.py"}}}},
         {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "answer"}]}, "session_id": "c9"},
@@ -145,6 +150,7 @@ async def test_cursor_runner_streams_text_and_tools(tmp_path, repo):
     assert not done.is_error and done.session_id == "c9"
     assert [e.summary for e in evs if isinstance(e, ToolEvent)] == ["Grep refresh", "Read a.py"]
     assert "".join(e.text for e in evs if isinstance(e, TextEvent)).strip() == "answer"
+    assert "".join(e.text for e in evs if isinstance(e, ThinkingEvent)) == "Check the callers.\n"
     prompt = (tmp_path / "args.txt").read_text()
     assert "SYS" in prompt and "PROMPT" in prompt and "--model" not in prompt
 

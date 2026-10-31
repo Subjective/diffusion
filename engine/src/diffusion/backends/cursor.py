@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ToolEvent
+from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent
 
 
 def build_args(req: AgentRequest, prompt: str) -> list[str]:
@@ -75,6 +75,10 @@ def cursor_runner(cli_path: str | None = None) -> Runner:
                     if text:
                         last_text = text
                         yield TextEvent(text + "\n")
+                elif kind == "thinking" and ev.get("subtype") == "delta" and ev.get("text"):
+                    yield ThinkingEvent(ev["text"])
+                elif kind == "thinking" and ev.get("subtype") == "completed":
+                    yield ThinkingEvent("\n")
                 elif kind == "tool_call" and ev.get("subtype") == "started":
                     if s := summarize_call(ev.get("tool_call") or {}):
                         yield ToolEvent(*s)

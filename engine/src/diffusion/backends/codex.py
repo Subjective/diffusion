@@ -13,7 +13,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 
-from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ToolEvent
+from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent
 
 
 def build_args(req: AgentRequest) -> list[str]:
@@ -90,6 +90,8 @@ def codex_runner(cli_path: str | None = None) -> Runner:
                     elif kind == "item.completed" and item.get("type") == "agent_message":
                         last_text = item.get("text", "")
                         yield TextEvent(last_text + "\n")
+                    elif kind == "item.completed" and item.get("type") == "reasoning" and item.get("text"):
+                        yield ThinkingEvent(item["text"] + "\n")
             code = await proc.wait()
             stderr = (await stderr_task).decode(errors="replace").strip()
             if code != 0 and not error:

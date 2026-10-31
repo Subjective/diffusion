@@ -288,6 +288,27 @@ async def test_chat_errors(setup):
     assert t["status"] == "error" and t["answers"]["1"] == "partial"
 
 
+async def test_thinking_streams_and_is_kept_with_the_turn(setup):
+    client, runners, deps, _ = setup
+    from diffusion.agent import TextEvent, ThinkingEvent
+
+    async def runner(req):
+        yield ThinkingEvent("Look at ")
+        yield ThinkingEvent("the timer.")
+        yield ToolEvent("Read", "Read session.ts")
+        yield TextEvent("ans")
+        yield DoneEvent(1, 0, False, "s")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 0, "text": "x"}]}
+    evs = parse_sse((await client.post(f"/api/chats/{cid}/turn", json=body)).text)
+    assert [e for e, _ in evs] == ["thinking", "thinking", "tool", "delta", "done"]
+    assert "seconds" in evs[-1][1]
+    t = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()["turns"][0]
+    assert t["thinking"] == "Look at the timer." and t["tools"] == ["Read session.ts"] and t["seconds"] >= 0
+
+
 async def test_overlapping_turns_serialize_and_both_persist(setup):
     client, runners, deps, _ = setup
     from diffusion.agent import TextEvent

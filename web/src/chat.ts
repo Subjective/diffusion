@@ -34,6 +34,10 @@ export interface Question {
   turn: number | null;
   /** Diff regions the model chose to show for this question (`show_code`). */
   shows: Show[];
+  /** The agent's reasoning for this turn, as its CLI reports it (shared by the turn's questions). */
+  thinking?: string;
+  /** How long the turn took, once it's done. */
+  seconds?: number;
   /** The guide version this answer saved, when it was asked to change the guide. */
   guideVersion?: number;
 }
@@ -186,8 +190,11 @@ export const useChat = create<State>((set, get) => {
               .then(() => useApp.getState().showVersion(v));
           } else if (event === "tool") {
             patch(get().chat, ids, (q) => (q.status === "pending" ? { tools: [...q.tools, d.summary as string] } : {}));
+          } else if (event === "thinking") {
+            patch(get().chat, ids, (q) => ({ thinking: (q.thinking ?? "") + (d.text as string) }));
           } else if (event === "done") {
-            patch(get().chat, ids, () => ({ status: "answered" }));
+            const seconds = typeof d.seconds === "number" ? d.seconds : undefined;
+            patch(get().chat, ids, () => ({ status: "answered", seconds }));
           } else if (event === "error") {
             patch(get().chat, ids, (q) => ({ status: "error", answer: q.answer || "" }));
             set({ error: String(d.message) });
@@ -313,6 +320,8 @@ interface WireChat {
     tools: string[];
     shows?: (Show & { n: number })[];
     guide_version?: number;
+    thinking?: string;
+    seconds?: number;
     status: string;
   }[];
 }
@@ -340,6 +349,8 @@ export function fromWire(c: WireChat): Chat {
         tools: t.tools,
         shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
         guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
+        thinking: t.thinking || undefined,
+        seconds: t.seconds,
       });
     });
   });

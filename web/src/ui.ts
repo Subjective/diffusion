@@ -28,6 +28,8 @@ interface UI {
   hoverSub: number | null;
   pinStep: number | null;
   pinSub: number | null;
+  /** Which of the pinned step's (or substep's) refs h/l last moved to. */
+  refAt: number | null;
   /** Go-to-definition preview under a row. */
   peek: Peek | null;
 
@@ -43,6 +45,8 @@ interface UI {
   setHover(keys: string[], step?: number | null, sub?: number | null): void;
   focus(keys: string[], files: string[], step?: number | null, sub?: number | null): void;
   clearPin(): void;
+  /** Scroll to and flash one of the pinned item's refs, keeping the pin. */
+  showRef(i: number, keys: string[], files: string[]): void;
   setPeek(p: Peek | null): void;
 }
 
@@ -71,6 +75,7 @@ export const useUI = create<UI>((set, get) => ({
   hoverSub: null,
   pinStep: null,
   pinSub: null,
+  refAt: null,
   peek: null,
 
   init(prKey, defaultsCollapsed) {
@@ -85,6 +90,7 @@ export const useUI = create<UI>((set, get) => ({
       pinRows: new Set(),
       pinStep: null,
       pinSub: null,
+      refAt: null,
     });
   },
   toggleCollapsed(path, value) {
@@ -147,12 +153,27 @@ export const useUI = create<UI>((set, get) => ({
         hideSkip: false,
         pinStep,
         pinSub: same ? null : sub,
+        refAt: step == null ? s.refAt : null,
         pinRows: step == null ? s.pinRows : pinStep == null ? new Set() : new Set(keys),
         flash: { keys: new Set(keys), n: s.flash.n + 1 },
         scrollTo: { keys, n: (s.scrollTo?.n ?? 0) + 1 },
       };
     });
   },
-  clearPin: () => set({ pinStep: null, pinSub: null, pinRows: new Set() }),
+  clearPin: () => set({ pinStep: null, pinSub: null, pinRows: new Set(), refAt: null }),
+  showRef(i, keys, files) {
+    if (!keys.length) return;
+    set((s) => {
+      const collapsed = { ...s.collapsed };
+      for (const f of files) collapsed[f] = false;
+      return {
+        collapsed,
+        hideSkip: false,
+        refAt: i,
+        flash: { keys: new Set(keys), n: s.flash.n + 1 },
+        scrollTo: { keys, n: (s.scrollTo?.n ?? 0) + 1 },
+      };
+    });
+  },
   setPeek: (peek) => set({ peek }),
 }));

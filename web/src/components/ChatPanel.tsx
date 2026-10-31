@@ -1,5 +1,7 @@
 import {
   ArrowUp,
+  Brain,
+  ChevronRight,
   Clock,
   FileCode,
   FlaskConical,
@@ -310,6 +312,7 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
       <div className="msg ai">
         <div className="ai-av">{ic(Sparkles, 14)}</div>
         <div className="ai-body">
+          <Trace q={qs[0]} pending={pending} />
           {qs.map((q) => (
             <div
               key={q.id}
@@ -344,6 +347,49 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
         </div>
       </div>
     </>
+  );
+}
+
+const secs = (s: number) => (s < 60 ? `${Math.max(1, Math.round(s))}s` : `${Math.round(s / 60)}m`);
+
+/** What the agent did for a turn: its reasoning and tool calls, folded into one quiet line. */
+function Trace({ q, pending }: { q: Question; pending: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { thinking, tools, seconds } = q;
+  if (!thinking && (pending || !tools.length)) return null; // while working, the live tool chips say enough
+  const verb = thinking ? (pending ? "Thinking" : "Thought") : pending ? "Working" : "Worked";
+  const label = [
+    seconds != null && !pending ? `${verb} for ${secs(seconds)}` : verb,
+    tools.length ? `${tools.length} tool${tools.length === 1 ? "" : "s"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className={`trace${open ? " open" : ""}`}>
+      <button type="button" className="trace-h" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {ic(Brain, 13)}
+        <span className={pending ? "trace-live" : undefined}>{label}</span>
+        {ic(ChevronRight, 12)}
+      </button>
+      {open && (
+        <div className="trace-b">
+          {thinking && (
+            <div className="trace-think">
+              <Markdown text={thinking} />
+            </div>
+          )}
+          {tools.length > 0 && (
+            <div className="trace-tools">
+              {tools.map((t, i) => (
+                <span key={i} className="tool-chip">
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

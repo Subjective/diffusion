@@ -18,6 +18,7 @@ from ..agent import (
     Runner,
     SandboxError,
     TextEvent,
+    ThinkingEvent,
     ToolEvent,
     ToolSpec,
     summarize_tool,
@@ -74,6 +75,7 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
             ResultMessage,
             StreamEvent,
             TextBlock,
+            ThinkingBlock,
             ToolUseBlock,
             create_sdk_mcp_server,
             tool,
@@ -119,6 +121,7 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
             max_turns=req.max_turns,
             resume=req.resume,
             fork_session=req.fork,
+            thinking={"type": "adaptive", "display": "summarized"},  # the model decides; we get readable text
             include_partial_messages=req.include_partial,
             env={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "ENABLE_TOOL_SEARCH": "false"},
             cli_path=cli_path,
@@ -131,12 +134,16 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                     delta = ev.get("delta", {})
                     if ev.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
                         yield TextEvent(delta["text"])
+                    elif ev.get("type") == "content_block_delta" and delta.get("type") == "thinking_delta":
+                        yield ThinkingEvent(delta["thinking"])
                 elif isinstance(m, AssistantMessage):
                     for b in m.content:
                         if isinstance(b, ToolUseBlock):
                             yield ToolEvent(b.name, summarize_tool(b.name, b.input))
                         elif isinstance(b, TextBlock) and not req.include_partial:
                             yield TextEvent(b.text)
+                        elif isinstance(b, ThinkingBlock) and b.thinking and not req.include_partial:
+                            yield ThinkingEvent(b.thinking + "\n")
                 elif isinstance(m, ResultMessage):
                     yield DoneEvent(m.num_turns, m.total_cost_usd, m.is_error, m.session_id, m.result)
 
