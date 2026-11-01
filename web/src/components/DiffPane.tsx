@@ -1,4 +1,13 @@
-import { ArrowDownAZ, ChevronsDownUp, EyeOff, MessageCircle, PanelLeft, Route } from "lucide-react";
+import {
+  ArrowDownAZ,
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  ChevronsDownUp,
+  EyeOff,
+  FolderTree,
+  MessageCircle,
+  Route,
+} from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { backStack, wordAtPoint } from "../lib/definition";
 import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
@@ -28,6 +37,19 @@ export function guideOrder(files: FD[], guide: Guide | null): FD[] {
     .map((f, i) => [f, i] as const)
     .sort((a, b) => score(a[0]) - score(b[0]) || a[1] - b[1])
     .map(([f]) => f);
+}
+
+/** What a closed diff shrinks to, beside the chat. */
+export function DiffRail() {
+  const count = useApp((s) => s.pr?.changed_files ?? 0);
+  return (
+    <button type="button" className="diff-rail" title="Open the diff" onClick={() => useUI.getState().openDiff(true)}>
+      {ic(ArrowLeftToLine, 15)}
+      <span>
+        Diff · {count} {count === 1 ? "file" : "files"}
+      </span>
+    </button>
+  );
 }
 
 export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; onAskComment: AskComment }) {
@@ -172,7 +194,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
     >
       <div className="toolbar">
         <button type="button" className={`icon-btn sm${rail ? " on" : ""}`} title="Files" onClick={toggleRail}>
-          {ic(PanelLeft, 15)}
+          {ic(FolderTree, 15)}
         </button>
         <span className="grow" />
         <button
@@ -209,6 +231,14 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
           onClick={() => collapseAll(!allCollapsed, [...skipFiles])}
         >
           {ic(ChevronsDownUp, 15)}
+        </button>
+        <button
+          type="button"
+          className="icon-btn sm"
+          title="Collapse the diff"
+          onClick={() => useUI.getState().openDiff(false)}
+        >
+          {ic(ArrowRightToLine, 15)}
         </button>
       </div>
       <div className="diff-body">

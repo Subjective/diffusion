@@ -273,7 +273,7 @@ tr.flash.f1 td.no {
 }
 .sub {
   display: grid;
-  grid-template-columns: 30px 1fr;
+  grid-template-columns: 30px minmax(0, 1fr);
   gap: 6px;
   padding: 6px 8px 6px 8px;
   margin-left: -1px;
@@ -303,6 +303,7 @@ tr.flash.f1 td.no {
   font-weight: 600;
 }
 .sub-s {
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.4;
@@ -342,6 +343,41 @@ td.mark {
 }
 .app.no-chat {
   grid-template-columns: var(--guide-w, 360px) minmax(0, 1fr) 0;
+}
+/* With the diff closed, the steps or the map fill the space, and the diff shrinks to a rail. */
+.app.no-diff {
+  grid-template-columns: minmax(0, 1fr) 36px var(--chat-w, 380px);
+}
+.app.no-diff.no-chat {
+  grid-template-columns: minmax(0, 1fr) 36px 0;
+}
+.diff-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--subtle);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.diff-rail:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.diff-rail span {
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+}
+.app.no-diff .diffpane,
+.app.no-diff .guide-wrap > .resizer {
+  display: none;
 }
 .guide-wrap {
   position: relative;
@@ -649,4 +685,15 @@ tr.cmt-row.closed > td {
 }
 .cmt-closed:is(:hover, :focus-visible) .cmt-ic > :last-child {
   visibility: visible;
+}
+
+/* In a narrow guide pane, substeps take the width under the step's number and actions. */
+@container guide (max-width: 340px) {
+  .subs {
+    margin-left: -34px;
+    margin-right: -36px;
+  }
+  .sub {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
 }
