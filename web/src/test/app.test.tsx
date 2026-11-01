@@ -159,9 +159,22 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   expect(end.classList.contains("on")).toBe(true);
   expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
 
-  // back to the steps
+  // leaving on a step's scene pins that step in the steps; coming back opens its scene
+  fireEvent.keyDown(window, { key: "j" });
+  fireEvent.keyDown(window, { key: "j" });
+  expect(card()).toContain("Teardown");
   fireEvent.click(document.querySelector('button[title="Steps"]')!);
   expect(document.querySelectorAll(".step")).toHaveLength(3);
+  expect(document.querySelector('.step[data-step="2"]')!.classList.contains("active")).toBe(true);
+  fireEvent.click(document.querySelector('.step[data-step="1"]')!);
+  fireEvent.click(document.querySelector('button[title="Map"]')!);
+  expect(card()).toContain("Scene 1 of 2");
+  expect(nums(".pin")).toEqual(["types.ts:2"]);
+  // a step with no scene opens the overview
+  fireEvent.click(document.querySelector('button[title="Steps"]')!);
+  fireEvent.click(document.querySelector('.step[data-step="3"]')!);
+  fireEvent.click(document.querySelector('button[title="Map"]')!);
+  expect(card()).toContain("Overview of 2");
 });
 
 test("substeps: hover/click highlight just their lines (multi-file); j/k walk substeps; gutter dots", async () => {

@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, FileCode, Maximize, Minus, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type Box, boundsOf, layoutView, type PlacedBlock } from "../lib/layout";
-import { refsTarget, useHunkIndex } from "../lib/linking";
+import { refsOf, refsTarget, useHunkIndex } from "../lib/linking";
 import { Inline } from "../lib/md";
 import { MAP_W, startResize } from "../lib/panes";
 import { type HunkIndex, rowsForRef } from "../lib/refs";
@@ -132,13 +132,30 @@ function MapBody() {
     [stop, stopBox, camera, frame],
   );
 
-  // A new view starts at its overview.
+  // A view opens on the scene for the step pinned in the steps, if it has one, else on its overview.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when the view changes.
   useEffect(() => {
-    setAt(0);
+    const step = useUI.getState().pinStep;
+    const i = step == null ? 0 : stops.findIndex((s) => !s.overview && s.step === step);
+    setAt(Math.max(0, i));
     setOn(null);
     vb.current = null;
+    if (i > 0) pin(refsOfBlocks(stops[i].blocks));
   }, [view]);
+  // Leaving the map on a step's scene pins that step for the steps view.
+  const here = useRef({ stop, idx });
+  here.current = { stop, idx };
+  useEffect(
+    () => () => {
+      const { stop: last, idx: hunks } = here.current;
+      const step = last?.step;
+      const g = useApp.getState().guide;
+      if (step == null || !g?.steps.some((s) => s.id === step)) return;
+      const t = refsTarget(refsOf(g, step), hunks);
+      useUI.setState({ pinStep: step, pinSub: null, pinRows: new Set(t.keys), refAt: null });
+    },
+    [],
+  );
   // Frame the stop; animate between stops, but not on first paint or a resize.
   const first = useRef(true);
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-frame only when the stop changes.

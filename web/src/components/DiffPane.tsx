@@ -1,4 +1,4 @@
-import { ArrowDownAZ, ChevronsDownUp, EyeOff, MessageCircle, PanelLeft, Route } from "lucide-react";
+import { ArrowDownAZ, ChevronsDownUp, EyeOff, FolderTree, MessageCircle, Route } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { backStack, wordAtPoint } from "../lib/definition";
 import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
@@ -172,7 +172,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
     >
       <div className="toolbar">
         <button type="button" className={`icon-btn sm${rail ? " on" : ""}`} title="Files" onClick={toggleRail}>
-          {ic(PanelLeft, 15)}
+          {ic(FolderTree, 15)}
         </button>
         <span className="grow" />
         <button

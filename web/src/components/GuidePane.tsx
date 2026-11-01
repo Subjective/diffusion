@@ -219,6 +219,12 @@ function Steps({ onAskStep }: GuidePaneProps) {
   const link = useStepLinking();
   const done = steps.filter((s) => readSteps[s.id]).length;
 
+  // Coming back from the map on a step's scene: show that step.
+  useEffect(() => {
+    const step = useUI.getState().pinStep;
+    if (step != null) document.querySelector(`.step[data-step="${step}"]`)?.scrollIntoView?.({ block: "center" });
+  }, []);
+
   useEffect(() => {
     // h/l: move through the pinned step's (or substep's) line ranges, which may be far apart in the diff.
     const stepRef = (dir: 1 | -1) => {
