@@ -33,7 +33,7 @@ const nums = (sel: string) =>
 
 beforeEach(() => {
   localStorage.clear();
-  useUI.setState({ mode: "guide" });
+  useUI.setState({ mode: "guide", pinStep: null, pinSub: null });
 });
 
 async function mount() {
@@ -98,18 +98,23 @@ test("viewed collapses; skippable row expands lockfile; gutter dot focuses step"
   expect(document.body.textContent).toContain("1/3");
 });
 
-test("the Diff toggle closes the diff in either mode; going to lines opens it", async () => {
+test("the diff collapses to a rail in either mode; the rail or going to lines opens it", async () => {
   await mount();
   const app = () => document.querySelector(".app")!.classList.contains("no-diff");
-  const btn = document.querySelector<HTMLElement>('.top button[title="Diff"]')!;
-  expect([app(), btn.classList.contains("on")]).toEqual([false, true]);
-  fireEvent.click(btn);
-  expect([app(), btn.classList.contains("on")]).toEqual([true, false]);
+  const collapse = () => fireEvent.click(document.querySelector('.diffpane button[title="Collapse the diff"]')!);
+  const rail = () => document.querySelector<HTMLElement>(".diff-rail");
+  expect([app(), rail()]).toEqual([false, null]);
+  collapse();
+  expect(app()).toBe(true);
+  expect(rail()!.textContent).toMatch(/Diff · \d+ files?/);
+  fireEvent.click(rail()!);
+  expect(app()).toBe(false);
+  collapse();
   fireEvent.click(document.querySelector('.step[data-step="2"]')!);
   expect(app()).toBe(false);
 });
 
-test("mini map boxes show what changed and link to their lines; expand opens the map", async () => {
+test("mini map boxes show what changed and link both ways with the steps; expand opens the map", async () => {
   await mount();
   const boxes = document.querySelectorAll<SVGGElement>(".mini-map .m-box");
   expect([...boxes].map((b) => [b.dataset.id, b.classList[1]])).toEqual([
@@ -121,8 +126,15 @@ test("mini map boxes show what changed and link to their lines; expand opens the
   expect(document.querySelectorAll(".mini-map .m-region")).toHaveLength(1);
   fireEvent.mouseEnter(boxes[1]);
   expect(nums(".hl")).toEqual(["session.ts:6", "session.ts:7"]);
-  fireEvent.click(boxes[2]);
-  expect(nums(".pin")).toEqual([]); // a mini map click scrolls and flashes, like a ref chip
+  expect(document.querySelector('.step[data-step="2"]')!.classList.contains("hover")).toBe(true);
+  fireEvent.mouseLeave(document.querySelector(".mini-map")!);
+  expect(document.querySelector(".mini-map svg.dim")).toBeNull();
+  fireEvent.mouseEnter(document.querySelector('.step[data-step="1"]')!);
+  expect(document.querySelector(".mini-map .m-box.lit")!.getAttribute("data-id")).toBe("types");
+  fireEvent.mouseLeave(document.querySelector('.step[data-step="1"]')!);
+  fireEvent.click(boxes[1]);
+  expect(document.querySelector('.step[data-step="2"]')!.classList.contains("active")).toBe(true);
+  expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
   fireEvent.click(document.querySelector('button[title="Open the map"]')!);
   expect(document.querySelector(".guide.map")).toBeTruthy();
   expect(document.querySelector(".step")).toBeNull();
@@ -135,14 +147,14 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   await waitFor(() => expect(document.querySelector(".guide.map .m-box")).toBeTruthy());
   const card = () => document.querySelector(".map-card")!.textContent;
   const lit = () => [...document.querySelectorAll(".guide.map .m-box.lit")].map((b) => (b as SVGGElement).dataset.id);
-  expect(card()).toContain("Overview of 2");
+  expect(card()).toContain("0/2");
   expect(card()).toContain("Session lifecycle");
   const full = () => document.querySelector(".app")!.classList.contains("no-diff");
   expect(full()).toBe(true); // the map fills the space; the diff opens on demand
   expect(document.querySelector(".guide.map svg")!.classList.contains("dim")).toBe(false);
 
   fireEvent.keyDown(window, { key: "j" });
-  expect(card()).toContain("Scene 1 of 2");
+  expect(card()).toContain("1/2");
   expect(card()).toContain("Types");
   expect(lit()).toEqual(["types"]);
   expect(nums(".pin")).toEqual(["types.ts:2"]);
@@ -158,7 +170,7 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   fireEvent.keyDown(window, { key: "k" });
   expect(card()).toContain("Types");
   fireEvent.keyDown(window, { key: "ArrowLeft" });
-  expect(card()).toContain("Overview");
+  expect(card()).toContain("0/2");
   expect(nums(".pin")).toEqual([]);
 
   // hover peeks every range a block cites; click pins its lines
@@ -172,11 +184,9 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   expect(end.classList.contains("on")).toBe(true);
   expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
   expect(full()).toBe(false); // clicking a box opens the diff at its lines
-  const diffBtn = () => document.querySelector('.top button[title="Diff"]')!;
-  expect(diffBtn().classList.contains("on")).toBe(true);
-  fireEvent.click(diffBtn());
-  expect([full(), diffBtn().classList.contains("on")]).toEqual([true, false]);
-  fireEvent.click(diffBtn());
+  fireEvent.click(document.querySelector('.diffpane button[title="Collapse the diff"]')!);
+  expect(full()).toBe(true);
+  fireEvent.click(document.querySelector(".diff-rail")!);
   expect(full()).toBe(false);
 
   // leaving on a step's scene pins that step in the steps; coming back opens its scene
@@ -188,13 +198,13 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   expect(document.querySelector('.step[data-step="2"]')!.classList.contains("active")).toBe(true);
   fireEvent.click(document.querySelector('.step[data-step="1"]')!);
   fireEvent.click(document.querySelector('button[title="Map"]')!);
-  expect(card()).toContain("Scene 1 of 2");
+  expect(card()).toContain("1/2");
   expect(nums(".pin")).toEqual(["types.ts:2"]);
   // a step with no scene opens the overview
   fireEvent.click(document.querySelector('button[title="Steps"]')!);
   fireEvent.click(document.querySelector('.step[data-step="3"]')!);
   fireEvent.click(document.querySelector('button[title="Map"]')!);
-  expect(card()).toContain("Overview of 2");
+  expect(card()).toContain("0/2");
 });
 
 test("substeps: hover/click highlight just their lines (multi-file); j/k walk substeps; gutter dots", async () => {

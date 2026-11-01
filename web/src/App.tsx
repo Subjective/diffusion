@@ -4,7 +4,7 @@ import { type Question, useChat } from "./chat";
 import { AskPopup } from "./components/AskPopup";
 import { type ChatLinkProps, ChatPanel } from "./components/ChatPanel";
 import type { AskComment } from "./components/Comments";
-import { DiffPane } from "./components/DiffPane";
+import { DiffPane, DiffRail } from "./components/DiffPane";
 import { GuidePane, NoGuide } from "./components/GuidePane";
 import { ic } from "./components/icons";
 import { MapPane } from "./components/MapPane";
@@ -184,6 +184,7 @@ export function App() {
         >
           {map ? <MapPane onWidth={panes.setGuide} /> : <GuidePane onAskStep={askStep} onWidth={panes.setGuide} />}
           <DiffPane extras={badges} onAskComment={askComment} />
+          {noDiff && <DiffRail />}
           {chatOpen ? <ChatPanel onWidth={panes.setChat} link={chatLink} /> : <aside className="chat" />}
         </main>
       )}

@@ -87,11 +87,17 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
   );
 }
 
-/** The overview view at thumbnail size: hovering or clicking a box works on its lines, and expand opens the map. */
+/** The overview view at thumbnail size, linked both ways with the steps: a box goes to its lines and its step, a
+ *  hovered or pinned step lights its boxes, and expand opens the map. */
 function MiniMap() {
   const view = useApp((s) => s.guide?.views?.[0]);
   const idx = useHunkIndex();
   const layout = useMemo(() => (view ? layoutView(view) : null), [view]);
+  const step = useUI((s) => s.hoverStep ?? s.pinStep);
+  const lit = useMemo(() => {
+    const ids = view?.blocks.filter((b) => b.step != null && b.step === step).map((b) => b.id);
+    return ids?.length ? new Set(ids) : null;
+  }, [view, step]);
   if (!view || !layout) return null;
   return (
     <section className="sec">
@@ -111,10 +117,11 @@ function MiniMap() {
         <MapCanvas
           layout={layout}
           idx={idx}
-          onEnter={(b) => useUI.getState().setHover(refsTarget(b.refs, idx).keys)}
+          lit={lit}
+          onEnter={(b) => useUI.getState().setHover(refsTarget(b.refs, idx).keys, b.step)}
           onPick={(b) => {
             const t = refsTarget(b.refs, idx);
-            useUI.getState().focus(t.keys, t.files);
+            useUI.getState().focus(t.keys, t.files, b.step);
           }}
         />
       </div>

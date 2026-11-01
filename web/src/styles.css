@@ -211,6 +211,7 @@ code {
 /* ---------- guide pane ---------- */
 .guide {
   overflow: auto;
+  container: guide / inline-size;
   background: var(--panel);
   border-right: 1px solid var(--border);
   padding: 20px 16px 48px;
@@ -224,6 +225,7 @@ code {
 }
 .meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin: 0 4px;
@@ -532,6 +534,9 @@ svg.dim .m-region {
   font-weight: 500;
   letter-spacing: 0.02em;
 }
+.map-count {
+  font-family: var(--mono);
+}
 .map-card-h .icon-btn:disabled {
   opacity: 0.35;
   pointer-events: none;
@@ -648,7 +653,7 @@ svg.dim .m-region {
 .step {
   position: relative;
   display: grid;
-  grid-template-columns: 24px 1fr auto;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
   padding: 10px 8px 10px 10px;
@@ -704,6 +709,7 @@ svg.dim .m-region {
   color: var(--subtle);
 }
 .step .s {
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
@@ -719,6 +725,7 @@ svg.dim .m-region {
   margin-top: 6px;
 }
 .ref {
+  overflow-wrap: anywhere;
   font: 11px var(--mono);
   color: var(--subtle);
   background: var(--chip);

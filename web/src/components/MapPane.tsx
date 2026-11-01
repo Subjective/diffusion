@@ -355,37 +355,35 @@ function MapBody() {
         </button>
       </div>
       <div className="map-float map-card" ref={card}>
-        <div className="map-card-h">
-          <span>
-            {stops.length > 1 ? `${at === 0 ? "Overview" : `Scene ${at}`} of ${stops.length - 1}` : "Overview"}
-          </span>
-          <span className="grow" />
-          {stops.length > 1 && (
-            <>
-              <span className="progress">
-                <i style={{ width: `${(at / (stops.length - 1)) * 100}%` }} />
-              </span>
-              <button
-                type="button"
-                className="icon-btn sm"
-                title="Previous (k or ←)"
-                disabled={at === 0}
-                onClick={() => go(at - 1)}
-              >
-                {ic(ChevronLeft, 15)}
-              </button>
-              <button
-                type="button"
-                className="icon-btn sm"
-                title="Next (j or →)"
-                disabled={at === stops.length - 1}
-                onClick={() => go(at + 1)}
-              >
-                {ic(ChevronRight, 15)}
-              </button>
-            </>
-          )}
-        </div>
+        {stops.length > 1 && (
+          <div className="map-card-h">
+            <span className="map-count">
+              {at}/{stops.length - 1}
+            </span>
+            <span className="progress">
+              <i style={{ width: `${(at / (stops.length - 1)) * 100}%` }} />
+            </span>
+            <span className="grow" />
+            <button
+              type="button"
+              className="icon-btn sm"
+              title="Previous (k or ←)"
+              disabled={at === 0}
+              onClick={() => go(at - 1)}
+            >
+              {ic(ChevronLeft, 15)}
+            </button>
+            <button
+              type="button"
+              className="icon-btn sm"
+              title="Next (j or →)"
+              disabled={at === stops.length - 1}
+              onClick={() => go(at + 1)}
+            >
+              {ic(ChevronRight, 15)}
+            </button>
+          </div>
+        )}
         <div className="map-card-t">
           {stop.step != null && <span className="dot">{stop.step}</span>}
           {stop.title}
