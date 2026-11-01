@@ -4,7 +4,7 @@ Thanks for helping. Bug reports, results from different agents and models, and p
 
 ## Setup
 
-You need `git`, [`uv`](https://docs.astral.sh/uv/) (Python 3.12+), and Node 24+ (pinned in `.node-version`).
+You need `git`, [`uv`](https://docs.astral.sh/uv/) (Python 3.12+), and Node 22+ (pinned in `.node-version`).
 
 ```bash
 make install        # engine deps (uv sync) + web deps (npm install)
@@ -59,7 +59,8 @@ cd engine && uv run pytest -m live
 
 ## Releasing
 
-Bump `version` in `engine/pyproject.toml` (and in the `plugin.json` files under `plugins/diffusion/`), merge, then push
+Bump `version` in `engine/pyproject.toml`, the `plugin.json` files under `plugins/diffusion/`, and the
+`diffusion-review==` pin in the review skill (a test checks they match), merge, then push
 a matching tag: `git tag v0.2.0 && git push origin v0.2.0`. The `Release` workflow builds the wheel with the UI,
 publishes it to PyPI as `diffusion-review` (trusted publishing, from the `pypi` environment), and attaches it to a
 GitHub release.

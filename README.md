@@ -45,7 +45,7 @@ earlier versions stay in its history.
 
 For a short narrated, animated video of the change instead, run `/diffusion:video` the same way (`$diffusion:video`
 in Codex). It renders locally with [HyperFrames](https://github.com/heygen-com/hyperframes) and a Kokoro voice, and
-needs Node 22+, ffmpeg and uv.
+needs ffmpeg and uv.
 
 ## Prerequisites
 
@@ -55,7 +55,7 @@ needs Node 22+, ffmpeg and uv.
 
 ## Run from source
 
-With Node 24+:
+With Node 22+:
 
 ```bash
 make install
