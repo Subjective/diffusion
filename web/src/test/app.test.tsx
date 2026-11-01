@@ -98,6 +98,17 @@ test("viewed collapses; skippable row expands lockfile; gutter dot focuses step"
   expect(document.body.textContent).toContain("1/3");
 });
 
+test("the Diff toggle closes the diff in either mode; going to lines opens it", async () => {
+  await mount();
+  const app = () => document.querySelector(".app")!.classList.contains("no-diff");
+  const btn = document.querySelector<HTMLElement>('.top button[title="Diff"]')!;
+  expect([app(), btn.classList.contains("on")]).toEqual([false, true]);
+  fireEvent.click(btn);
+  expect([app(), btn.classList.contains("on")]).toEqual([true, false]);
+  fireEvent.click(document.querySelector('.step[data-step="2"]')!);
+  expect(app()).toBe(false);
+});
+
 test("mini map boxes show what changed and link to their lines; expand opens the map", async () => {
   await mount();
   const boxes = document.querySelectorAll<SVGGElement>(".mini-map .m-box");
@@ -126,7 +137,7 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   const lit = () => [...document.querySelectorAll(".guide.map .m-box.lit")].map((b) => (b as SVGGElement).dataset.id);
   expect(card()).toContain("Overview of 2");
   expect(card()).toContain("Session lifecycle");
-  const full = () => document.querySelector(".app")!.classList.contains("map-full");
+  const full = () => document.querySelector(".app")!.classList.contains("no-diff");
   expect(full()).toBe(true); // the map fills the space; the diff opens on demand
   expect(document.querySelector(".guide.map svg")!.classList.contains("dim")).toBe(false);
 

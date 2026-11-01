@@ -20,8 +20,8 @@ interface UI {
   readSteps: Record<number, boolean>;
   order: Order;
   mode: Mode;
-  /** In map mode, whether the diff is open beside the map; closed, the map fills the space. */
-  codeOpen: boolean;
+  /** Whether the diff pane is open. It starts open with the steps and closed on the map; closed, the left pane fills the space. */
+  diffOpen: boolean;
   hideSkip: boolean;
   rail: boolean;
   hideComments: boolean;
@@ -48,7 +48,7 @@ interface UI {
   toggleRead(step: number): void;
   setOrder(o: Order): void;
   setMode(m: Mode): void;
-  openCode(on: boolean): void;
+  openDiff(on: boolean): void;
   toggleHideSkip(): void;
   toggleRail(): void;
   toggleHideComments(): void;
@@ -56,7 +56,8 @@ interface UI {
   resolve(title: string, on?: boolean): void;
 
   setHover(keys: string[], step?: number | null, sub?: number | null): void;
-  /** Scroll to, flash and (given a step) pin lines. `pin` pins them without a step, as a map block or scene does. */
+  /** Scroll to, flash and (given a step) pin lines, opening the diff. `pin` pins them without a step and leaves the
+   *  diff as it is, as the map's blocks and scenes do. */
   focus(keys: string[], files: string[], step?: number | null, sub?: number | null, pin?: boolean): void;
   clearPin(): void;
   /** Scroll to and flash one of the pinned item's refs, keeping the pin. */
@@ -80,7 +81,7 @@ export const useUI = create<UI>((set, get) => ({
   readSteps: {},
   order: storage.get<Order>("rv-order", "guide"),
   mode: storage.get<Mode>("rv-mode", "guide"),
-  codeOpen: false,
+  diffOpen: storage.get<Mode>("rv-mode", "guide") !== "map",
   hideSkip: false,
   rail: storage.get("rv-rail", false),
   hideComments: storage.get("rv-hide-comments", false),
@@ -144,9 +145,9 @@ export const useUI = create<UI>((set, get) => ({
   },
   setMode(mode) {
     storage.set("rv-mode", mode);
-    set({ mode, codeOpen: false });
+    set({ mode, diffOpen: mode !== "map" });
   },
-  openCode: (codeOpen) => set({ codeOpen }),
+  openDiff: (diffOpen) => set({ diffOpen }),
   toggleHideSkip: () => set((s) => ({ hideSkip: !s.hideSkip })),
   toggleHideComments() {
     const hideComments = !get().hideComments;
@@ -187,6 +188,8 @@ export const useUI = create<UI>((set, get) => ({
       return {
         collapsed,
         hideSkip: false,
+        // Going to lines opens the diff; the map's scenes (which pin) don't, so the map can stay full size.
+        diffOpen: s.diffOpen || !pin,
         pinStep,
         pinSub: same ? null : sub,
         refAt: step == null && !pin ? s.refAt : null,
@@ -205,6 +208,7 @@ export const useUI = create<UI>((set, get) => ({
       return {
         collapsed,
         hideSkip: false,
+        diffOpen: true,
         refAt: i,
         flash: { keys: new Set(keys), n: s.flash.n + 1 },
         scrollTo: { keys, n: (s.scrollTo?.n ?? 0) + 1 },

@@ -208,7 +208,7 @@ function MapBody() {
   const pick = (b: Block) => {
     setPeek(null);
     setOn(b.id);
-    if (b.refs.length) useUI.getState().openCode(true);
+    if (b.refs.length) useUI.getState().openDiff(true);
     pin(b.refs);
   };
 

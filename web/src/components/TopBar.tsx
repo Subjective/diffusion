@@ -66,17 +66,17 @@ function ModeToggle() {
   );
 }
 
-/** On the map, the diff is a pane like the chat: closed until a box is clicked, toggled here. */
+/** The diff is a pane like the chat. It starts open with the steps and closed on the map; going to lines opens it. */
 function DiffToggle() {
-  const hasMap = useApp((s) => !!s.guide?.views?.length);
-  const { mode, codeOpen, openCode } = useUI();
-  if (!hasMap || mode !== "map") return null;
+  const pr = useApp((s) => s.pr);
+  const { diffOpen, openDiff } = useUI();
+  if (!pr) return null;
   return (
     <button
       type="button"
-      className={`icon-btn${codeOpen ? " on" : ""}`}
+      className={`icon-btn${diffOpen ? " on" : ""}`}
       title="Diff"
-      onClick={() => openCode(!codeOpen)}
+      onClick={() => openDiff(!diffOpen)}
     >
       {ic(FileDiff, 16)}
     </button>
