@@ -161,9 +161,11 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   expect(end.classList.contains("on")).toBe(true);
   expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
   expect(full()).toBe(false); // clicking a box opens the diff at its lines
-  fireEvent.click(document.querySelector('button[title="Close the diff"]')!);
-  expect(full()).toBe(true);
-  fireEvent.click(document.querySelector('button[title="Show the diff"]')!);
+  const diffBtn = () => document.querySelector('.top button[title="Diff"]')!;
+  expect(diffBtn().classList.contains("on")).toBe(true);
+  fireEvent.click(diffBtn());
+  expect([full(), diffBtn().classList.contains("on")]).toEqual([true, false]);
+  fireEvent.click(diffBtn());
   expect(full()).toBe(false);
 
   // leaving on a step's scene pins that step in the steps; coming back opens its scene

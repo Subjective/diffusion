@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, FileCode, FileDiff, Maximize, Minus, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileCode, Maximize, Minus, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type Box, boundsOf, layoutView, type PlacedBlock } from "../lib/layout";
 import { refsOf, refsTarget, useHunkIndex } from "../lib/linking";
@@ -211,7 +211,6 @@ function MapBody() {
     if (b.refs.length) useUI.getState().openCode(true);
     pin(b.refs);
   };
-  const codeOpen = useUI((s) => s.codeOpen);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -345,16 +344,6 @@ function MapBody() {
         </div>
       )}
       <div className="map-float map-zoom">
-        {!codeOpen && (
-          <button
-            type="button"
-            className="icon-btn sm"
-            title="Show the diff"
-            onClick={() => useUI.getState().openCode(true)}
-          >
-            {ic(FileDiff, 15)}
-          </button>
-        )}
         <button type="button" className="icon-btn sm" title="Zoom in" onClick={() => zoomAt(0.8)}>
           {ic(Plus, 15)}
         </button>

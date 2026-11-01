@@ -1,4 +1,15 @@
-import { Check, GitBranch, History, ListOrdered, Map as MapIcon, Moon, PanelRight, Route, Sun } from "lucide-react";
+import {
+  Check,
+  FileDiff,
+  GitBranch,
+  History,
+  ListOrdered,
+  Map as MapIcon,
+  Moon,
+  PanelRight,
+  Route,
+  Sun,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ago } from "../lib/time";
 import { useApp } from "../store";
@@ -17,6 +28,7 @@ export function TopBar() {
         <button type="button" className="icon-btn" title="Theme" onClick={toggleTheme}>
           {ic(theme === "dark" ? Sun : Moon, 17)}
         </button>
+        <DiffToggle />
         <button type="button" className={`icon-btn${chatOpen ? " on" : ""}`} title="Chat" onClick={() => toggleChat()}>
           {ic(PanelRight, 16)}
         </button>
@@ -51,6 +63,23 @@ function ModeToggle() {
         {ic(MapIcon, 16)}
       </button>
     </div>
+  );
+}
+
+/** On the map, the diff is a pane like the chat: closed until a box is clicked, toggled here. */
+function DiffToggle() {
+  const hasMap = useApp((s) => !!s.guide?.views?.length);
+  const { mode, codeOpen, openCode } = useUI();
+  if (!hasMap || mode !== "map") return null;
+  return (
+    <button
+      type="button"
+      className={`icon-btn${codeOpen ? " on" : ""}`}
+      title="Diff"
+      onClick={() => openCode(!codeOpen)}
+    >
+      {ic(FileDiff, 16)}
+    </button>
   );
 }
 
