@@ -1,30 +1,43 @@
-import { edgePath, layoutFlow, nodeWidth } from "./layout";
+import type { View } from "../types";
+import { boundsOf, boxWidth, edgePath, layoutView } from "./layout";
 
-test("layout ranks nodes top-to-bottom and routes edges", () => {
-  const l = layoutFlow(
-    [
-      { id: "start", label: "start()", step: 1 },
-      { id: "sched", label: "scheduleRefresh()", step: 2 },
-      { id: "refresh", label: "refresh()", step: 2 },
-      { id: "end", label: "end()", step: 5 },
-    ],
-    [
-      { from: "start", to: "sched", label: null, kind: "normal" },
-      { from: "sched", to: "refresh", label: "timer", kind: "normal" },
-      { from: "refresh", to: "sched", label: "ok", kind: "normal" },
-      { from: "refresh", to: "end", label: "err", kind: "error" },
-      { from: "refresh", to: "ghost", label: null, kind: "normal" },
-    ],
-  );
-  const y = Object.fromEntries(l.nodes.map((n) => [n.id, n.y]));
-  expect(y.start).toBeLessThan(y.sched);
-  expect(y.sched).toBeLessThan(y.refresh);
-  expect(y.refresh).toBeLessThan(y.end);
-  expect(l.edges).toHaveLength(4); // dangling edge to "ghost" dropped
-  expect(l.edges.every((e) => e.points.length >= 2)).toBe(true);
-  expect(l.edges.find((e) => e.label === "err")!.labelPos).toBeDefined();
-  expect(l.nodes.find((n) => n.id === "sched")!.w).toBe(nodeWidth("scheduleRefresh()"));
-  expect(l.width).toBeGreaterThan(0);
+const view: View = {
+  id: 1,
+  title: "Overview",
+  layout: "flow",
+  blocks: [
+    { id: "session", label: "session.ts", kind: "region", refs: [] },
+    { id: "start", label: "start()", kind: "box", parent: "session", step: 1, refs: [] },
+    { id: "sched", label: "scheduleRefresh()", kind: "box", parent: "session", step: 2, refs: [] },
+    { id: "refresh", label: "refresh()", kind: "box", parent: "session", step: 2, refs: [] },
+    { id: "end", label: "end()", kind: "box", refs: [] },
+  ],
+  arrows: [
+    { from: "start", to: "sched", label: null, kind: "call" },
+    { from: "sched", to: "refresh", label: "timer", kind: "event" },
+    { from: "refresh", to: "end", label: "err", kind: "error" },
+    { from: "end", to: "session", label: null, kind: "data" },
+  ],
+  scenes: [],
+};
+
+test("layout ranks boxes top-to-bottom, wraps regions around their boxes, and routes arrows", () => {
+  const l = layoutView(view);
+  const at = Object.fromEntries(l.blocks.map((b) => [b.id, b]));
+  expect(at.start.y).toBeLessThan(at.sched.y);
+  expect(at.sched.y).toBeLessThan(at.refresh.y);
+  expect(at.refresh.y).toBeLessThan(at.end.y);
+  for (const id of ["start", "sched", "refresh"]) {
+    const b = at[id];
+    const r = at.session;
+    expect(b.x >= r.x && b.y >= r.y + 20 && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h).toBe(true);
+  }
+  expect(at.end.y).toBeGreaterThanOrEqual(at.session.y + at.session.h);
+  expect(l.arrows).toHaveLength(4); // the arrow to a region is drawn straight
+  expect(l.arrows.every((a) => a.points.length >= 2)).toBe(true);
+  expect(l.arrows.find((a) => a.label === "err")!.labelPos).toBeDefined();
+  expect(at.sched.w).toBe(boxWidth(view.blocks[2]));
+  expect(boundsOf(l.blocks).w).toBeLessThanOrEqual(l.width);
 });
 
 test("edge path", () => {

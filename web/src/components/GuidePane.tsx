@@ -8,13 +8,14 @@ import {
   FileCode,
   Focus,
   GitPullRequest,
-  Info,
   ListOrdered,
+  Map as MapIcon,
+  Maximize2,
   MessageCircle,
-  Workflow,
   Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { layoutView } from "../lib/layout";
 import { readingOrder, refsOf, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { Inline } from "../lib/md";
 import { GUIDE_W, startResize } from "../lib/panes";
@@ -23,8 +24,8 @@ import { storage } from "../lib/storage";
 import { useApp } from "../store";
 import type { Ref, Step } from "../types";
 import { useUI } from "../ui";
-import { FlowGraph } from "./FlowGraph";
-import { CONTEXT_ICON, ic, SKIP_ICON, STEP_ICON } from "./icons";
+import { ic, SKIP_ICON, STEP_ICON } from "./icons";
+import { MapCanvas } from "./MapCanvas";
 
 export interface GuidePaneProps {
   onAskStep?: (step: Step) => void;
@@ -71,13 +72,7 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
               <Inline text={guide.tldr} />
             </p>
           </section>
-          <Notes />
-          {guide.flow.nodes.length > 0 && (
-            <section className="sec">
-              <div className="sec-h">{ic(Workflow, 13)}Flow</div>
-              <FlowGraph />
-            </section>
-          )}
+          <MiniMap />
           <Steps onAskStep={onAskStep} />
           <Skippable />
           <Uncovered />
@@ -92,41 +87,49 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
   );
 }
 
-/** Things a reviewer should know that the diff doesn't show. Risks first; items with refs link to code. */
-function Notes() {
-  const context = useApp((s) => s.guide!.context);
+/** The overview view at thumbnail size, linked both ways with the steps: a box goes to its lines and its step, a
+ *  hovered or pinned step lights its boxes, and expand opens the map. */
+function MiniMap() {
+  const view = useApp((s) => s.guide?.views?.[0]);
   const idx = useHunkIndex();
-  if (!context.length) return null;
-  const items = [...context].sort(
-    (a, b) => Number(b.icon === "risk" || b.icon === "security") - Number(a.icon === "risk" || a.icon === "security"),
-  );
+  const layout = useMemo(() => (view ? layoutView(view) : null), [view]);
+  const step = useUI((s) => s.hoverStep ?? s.pinStep);
+  const lit = useMemo(() => {
+    const ids = view?.blocks.filter((b) => b.step != null && b.step === step).map((b) => b.id);
+    return ids?.length ? new Set(ids) : null;
+  }, [view, step]);
+  if (!view || !layout) return null;
   return (
     <section className="sec">
-      <div className="sec-h">{ic(Info, 13)}Notes</div>
-      <ul className="notes" onMouseLeave={() => useUI.getState().setHover([])}>
-        {items.map((c, i) => {
-          const warn = c.icon === "risk" || c.icon === "security";
-          const t = c.refs?.length ? refsTarget(c.refs, idx) : null;
-          return (
-            <li
-              key={i}
-              className={`note${warn ? " warn" : ""}${t?.keys.length ? " linked" : ""}`}
-              title={c.icon}
-              onMouseEnter={() => useUI.getState().setHover(t?.keys ?? [])}
-              onClick={() => t?.keys.length && useUI.getState().focus(t.keys, t.files)}
-            >
-              {ic(CONTEXT_ICON[c.icon] ?? Info, 14)}
-              <span>
-                <Inline text={c.text} />
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="sec-h">
+        {ic(MapIcon, 13)}Map
+        <span className="grow" />
+        <button
+          type="button"
+          className="icon-btn sm"
+          title="Open the map"
+          onClick={() => useUI.getState().setMode("map")}
+        >
+          {ic(Maximize2, 13)}
+        </button>
+      </div>
+      <div className="mini-map" onMouseLeave={() => useUI.getState().setHover([])}>
+        <MapCanvas
+          layout={layout}
+          idx={idx}
+          lit={lit}
+          onEnter={(b) => useUI.getState().setHover(refsTarget(b.refs, idx).keys, b.step)}
+          onPick={(b) => {
+            const t = refsTarget(b.refs, idx);
+            useUI.getState().focus(t.keys, t.files, b.step);
+          }}
+        />
+      </div>
     </section>
   );
 }
 
+/** Things a reviewer should know that the diff doesn't show. Risks first; items with refs link to code. */
 function Header() {
   const pr = useApp((s) => s.pr)!;
   return (
@@ -222,6 +225,12 @@ function Steps({ onAskStep }: GuidePaneProps) {
     }`;
   const link = useStepLinking();
   const done = steps.filter((s) => readSteps[s.id]).length;
+
+  // Coming back from the map on a step's scene: show that step.
+  useEffect(() => {
+    const step = useUI.getState().pinStep;
+    if (step != null) document.querySelector(`.step[data-step="${step}"]`)?.scrollIntoView?.({ block: "center" });
+  }, []);
 
   useEffect(() => {
     // h/l: move through the pinned step's (or substep's) line ranges, which may be far apart in the diff.

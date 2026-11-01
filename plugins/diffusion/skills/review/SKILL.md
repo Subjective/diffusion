@@ -9,8 +9,8 @@ disable-model-invocation: true
 # Diffusion review
 
 You write a reviewer's guide to a set of changes, and Diffusion shows it next to the diff: steps to read in
-order, each linked to the exact lines, plus notes, a flow diagram and what's safe to skip. Your job is to make
-the review fast and correct: what matters, in what order, and what can be skipped.
+order, each linked to the exact lines, plus comments on the lines that matter, a map of the change and what's
+safe to skip. Your job is to make the review fast and correct: what matters, in what order, and what can be skipped.
 
 ## 1. Work out the target, the scope and the context
 
@@ -43,11 +43,12 @@ invent paths or line numbers.
 
 - `label`: a few words naming this version, e.g. "Full review" or "Parser only".
 - `tldr`: 1–2 plain sentences: what changes and the behavioural consequence.
-- `context` (shown as "Notes"): 0–4 things the reviewer **can't see in the diff** that would change how they
-  review it: a caller that depends on changed behaviour, an invariant or convention elsewhere, related
-  config, prior history. Use icon `risk` only for a likely problem worth checking. One sentence each (≤ 18
-  words). Add `refs` when a note is about specific changed lines. Don't repeat the TL;DR or a step summary;
-  an empty list is fine.
+- `comments`: 0–5 comments the reviewer sees under the lines they are about, like review comments on a PR.
+  Leave one only for something worth stopping on: a likely bug, an assumption to verify, or context the diff
+  can't show (a caller that depends on the change, an invariant elsewhere). `refs` are required and narrow.
+  `title`: 2–4 words naming the point ("Never re-armed", "Unit unclear"). `text`: 1–2 sentences. `tone`:
+  `bug` for a likely defect, `check` for something to verify, `note` (the default) for context. Don't repeat
+  a step summary; an empty list is fine.
 - `steps`: 3–8 steps in reading order (usually entry point → core logic → contracts → wiring → cleanup →
   tests), each a coherent concept to read together.
   - `title`: 1–3 words. `summary`: ≤ 25 words on what to look at and why. Inline `code` is fine.
@@ -58,9 +59,13 @@ invent paths or line numbers.
     with substeps can leave its own `refs` empty.
   - Every non-trivial change in scope must appear in some step. A change may appear in several steps with
     different line ranges.
-- `flow`: 3–8 nodes for the main functions or components and how control or data moves between them. Each
-  node belongs to a step (`step`, 1-based) and optionally a substep. Use `kind: "error"` for failure paths.
-  Labels like `refresh()`; edge labels ≤ 2 words. Leave it out when there's no meaningful flow.
+- `views`: one diagram of how the change fits together, which the reviewer can open as a map. 4–12 `box`
+  blocks for the main functions, types or components (labels like `refresh()`), grouped by `region` blocks
+  (a file, class or module) through `parent`. Each box cites the lines it stands for in `refs` and names its
+  `step`; a box for unchanged code that helps explain the change has no `refs`. `arrows` show how control or
+  data moves (`call`, `data`, `event`, `error`; labels ≤ 2 words). `scenes` walk the view outside-in: usually
+  one per step (with `step`), each lighting the blocks it is about, then a last one on the blocks your `bug`
+  and `check` comments sit on. Leave `views` out when the change has no meaningful structure.
 - `skippable`: changes that are pure formatting or trivially safe (`formatting` / `trivial`). Lockfiles,
   snapshots, generated, vendored, binary and rename-only files are detected already.
 

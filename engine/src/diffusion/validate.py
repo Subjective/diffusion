@@ -8,12 +8,29 @@ covers (and that aren't skippable) are reported as ``uncovered``.
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Callable
 
 from pydantic import ValidationError
 
 from .classify import classify
 from .hunks import DiffIndex, Hunk
-from .schema import Flow, Guide, GuideDraft, Issue, LineRef, Ref, Scope, SkipGroup, Step, Substep, Validation
+from .schema import (
+    Arrow,
+    Block,
+    Guide,
+    GuideDraft,
+    Issue,
+    LineRef,
+    Ref,
+    Scene,
+    Scope,
+    SkipGroup,
+    Step,
+    Substep,
+    Validation,
+    View,
+    ViewDraft,
+)
 
 # A ref is "coarse" if it spans a whole hunk this big (or a range this long). Steps should break these up.
 COARSE_LINES = 25
@@ -100,10 +117,9 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
             out += [m for m in mapped if m not in out]
         return out
 
-    # Steps, renumbered 1..n in order; old index → new id for flow mapping.
+    # Steps, renumbered 1..n in order; old index → new id, for blocks and scenes that name a step.
     steps: list[Step] = []
     step_map: dict[int, int] = {}
-    sub_map: dict[tuple[int, int], int] = {}
     for i, s in enumerate(draft.steps, start=1):
         refs = fix_refs(s.refs, f"step {i}")
         subs: list[Substep] = []
@@ -112,7 +128,6 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
             if not srefs:
                 issues.append(Issue(where=f"step {i}.{k}", problem="no valid refs; substep dropped"))
                 continue
-            sub_map[(i, k)] = len(subs) + 1
             subs.append(Substep(id=len(subs) + 1, title=sub.title, summary=sub.summary, refs=srefs))
         # A step's refs are its own plus its substeps' (so hovering the step highlights everything).
         for sub in subs:
@@ -140,20 +155,11 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
             skippable.append(SkipGroup(file=idx.by_id[ids[0]].file, hunks=ids, reason=g.reason))
             skip_ids.update(ids)
 
-    # Flow: nodes must point at surviving steps; edges at surviving nodes.
-    nodes, node_ids = [], set()
-    for n in draft.flow.nodes:
-        if n.step in step_map and n.id not in node_ids:
-            sub = sub_map.get((n.step, n.substep)) if n.substep else None
-            nodes.append(n.model_copy(update={"step": step_map[n.step], "substep": sub}))
-            node_ids.add(n.id)
-        else:
-            issues.append(
-                Issue(where=f"flow node {n.id!r}", problem=f"invalid step {n.step} or duplicate id")
-            )
-    edges = [e for e in draft.flow.edges if e.source in node_ids and e.target in node_ids]
-    if len(edges) != len(draft.flow.edges):
-        issues.append(Issue(where="flow", problem=f"{len(draft.flow.edges) - len(edges)} edges dropped"))
+    views: list[View] = []
+    for i, d in enumerate(draft.views, start=1):
+        v = _view(d, f"view {i}", len(views) + 1, step_map, fix_refs, issues)
+        if v:
+            views.append(v)
 
     uncovered = [
         h.id
@@ -161,10 +167,14 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
         if h.id not in covered and h.id not in skip_ids and in_scope(h.file, draft.scope)
     ]
 
-    context = [
-        {"icon": c.icon, "text": c.text, "refs": fix_refs(c.refs, f"note {i}")}
-        for i, c in enumerate(draft.context, start=1)
-    ]
+    # A comment whose refs all miss the diff has nowhere to sit, so it is dropped (and reported via its refs).
+    comments = []
+    for i, c in enumerate(draft.comments, start=1):
+        refs = fix_refs(c.refs, f"comment {i}")
+        if refs:
+            comments.append(
+                {"id": len(comments) + 1, "title": c.title, "text": c.text, "tone": c.tone, "refs": refs}
+            )
 
     return Guide.model_validate(
         {
@@ -172,9 +182,9 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
             "scope": draft.scope,
             "brief": draft.brief,
             "tldr": draft.tldr,
-            "context": context,
+            "comments": comments,
             "steps": steps,
-            "flow": Flow(nodes=nodes, edges=edges),
+            "views": views,
             "skippable": skippable,
             "uncovered": uncovered,
             "validation": Validation(
@@ -186,6 +196,58 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
             ),
         }
     )
+
+
+def _view(
+    d: ViewDraft,
+    where: str,
+    vid: int,
+    step_map: dict[int, int],
+    fix_refs: Callable[[list[LineRef], str], list[Ref]],
+    issues: list[Issue],
+) -> View | None:
+    """A view with its refs mapped onto the diff and its steps renumbered. Duplicate blocks, arrows and scene
+    entries that name a missing block, and parents that aren't regions are dropped and reported."""
+    blocks: list[Block] = []
+    for b in d.blocks:
+        if any(x.id == b.id for x in blocks):
+            issues.append(Issue(where=f"{where} block {b.id!r}", problem="duplicate id; block dropped"))
+            continue
+        refs = fix_refs(b.refs, f"{where} block {b.id!r}")
+        blocks.append(
+            Block(
+                id=b.id,
+                label=b.label,
+                kind=b.kind,
+                parent=b.parent,
+                step=step_map.get(b.step or 0),
+                refs=refs,
+            )
+        )
+    regions = {b.id for b in blocks if b.kind == "region"}
+    for b in blocks:
+        if b.parent is not None and (b.parent not in regions or b.parent == b.id):
+            issues.append(
+                Issue(where=f"{where} block {b.id!r}", problem=f"parent {b.parent!r} isn't a region")
+            )
+            b.parent = None
+    if not any(b.kind == "box" for b in blocks):
+        issues.append(Issue(where=where, problem="no boxes; view dropped"))
+        return None
+    ids = {b.id for b in blocks}
+    arrows = [Arrow.model_validate(a.model_dump()) for a in d.arrows if a.source in ids and a.target in ids]
+    if len(arrows) != len(d.arrows):
+        issues.append(
+            Issue(where=where, problem=f"{len(d.arrows) - len(arrows)} arrows name a missing block")
+        )
+    scenes: list[Scene] = []
+    for k, sc in enumerate(d.scenes, start=1):
+        lit = [x for x in sc.blocks if x in ids]
+        if len(lit) != len(sc.blocks):
+            issues.append(Issue(where=f"{where} scene {k}", problem="names a missing block"))
+        if lit:
+            scenes.append(Scene(title=sc.title, text=sc.text, blocks=lit, step=step_map.get(sc.step or 0)))
+    return View(id=vid, title=d.title, layout=d.layout, blocks=blocks, arrows=arrows, scenes=scenes)
 
 
 def _is_coarse(r: Ref, idx: DiffIndex) -> bool:

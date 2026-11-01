@@ -28,6 +28,8 @@ export interface Gutter {
   dots: Map<string, Dot[]>;
   /** Extra per-row content (question badges), by row key. */
   extras?: Map<string, ReactNode>;
+  /** Rows rendered under a line (guide comments), by row key. */
+  after?: Map<string, ReactNode>;
 }
 
 interface Props {
@@ -212,6 +214,7 @@ function HunkRows({ hunk, lang, gutter }: { hunk: Hunk; lang: string | null; gut
             tokens={tokens?.get(i)}
             dots={gutter.dots.get(key)}
             extra={gutter.extras?.get(key)}
+            after={gutter.after?.get(key)}
             file={hunk.file}
             pos={r.pos}
           />
@@ -354,11 +357,12 @@ interface RowProps {
   tokens?: LineTokens;
   dots?: Dot[];
   extra?: ReactNode;
+  after?: ReactNode;
   file: string;
   pos: number;
 }
 
-const DiffRow = memo(function DiffRow({ rk, type, old, nw, text, tokens, dots, extra, file, pos }: RowProps) {
+const DiffRow = memo(function DiffRow({ rk, type, old, nw, text, tokens, dots, extra, after, file, pos }: RowProps) {
   const hl = useUI((s) => s.hoverRows.has(rk));
   const pin = useUI((s) => s.pinRows.has(rk));
   const flashN = useUI((s) => (s.flash.keys.has(rk) ? s.flash.n : 0));
@@ -413,6 +417,7 @@ const DiffRow = memo(function DiffRow({ rk, type, old, nw, text, tokens, dots, e
           {extra}
         </td>
       </tr>
+      {after}
       {peek && <PeekRow peek={peek} />}
     </>
   );

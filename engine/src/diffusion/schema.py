@@ -13,11 +13,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 StepKind = Literal["entry", "core", "contract", "wiring", "cleanup", "test", "config", "docs"]
-ContextIcon = Literal["fact", "dependency", "risk", "history", "config", "security", "performance"]
+Tone = Literal["bug", "check", "note"]
 SkipReason = Literal[
     "lockfile", "generated", "snapshot", "vendored", "rename", "binary", "formatting", "trivial"
 ]
 Side = Literal["new", "old"]
+BlockKind = Literal["box", "region"]
+ArrowKind = Literal["call", "data", "event", "error"]
+Layout = Literal["flow"]
 
 
 class LineRef(BaseModel):
@@ -43,12 +46,14 @@ class Ref(BaseModel):
     end: int | None = None
 
 
-class ContextDraft(BaseModel):
-    icon: ContextIcon
-    text: str = Field(description="One sentence, ≤ 18 words. Inline `code` allowed.")
-    refs: list[LineRef] = Field(
-        default_factory=list, description="Optional: the changed lines this note is about."
+class CommentDraft(BaseModel):
+    title: str = Field(description="2–4 words naming the point, e.g. 'Never re-armed'.")
+    text: str = Field(description="1–2 sentences, ≤ 35 words. Inline `code` allowed.")
+    tone: Tone = Field(
+        default="note",
+        description="'bug' for a likely defect, 'check' for something worth verifying, 'note' for context.",
     )
+    refs: list[LineRef] = Field(min_length=1, description="The changed lines this comment is about.")
 
 
 class SubstepDraft(BaseModel):
@@ -74,27 +79,49 @@ class StepDraft(BaseModel):
     )
 
 
-class FlowNode(BaseModel):
-    id: str = Field(description="Short unique id, e.g. 'refresh'.")
-    label: str = Field(description="Function/component name, e.g. 'refresh()'.")
-    step: int = Field(description="1-based index of the step this node belongs to.")
-    substep: int | None = Field(
-        default=None, description="1-based substep index within the step, if specific."
+class BlockDraft(BaseModel):
+    id: str = Field(description="Short unique id within the view, e.g. 'refresh'.")
+    label: str = Field(
+        description="What the reader sees: a function, type or component name, e.g. 'refresh()'."
+    )
+    kind: BlockKind = Field(
+        default="box",
+        description="'box' for a piece of code; 'region' groups boxes (a file, class or module).",
+    )
+    parent: str | None = Field(default=None, description="Id of the region this box sits in.")
+    step: int | None = Field(default=None, description="1-based index of the step that covers this block.")
+    refs: list[LineRef] = Field(
+        default_factory=list,
+        description="The changed lines this block stands for. Leave empty for unchanged code shown as context.",
     )
 
 
-class FlowEdge(BaseModel):
-    source: str = Field(alias="from")
-    target: str = Field(alias="to")
-    label: str | None = Field(default=None, description="≤ 2 words, e.g. 'timer', 'ok'.")
-    kind: Literal["normal", "error"] = "normal"
+class ArrowDraft(BaseModel):
+    source: str = Field(alias="from", description="Block id.")
+    target: str = Field(alias="to", description="Block id.")
+    label: str | None = Field(default=None, description="≤ 2 words, e.g. 'fires', 'tokens'.")
+    kind: ArrowKind = Field(
+        default="call", description="'call', 'data' (a value passed along), 'event' (async), or 'error'."
+    )
 
     model_config = {"populate_by_name": True}
 
 
-class Flow(BaseModel):
-    nodes: list[FlowNode] = Field(default_factory=list, max_length=12)
-    edges: list[FlowEdge] = Field(default_factory=list)
+class SceneDraft(BaseModel):
+    title: str = Field(description="1–4 words, e.g. 'Arm the timer'.")
+    text: str = Field(description="1–2 sentences, ≤ 30 words. Inline `code` allowed.")
+    blocks: list[str] = Field(min_length=1, description="Ids of the blocks this scene frames and lights.")
+    step: int | None = Field(default=None, description="1-based index of the step this scene tells.")
+
+
+class ViewDraft(BaseModel):
+    title: str = Field(description="A few words, e.g. 'Token refresh'.")
+    layout: Layout = "flow"
+    blocks: list[BlockDraft] = Field(min_length=1, max_length=20)
+    arrows: list[ArrowDraft] = Field(default_factory=list)
+    scenes: list[SceneDraft] = Field(
+        default_factory=list, max_length=10, description="A walk through the view, outside-in."
+    )
 
 
 class SkipDraft(LineRef):
@@ -117,11 +144,13 @@ class GuideDraft(BaseModel):
         default="", description="What the reviewer cares about or already knows, passed on to chat."
     )
     tldr: str = Field(description="1–2 sentences: what changes and why it matters.")
-    context: list[ContextDraft] = Field(
-        default_factory=list, max_length=5, description="Notes: what the reviewer can't see in the diff."
+    comments: list[CommentDraft] = Field(
+        default_factory=list, max_length=8, description="Comments left on the changed lines they are about."
     )
     steps: list[StepDraft] = Field(min_length=1, max_length=12)
-    flow: Flow = Field(default_factory=Flow)
+    views: list[ViewDraft] = Field(
+        default_factory=list, max_length=4, description="Diagrams of the change; the first is the overview."
+    )
     skippable: list[SkipDraft] = Field(
         default_factory=list, description="Changes that are pure formatting or trivially safe."
     )
@@ -130,10 +159,46 @@ class GuideDraft(BaseModel):
 # ---------- validated output ----------
 
 
-class ContextItem(BaseModel):
-    icon: ContextIcon
+class Comment(BaseModel):
+    id: int
+    title: str
     text: str
-    refs: list[Ref] = Field(default_factory=list)
+    tone: Tone
+    refs: list[Ref]
+
+
+class Block(BaseModel):
+    id: str
+    label: str
+    kind: BlockKind
+    parent: str | None = None
+    step: int | None = None
+    refs: list[Ref]
+
+
+class Arrow(BaseModel):
+    source: str = Field(alias="from")
+    target: str = Field(alias="to")
+    label: str | None = None
+    kind: ArrowKind = "call"
+
+    model_config = {"populate_by_name": True}
+
+
+class Scene(BaseModel):
+    title: str
+    text: str
+    blocks: list[str]
+    step: int | None = None
+
+
+class View(BaseModel):
+    id: int
+    title: str
+    layout: Layout
+    blocks: list[Block]
+    arrows: list[Arrow]
+    scenes: list[Scene]
 
 
 class Substep(BaseModel):
@@ -180,9 +245,9 @@ class Guide(BaseModel):
     scope: Scope | None = None
     brief: str = ""
     tldr: str
-    context: list[ContextItem]
+    comments: list[Comment]
     steps: list[Step]
-    flow: Flow
+    views: list[View] = Field(default_factory=list)
     skippable: list[SkipGroup]
     uncovered: list[str]
     validation: Validation

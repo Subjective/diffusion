@@ -39,6 +39,7 @@ class Anchor(BaseModel):
     side: str = "new"
     code: str = ""
     step: int | None = None
+    comment: str | None = Field(default=None, description="Title and text of the guide comment asked about.")
     ui: dict | None = Field(default=None, description="Opaque client data; stored, not prompted.")
 
 
@@ -64,7 +65,7 @@ def seed_context(prep: Prepared, guide: dict | None) -> str:
     ]
     if guide:
         draft = guide.get("draft") or {
-            k: guide[k] for k in ("tldr", "context", "steps", "flow", "skippable") if k in guide
+            k: guide[k] for k in ("tldr", "comments", "steps", "views", "skippable") if k in guide
         }
         parts += ["## Reviewer's guide (JSON)", "```json", json.dumps(draft, ensure_ascii=False), "```"]
     return "\n".join(parts)
@@ -93,6 +94,8 @@ def format_turn(questions: list[Question], idx: DiffIndex) -> str:
             where = f"`{a.file}:{rng}`" + (f" ({a.side} side, hunk {hid})" if hid else f" ({a.side} side)")
             code = "\n".join(a.code.splitlines()[:MAX_ANCHOR_LINES])
             body.append(f"About {where}:\n```\n{code}\n```")
+            if a.comment:
+                body.append(f"Your guide left this comment on those lines: {a.comment}")
         body.append(q.text.strip())
         blocks.append("\n".join(x for x in [head, *body] if x))
     if multi:

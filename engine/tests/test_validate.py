@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from diffusion.hunks import parse_diff
 from diffusion.schema import GuideDraft
@@ -22,12 +23,12 @@ def hid(idx, path, n=0):
     return [h for h in idx.hunks if h.file == path][n].id
 
 
-def draft(steps, flow=None, skippable=None, **extra):
+def draft(steps, views=None, skippable=None, **extra):
     return GuideDraft.model_validate(
         {
             "tldr": "t",
             "steps": steps,
-            "flow": flow or {"nodes": [], "edges": []},
+            "views": views or [],
             "skippable": skippable or [],
             **extra,
         }
@@ -153,37 +154,54 @@ def test_agent_skippable_merged(idx):
     assert t not in g.uncovered
 
 
-def test_flow_nodes_remapped_and_dangling_dropped(idx):
+def test_views_mapped_onto_the_diff_and_steps_renumbered(idx):
     good = {"file": "src/auth/types.ts"}
-    flow = {
-        "nodes": [
-            {"id": "a", "label": "a()", "step": 2},
-            {"id": "b", "label": "b()", "step": 3},
-            {"id": "x", "label": "x()", "step": 1},
+    view = {
+        "title": "Overview",
+        "blocks": [
+            {"id": "auth", "label": "auth/", "kind": "region"},
+            {"id": "a", "label": "a()", "parent": "auth", "step": 2, "refs": [good]},
+            {"id": "b", "label": "b()", "parent": "a", "step": 3, "refs": [{"file": "nope.ts"}]},
+            {"id": "a", "label": "again"},
+            {"id": "ctx", "label": "login()"},
         ],
-        "edges": [{"from": "a", "to": "b"}, {"from": "a", "to": "x", "kind": "error"}],
+        "arrows": [{"from": "a", "to": "b", "label": "calls"}, {"from": "a", "to": "gone", "kind": "error"}],
+        "scenes": [
+            {"title": "One", "text": "t", "blocks": ["a", "gone"], "step": 2},
+            {"title": "Gone", "text": "t", "blocks": ["gone"]},
+        ],
     }
-    g = validate(draft([step({"file": "nope.ts"}), step(good), step({**good, "start": 1})], flow), idx)
-    assert [s.id for s in g.steps] == [1, 2]
-    assert [(n.id, n.step) for n in g.flow.nodes] == [("a", 1), ("b", 2)]
-    assert [(e.source, e.target) for e in g.flow.edges] == [("a", "b")]
-
-
-def test_edge_alias_serialises_as_from_to(idx):
-    g = validate(
-        draft(
-            all_code_steps(),
-            {"nodes": [{"id": "a", "label": "a", "step": 1}, {"id": "b", "label": "b", "step": 2}],
-             "edges": [{"from": "a", "to": "b"}]},
-        ),
-        idx,
-    )  # fmt: skip
-    assert g.model_dump(by_alias=True)["flow"]["edges"][0] == {
+    g = validate(draft([step({"file": "nope.ts"}), step(good), step({**good, "start": 1})], [view]), idx)
+    (v,) = g.views
+    assert [(b.id, b.parent, b.step, len(b.refs)) for b in v.blocks] == [
+        ("auth", None, None, 0),
+        ("a", "auth", 1, 1),
+        ("b", None, 2, 0),  # its parent isn't a region; its ref misses the diff (reported, block kept)
+        ("ctx", None, None, 0),  # unchanged code, shown as context
+    ]
+    assert [(a.source, a.target) for a in v.arrows] == [("a", "b")]
+    assert [(s.title, s.blocks, s.step) for s in v.scenes] == [("One", ["a"], 1)]
+    problems = " ".join(f"{i.where}: {i.problem}" for i in g.validation.issues)
+    for bit in (
+        "duplicate id",
+        "isn't a region",
+        "1 arrows name a missing block",
+        "scene 1: names a missing",
+    ):
+        assert bit in problems
+    assert g.model_dump(by_alias=True)["views"][0]["arrows"][0] == {
         "from": "a",
         "to": "b",
-        "label": None,
-        "kind": "normal",
+        "label": "calls",
+        "kind": "call",
     }
+
+
+def test_view_without_boxes_dropped(idx):
+    view = {"title": "Empty", "blocks": [{"id": "r", "label": "r", "kind": "region"}]}
+    g = validate(draft(all_code_steps(), [view]), idx)
+    assert g.views == []
+    assert any("view dropped" in i.problem for i in g.validation.issues)
 
 
 def test_substeps_validated_and_folded_into_step(idx):
@@ -197,14 +215,7 @@ def test_substeps_validated_and_folded_into_step(idx):
         },
         {"title": "Bogus", "summary": "c", "refs": [{"file": "nope.ts"}]},
     ]
-    nodes = [
-        {"id": "a", "label": "a", "step": 1, "substep": 2},
-        {"id": "b", "label": "b", "step": 1, "substep": 3},
-    ]
-    d = draft(
-        [{"title": "Refresh", "kind": "core", "summary": "s", "refs": [], "substeps": subs}],
-        flow={"nodes": nodes},
-    )
+    d = draft([{"title": "Refresh", "kind": "core", "summary": "s", "refs": [], "substeps": subs}])
     g = validate(d, idx)
     (s,) = g.steps
     assert [x.id for x in s.substeps] == [1, 2] and [x.title for x in s.substeps] == [
@@ -216,10 +227,6 @@ def test_substeps_validated_and_folded_into_step(idx):
         hid(idx, f),
         hid(idx, "src/auth/types.ts"),
     }  # step refs = union of substeps
-    assert [(n.id, n.substep) for n in g.flow.nodes] == [
-        ("a", 2),
-        ("b", None),
-    ]  # dropped substep → step-level
     assert any("substep dropped" in i.problem for i in g.validation.issues)
 
 
@@ -230,17 +237,25 @@ def test_coarse_refs_counted(idx):
     assert g.validation.coarse_refs == 0
 
 
-def test_note_refs_validated(idx):
+def test_comment_refs_validated(idx):
     t = {"file": "src/auth/types.ts"}
     d = draft(
         [step(t)],
-        context=[
-            {"icon": "risk", "text": "a", "refs": [t, {"file": "nope.ts"}]},
-            {"icon": "fact", "text": "b"},
+        comments=[
+            {"title": "A", "text": "a", "tone": "bug", "refs": [t, {"file": "nope.ts"}]},
+            {"title": "B", "text": "b", "refs": [{"file": "nope.ts"}]},
+            {"title": "C", "text": "c", "refs": [t]},
         ],
     )
     g = validate(d, idx)
-    assert [r.hunk for r in g.context[0].refs] == [hid(idx, "src/auth/types.ts")] and g.context[1].refs == []
+    # a comment whose refs all miss the diff is dropped; the rest are renumbered
+    assert [(c.id, c.title, c.tone) for c in g.comments] == [(1, "A", "bug"), (2, "C", "note")]
+    assert [r.hunk for r in g.comments[0].refs] == [hid(idx, "src/auth/types.ts")]
+
+
+def test_comments_need_refs():
+    with pytest.raises(ValidationError):
+        draft([step({"file": "src/auth/types.ts"})], comments=[{"title": "A", "text": "a", "refs": []}])
 
 
 def test_check_parses_text_and_explains_schema_errors(idx):

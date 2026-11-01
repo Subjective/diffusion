@@ -89,9 +89,21 @@ export const files: FileDiff[] = [
 
 export const guide: Guide = {
   tldr: "Sessions now refresh `tokens` before expiry.",
-  context: [
-    { icon: "fact", text: "Teardown runs on logout", refs: [{ hunk: "H1", side: "new", start: 6, end: 7 }] },
-    { icon: "risk", text: "No retry on 5xx" },
+  comments: [
+    {
+      id: 1,
+      title: "Teardown on logout",
+      text: "`end()` runs on logout too.",
+      tone: "note",
+      refs: [{ hunk: "H1", side: "new", start: 6, end: 7 }],
+    },
+    {
+      id: 2,
+      title: "No retry",
+      text: "A 5xx is not retried.",
+      tone: "bug",
+      refs: [{ hunk: "H2", side: "new", start: 2, end: 2 }],
+    },
   ],
   steps: [
     {
@@ -137,13 +149,42 @@ export const guide: Guide = {
       ],
     },
   ],
-  flow: {
-    nodes: [
-      { id: "a", label: "start()", step: 1 },
-      { id: "b", label: "end()", step: 2 },
-    ],
-    edges: [{ from: "a", to: "b", label: null, kind: "normal" }],
-  },
+  views: [
+    {
+      id: 1,
+      title: "Session lifecycle",
+      layout: "flow",
+      blocks: [
+        { id: "session", label: "session.ts", kind: "region", refs: [] },
+        {
+          id: "start",
+          label: "start()",
+          kind: "box",
+          parent: "session",
+          step: 3,
+          refs: [{ hunk: "H1", side: "new", start: 5, end: 5 }],
+        },
+        {
+          id: "end",
+          label: "end()",
+          kind: "box",
+          parent: "session",
+          step: 2,
+          refs: [{ hunk: "H1", side: "new", start: 6, end: 7 }],
+        },
+        { id: "types", label: "Session", kind: "box", step: 1, refs: [{ hunk: "H2", side: "new", start: 2, end: 2 }] },
+        { id: "login", label: "login()", kind: "box", refs: [] },
+      ],
+      arrows: [
+        { from: "login", to: "start", label: null, kind: "call" },
+        { from: "start", to: "end", label: "timer", kind: "event" },
+      ],
+      scenes: [
+        { title: "Types", text: "`Session` gains a timer.", blocks: ["types"], step: 1 },
+        { title: "Teardown", text: "`end()` clears it.", blocks: ["start", "end"], step: 2 },
+      ],
+    },
+  ],
   skippable: [{ file: "package-lock.json", hunks: ["H3"], reason: "lockfile" }],
   uncovered: [],
   validation: { total_refs: 2, invalid_refs: 0, clamped_refs: 0 },

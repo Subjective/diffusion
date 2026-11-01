@@ -1,69 +1,14 @@
 {
   "$defs": {
-    "ContextDraft": {
-      "properties": {
-        "icon": {
-          "enum": [
-            "fact",
-            "dependency",
-            "risk",
-            "history",
-            "config",
-            "security",
-            "performance"
-          ],
-          "title": "Icon",
-          "type": "string"
-        },
-        "text": {
-          "description": "One sentence, \u2264 18 words. Inline `code` allowed.",
-          "title": "Text",
-          "type": "string"
-        },
-        "refs": {
-          "description": "Optional: the changed lines this note is about.",
-          "items": {
-            "$ref": "#/$defs/LineRef"
-          },
-          "title": "Refs",
-          "type": "array"
-        }
-      },
-      "required": [
-        "icon",
-        "text"
-      ],
-      "title": "ContextDraft",
-      "type": "object"
-    },
-    "Flow": {
-      "properties": {
-        "nodes": {
-          "items": {
-            "$ref": "#/$defs/FlowNode"
-          },
-          "maxItems": 12,
-          "title": "Nodes",
-          "type": "array"
-        },
-        "edges": {
-          "items": {
-            "$ref": "#/$defs/FlowEdge"
-          },
-          "title": "Edges",
-          "type": "array"
-        }
-      },
-      "title": "Flow",
-      "type": "object"
-    },
-    "FlowEdge": {
+    "ArrowDraft": {
       "properties": {
         "from": {
+          "description": "Block id.",
           "title": "From",
           "type": "string"
         },
         "to": {
+          "description": "Block id.",
           "title": "To",
           "type": "string"
         },
@@ -77,13 +22,16 @@
             }
           ],
           "default": null,
-          "description": "\u2264 2 words, e.g. 'timer', 'ok'.",
+          "description": "\u2264 2 words, e.g. 'fires', 'tokens'.",
           "title": "Label"
         },
         "kind": {
-          "default": "normal",
+          "default": "call",
+          "description": "'call', 'data' (a value passed along), 'event' (async), or 'error'.",
           "enum": [
-            "normal",
+            "call",
+            "data",
+            "event",
             "error"
           ],
           "title": "Kind",
@@ -94,27 +42,45 @@
         "from",
         "to"
       ],
-      "title": "FlowEdge",
+      "title": "ArrowDraft",
       "type": "object"
     },
-    "FlowNode": {
+    "BlockDraft": {
       "properties": {
         "id": {
-          "description": "Short unique id, e.g. 'refresh'.",
+          "description": "Short unique id within the view, e.g. 'refresh'.",
           "title": "Id",
           "type": "string"
         },
         "label": {
-          "description": "Function/component name, e.g. 'refresh()'.",
+          "description": "What the reader sees: a function, type or component name, e.g. 'refresh()'.",
           "title": "Label",
           "type": "string"
         },
-        "step": {
-          "description": "1-based index of the step this node belongs to.",
-          "title": "Step",
-          "type": "integer"
+        "kind": {
+          "default": "box",
+          "description": "'box' for a piece of code; 'region' groups boxes (a file, class or module).",
+          "enum": [
+            "box",
+            "region"
+          ],
+          "title": "Kind",
+          "type": "string"
         },
-        "substep": {
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Id of the region this box sits in.",
+          "title": "Parent"
+        },
+        "step": {
           "anyOf": [
             {
               "type": "integer"
@@ -124,16 +90,64 @@
             }
           ],
           "default": null,
-          "description": "1-based substep index within the step, if specific.",
-          "title": "Substep"
+          "description": "1-based index of the step that covers this block.",
+          "title": "Step"
+        },
+        "refs": {
+          "description": "The changed lines this block stands for. Leave empty for unchanged code shown as context.",
+          "items": {
+            "$ref": "#/$defs/LineRef"
+          },
+          "title": "Refs",
+          "type": "array"
         }
       },
       "required": [
         "id",
-        "label",
-        "step"
+        "label"
       ],
-      "title": "FlowNode",
+      "title": "BlockDraft",
+      "type": "object"
+    },
+    "CommentDraft": {
+      "properties": {
+        "title": {
+          "description": "2\u20134 words naming the point, e.g. 'Never re-armed'.",
+          "title": "Title",
+          "type": "string"
+        },
+        "text": {
+          "description": "1\u20132 sentences, \u2264 35 words. Inline `code` allowed.",
+          "title": "Text",
+          "type": "string"
+        },
+        "tone": {
+          "default": "note",
+          "description": "'bug' for a likely defect, 'check' for something worth verifying, 'note' for context.",
+          "enum": [
+            "bug",
+            "check",
+            "note"
+          ],
+          "title": "Tone",
+          "type": "string"
+        },
+        "refs": {
+          "description": "The changed lines this comment is about.",
+          "items": {
+            "$ref": "#/$defs/LineRef"
+          },
+          "minItems": 1,
+          "title": "Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "text",
+        "refs"
+      ],
+      "title": "CommentDraft",
       "type": "object"
     },
     "LineRef": {
@@ -185,6 +199,49 @@
         "file"
       ],
       "title": "LineRef",
+      "type": "object"
+    },
+    "SceneDraft": {
+      "properties": {
+        "title": {
+          "description": "1\u20134 words, e.g. 'Arm the timer'.",
+          "title": "Title",
+          "type": "string"
+        },
+        "text": {
+          "description": "1\u20132 sentences, \u2264 30 words. Inline `code` allowed.",
+          "title": "Text",
+          "type": "string"
+        },
+        "blocks": {
+          "description": "Ids of the blocks this scene frames and lights.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Blocks",
+          "type": "array"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1-based index of the step this scene tells.",
+          "title": "Step"
+        }
+      },
+      "required": [
+        "title",
+        "text",
+        "blocks"
+      ],
+      "title": "SceneDraft",
       "type": "object"
     },
     "Scope": {
@@ -347,6 +404,52 @@
       ],
       "title": "SubstepDraft",
       "type": "object"
+    },
+    "ViewDraft": {
+      "properties": {
+        "title": {
+          "description": "A few words, e.g. 'Token refresh'.",
+          "title": "Title",
+          "type": "string"
+        },
+        "layout": {
+          "const": "flow",
+          "default": "flow",
+          "title": "Layout",
+          "type": "string"
+        },
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/BlockDraft"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Blocks",
+          "type": "array"
+        },
+        "arrows": {
+          "items": {
+            "$ref": "#/$defs/ArrowDraft"
+          },
+          "title": "Arrows",
+          "type": "array"
+        },
+        "scenes": {
+          "description": "A walk through the view, outside-in.",
+          "items": {
+            "$ref": "#/$defs/SceneDraft"
+          },
+          "maxItems": 10,
+          "title": "Scenes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "blocks"
+      ],
+      "title": "ViewDraft",
+      "type": "object"
     }
   },
   "properties": {
@@ -379,13 +482,13 @@
       "title": "Tldr",
       "type": "string"
     },
-    "context": {
-      "description": "Notes: what the reviewer can't see in the diff.",
+    "comments": {
+      "description": "Comments left on the changed lines they are about.",
       "items": {
-        "$ref": "#/$defs/ContextDraft"
+        "$ref": "#/$defs/CommentDraft"
       },
-      "maxItems": 5,
-      "title": "Context",
+      "maxItems": 8,
+      "title": "Comments",
       "type": "array"
     },
     "steps": {
@@ -397,8 +500,14 @@
       "title": "Steps",
       "type": "array"
     },
-    "flow": {
-      "$ref": "#/$defs/Flow"
+    "views": {
+      "description": "Diagrams of the change; the first is the overview.",
+      "items": {
+        "$ref": "#/$defs/ViewDraft"
+      },
+      "maxItems": 4,
+      "title": "Views",
+      "type": "array"
     },
     "skippable": {
       "description": "Changes that are pure formatting or trivially safe.",

@@ -3,9 +3,11 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 import { type Question, useChat } from "./chat";
 import { AskPopup } from "./components/AskPopup";
 import { type ChatLinkProps, ChatPanel } from "./components/ChatPanel";
-import { DiffPane } from "./components/DiffPane";
+import type { AskComment } from "./components/Comments";
+import { DiffPane, DiffRail } from "./components/DiffPane";
 import { GuidePane, NoGuide } from "./components/GuidePane";
 import { ic } from "./components/icons";
+import { MapPane } from "./components/MapPane";
 import { useQuestionBadges } from "./components/QuestionBadges";
 import { TopBar } from "./components/TopBar";
 import { refsTarget, useHunkIndex, useStepLinking } from "./lib/linking";
@@ -32,7 +34,10 @@ export function questionRows(q: Question, idx: HunkIndex): { keys: string[]; fil
 
 export function App() {
   const { theme, chatOpen, pr, error, loading, url, load, toggleChat } = useApp();
-  const panes = usePaneWidths(chatOpen);
+  const hasMap = useApp((s) => !!s.guide?.views?.length);
+  const map = useUI((s) => s.mode === "map") && hasMap;
+  const noDiff = useUI((s) => !s.diffOpen);
+  const panes = usePaneWidths(chatOpen, map);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -122,7 +127,16 @@ export function App() {
   );
   const chatLink: ChatLinkProps = { onHoverQ, onFocusQ, hoverQ, flashQ };
   const badges = useQuestionBadges(hoverQ, onHoverQ, revealQ);
-  const { ask, close } = useAsk();
+  const { ask, close, open } = useAsk();
+  const askComment: AskComment = useCallback(
+    (c, keys, at) => {
+      const rows = keys
+        .map((k) => document.querySelector<HTMLElement>(`tr.ln[data-rk="${CSS.escape(k)}"]`))
+        .filter((r): r is HTMLElement => !!r);
+      open(rows, at.x, at.y, { comment: `${c.title}. ${c.text}`, commentTitle: c.title });
+    },
+    [open],
+  );
 
   const askStep = useCallback(
     (s: Step) => {
@@ -162,14 +176,15 @@ export function App() {
         </main>
       ) : (
         <main
-          className={`app${chatOpen ? "" : " no-chat"}`}
+          className={`app${chatOpen ? "" : " no-chat"}${noDiff ? " no-diff" : ""}`}
           id="app"
           style={{ "--chat-w": `${panes.chat}px`, "--guide-w": `${panes.guide}px` } as CSSProperties}
           onMouseOver={onOver}
           onClickCapture={onClick}
         >
-          <GuidePane onAskStep={askStep} onWidth={panes.setGuide} />
-          <DiffPane extras={badges} />
+          {map ? <MapPane onWidth={panes.setGuide} /> : <GuidePane onAskStep={askStep} onWidth={panes.setGuide} />}
+          <DiffPane extras={badges} onAskComment={askComment} />
+          {noDiff && <DiffRail />}
           {chatOpen ? <ChatPanel onWidth={panes.setChat} link={chatLink} /> : <aside className="chat" />}
         </main>
       )}

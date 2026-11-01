@@ -1,4 +1,13 @@
-import { ArrowDownAZ, ChevronsDownUp, EyeOff, PanelLeft, Route } from "lucide-react";
+import {
+  ArrowDownAZ,
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  ChevronsDownUp,
+  EyeOff,
+  FolderTree,
+  MessageCircle,
+  Route,
+} from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { backStack, wordAtPoint } from "../lib/definition";
 import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
@@ -6,6 +15,7 @@ import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
 import { useApp } from "../store";
 import type { FileDiff as FD, Guide, Ref } from "../types";
 import { markDiffActivity, useUI } from "../ui";
+import { type AskComment, commentRows } from "./Comments";
 import { type Dot, FileDiff, type Gutter } from "./FileDiff";
 import { FileRail, fileInView } from "./FileRail";
 import { ic } from "./icons";
@@ -29,9 +39,23 @@ export function guideOrder(files: FD[], guide: Guide | null): FD[] {
     .map(([f]) => f);
 }
 
-export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
+/** What a closed diff shrinks to, beside the chat. */
+export function DiffRail() {
+  const count = useApp((s) => s.pr?.changed_files ?? 0);
+  return (
+    <button type="button" className="diff-rail" title="Open the diff" onClick={() => useUI.getState().openDiff(true)}>
+      {ic(ArrowLeftToLine, 15)}
+      <span>
+        Diff · {count} {count === 1 ? "file" : "files"}
+      </span>
+    </button>
+  );
+}
+
+export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; onAskComment: AskComment }) {
   const { files, guide } = useApp();
   const { order, setOrder, hideSkip, toggleHideSkip, collapseAll, scrollTo, rail, toggleRail } = useUI();
+  const { hideComments, toggleHideComments, resolved } = useUI();
   const scroller = useRef<HTMLDivElement>(null);
   const [current, setCurrent] = useState<string | null>(null);
 
@@ -150,7 +174,13 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
     });
   };
 
-  const gutter: Gutter = useMemo(() => ({ dots, extras }), [dots, extras]);
+  const comments = guide?.comments ?? [];
+  const open = comments.filter((c) => !resolved[c.title]).length;
+  const after = useMemo(
+    () => (hideComments ? undefined : commentRows(guide?.comments ?? [], idx, resolved, onAskComment)),
+    [guide, idx, resolved, hideComments, onAskComment],
+  );
+  const gutter: Gutter = useMemo(() => ({ dots, extras, after }), [dots, extras, after]);
   const allCollapsed = useUI((s) => files.length > 0 && files.every((f) => s.collapsed[f.path]));
 
   return (
@@ -164,7 +194,7 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
     >
       <div className="toolbar">
         <button type="button" className={`icon-btn sm${rail ? " on" : ""}`} title="Files" onClick={toggleRail}>
-          {ic(PanelLeft, 15)}
+          {ic(FolderTree, 15)}
         </button>
         <span className="grow" />
         <button
@@ -183,6 +213,17 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
         >
           {ic(EyeOff, 15)}
         </button>
+        {comments.length > 0 && (
+          <button
+            type="button"
+            className={`icon-btn sm cmt-tg${hideComments ? "" : " on"}`}
+            title={hideComments ? "Show comments" : "Hide comments"}
+            onClick={toggleHideComments}
+          >
+            {ic(MessageCircle, 15)}
+            {open > 0 && <span>{open}</span>}
+          </button>
+        )}
         <button
           type="button"
           className="icon-btn sm"
@@ -190,6 +231,14 @@ export function DiffPane({ extras }: { extras?: Gutter["extras"] }) {
           onClick={() => collapseAll(!allCollapsed, [...skipFiles])}
         >
           {ic(ChevronsDownUp, 15)}
+        </button>
+        <button
+          type="button"
+          className="icon-btn sm"
+          title="Collapse the diff"
+          onClick={() => useUI.getState().openDiff(false)}
+        >
+          {ic(ArrowRightToLine, 15)}
         </button>
       </div>
       <div className="diff-body">
