@@ -20,6 +20,8 @@ interface UI {
   readSteps: Record<number, boolean>;
   order: Order;
   mode: Mode;
+  /** In map mode, whether the diff is open beside the map; closed, the map fills the space. */
+  codeOpen: boolean;
   hideSkip: boolean;
   rail: boolean;
   hideComments: boolean;
@@ -46,6 +48,7 @@ interface UI {
   toggleRead(step: number): void;
   setOrder(o: Order): void;
   setMode(m: Mode): void;
+  openCode(on: boolean): void;
   toggleHideSkip(): void;
   toggleRail(): void;
   toggleHideComments(): void;
@@ -77,6 +80,7 @@ export const useUI = create<UI>((set, get) => ({
   readSteps: {},
   order: storage.get<Order>("rv-order", "guide"),
   mode: storage.get<Mode>("rv-mode", "guide"),
+  codeOpen: false,
   hideSkip: false,
   rail: storage.get("rv-rail", false),
   hideComments: storage.get("rv-hide-comments", false),
@@ -140,8 +144,9 @@ export const useUI = create<UI>((set, get) => ({
   },
   setMode(mode) {
     storage.set("rv-mode", mode);
-    set({ mode });
+    set({ mode, codeOpen: false });
   },
+  openCode: (codeOpen) => set({ codeOpen }),
   toggleHideSkip: () => set((s) => ({ hideSkip: !s.hideSkip })),
   toggleHideComments() {
     const hideComments = !get().hideComments;

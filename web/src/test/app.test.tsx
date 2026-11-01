@@ -126,6 +126,8 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   const lit = () => [...document.querySelectorAll(".guide.map .m-box.lit")].map((b) => (b as SVGGElement).dataset.id);
   expect(card()).toContain("Overview of 2");
   expect(card()).toContain("Session lifecycle");
+  const full = () => document.querySelector(".app")!.classList.contains("map-full");
+  expect(full()).toBe(true); // the map fills the space; the diff opens on demand
   expect(document.querySelector(".guide.map svg")!.classList.contains("dim")).toBe(false);
 
   fireEvent.keyDown(window, { key: "j" });
@@ -158,6 +160,11 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   fireEvent.click(end);
   expect(end.classList.contains("on")).toBe(true);
   expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
+  expect(full()).toBe(false); // clicking a box opens the diff at its lines
+  fireEvent.click(document.querySelector('button[title="Close the diff"]')!);
+  expect(full()).toBe(true);
+  fireEvent.click(document.querySelector('button[title="Show the diff"]')!);
+  expect(full()).toBe(false);
 
   // leaving on a step's scene pins that step in the steps; coming back opens its scene
   fireEvent.keyDown(window, { key: "j" });

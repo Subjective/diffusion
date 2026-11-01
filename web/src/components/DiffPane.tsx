@@ -1,4 +1,4 @@
-import { ArrowDownAZ, ChevronsDownUp, EyeOff, FolderTree, MessageCircle, Route } from "lucide-react";
+import { ArrowDownAZ, ChevronsDownUp, EyeOff, FolderTree, MessageCircle, Route, X } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { backStack, wordAtPoint } from "../lib/definition";
 import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
@@ -34,6 +34,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
   const { files, guide } = useApp();
   const { order, setOrder, hideSkip, toggleHideSkip, collapseAll, scrollTo, rail, toggleRail } = useUI();
   const { hideComments, toggleHideComments, resolved } = useUI();
+  const onMap = useUI((s) => s.mode === "map") && !!guide?.views?.length;
   const scroller = useRef<HTMLDivElement>(null);
   const [current, setCurrent] = useState<string | null>(null);
 
@@ -210,6 +211,16 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
         >
           {ic(ChevronsDownUp, 15)}
         </button>
+        {onMap && (
+          <button
+            type="button"
+            className="icon-btn sm"
+            title="Close the diff"
+            onClick={() => useUI.getState().openCode(false)}
+          >
+            {ic(X, 15)}
+          </button>
+        )}
       </div>
       <div className="diff-body">
         {rail && <FileRail files={files} skip={skipFiles} fileSteps={fileSteps} current={current} onPick={pickFile} />}

@@ -343,6 +343,18 @@ td.mark {
 .app.no-chat {
   grid-template-columns: var(--guide-w, 360px) minmax(0, 1fr) 0;
 }
+/* Map mode with the diff closed: the map fills the space beside the chat. */
+/* (the hidden diff leaves the grid, so the chat takes the second column) */
+.app.map-full {
+  grid-template-columns: minmax(0, 1fr) var(--chat-w, 380px);
+}
+.app.map-full.no-chat {
+  grid-template-columns: minmax(0, 1fr) 0;
+}
+.app.map-full .diffpane,
+.app.map-full .guide-wrap > .resizer {
+  display: none;
+}
 .guide-wrap {
   position: relative;
   min-height: 0;

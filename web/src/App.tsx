@@ -36,6 +36,7 @@ export function App() {
   const { theme, chatOpen, pr, error, loading, url, load, toggleChat } = useApp();
   const hasMap = useApp((s) => !!s.guide?.views?.length);
   const map = useUI((s) => s.mode === "map") && hasMap;
+  const mapFull = useUI((s) => !s.codeOpen) && map;
   const panes = usePaneWidths(chatOpen, map);
 
   useEffect(() => {
@@ -175,7 +176,7 @@ export function App() {
         </main>
       ) : (
         <main
-          className={`app${chatOpen ? "" : " no-chat"}`}
+          className={`app${chatOpen ? "" : " no-chat"}${mapFull ? " map-full" : ""}`}
           id="app"
           style={{ "--chat-w": `${panes.chat}px`, "--guide-w": `${panes.guide}px` } as CSSProperties}
           onMouseOver={onOver}
