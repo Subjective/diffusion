@@ -93,7 +93,19 @@ async function tokenize(code: string, lang: string): Promise<LineTokens[]> {
 }
 
 /** Tokens per hunk line index, keyed by `${hunk.id}:${i}`. Missing entries render as plain text. */
-export async function highlightHunk(hunk: Hunk, lang: string): Promise<Map<number, LineTokens>> {
+export function highlightHunk(hunk: Hunk, lang: string): Promise<Map<number, LineTokens>> {
+  // Cached per hunk, so the map's hover peek reuses what the diff already tokenized.
+  let p = hunkCache.get(hunk);
+  if (!p) {
+    p = tokenizeHunk(hunk, lang);
+    p.catch(() => hunkCache.delete(hunk));
+    hunkCache.set(hunk, p);
+  }
+  return p;
+}
+const hunkCache = new WeakMap<Hunk, Promise<Map<number, LineTokens>>>();
+
+async function tokenizeHunk(hunk: Hunk, lang: string): Promise<Map<number, LineTokens>> {
   const out = new Map<number, LineTokens>();
   const sides: Record<"old" | "new", number[]> = { old: [], new: [] };
   hunk.lines.forEach((ln, i) => {

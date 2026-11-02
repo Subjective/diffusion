@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, FileCode, Maximize, Minus, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { highlightHunk, type LineTokens, langFor } from "../lib/highlight";
 import { type Box, boundsOf, layoutView, type PlacedBlock } from "../lib/layout";
 import { refsOf, refsTarget, useHunkIndex } from "../lib/linking";
 import { Inline } from "../lib/md";
@@ -410,13 +411,14 @@ const MAX_PEEK_LINES = 10;
 
 /** Every range a block cites, with its lines from the diff, like the go-to-definition peek. */
 function BlockPeek({ block, idx }: { block: Block; idx: HunkIndex }) {
+  const tokens = useHunkTokens(block.refs, idx);
   return (
     <div className="peek" role="dialog" aria-label={block.label}>
       {block.refs.map((r, k) => {
         const h = idx.byId.get(r.hunk);
         const all = idx.rows.get(r.hunk) ?? [];
         const keep = new Set(rowsForRef(r, idx));
-        const lines = all.flatMap((row, i) => (keep.has(row) && h ? [{ row, text: h.lines[i].text }] : []));
+        const lines = all.flatMap((row, i) => (keep.has(row) && h ? [{ row, i, text: h.lines[i].text }] : []));
         const nums = lines.map((l) => l.row.new ?? l.row.old).filter((n): n is number => n != null);
         const path = h?.file ?? "";
         return (
@@ -437,10 +439,10 @@ function BlockPeek({ block, idx }: { block: Block; idx: HunkIndex }) {
             <div className="peek-b">
               <table>
                 <tbody>
-                  {lines.slice(0, MAX_PEEK_LINES).map(({ row, text }, i) => (
+                  {lines.slice(0, MAX_PEEK_LINES).map(({ row, i, text }) => (
                     <tr key={i} className={row.type}>
                       <td className="no">{row.new ?? row.old}</td>
-                      <td className="src">{text || " "}</td>
+                      <td className="src">{paint(tokens.get(r.hunk)?.get(i), text)}</td>
                     </tr>
                   ))}
                   {lines.length > MAX_PEEK_LINES && (
@@ -456,5 +458,40 @@ function BlockPeek({ block, idx }: { block: Block; idx: HunkIndex }) {
         );
       })}
     </div>
+  );
+}
+
+/** Syntax tokens for each cited hunk, keyed by hunk id, filled in as they arrive. */
+function useHunkTokens(refs: Ref[], idx: HunkIndex): Map<string, Map<number, LineTokens>> {
+  const [tokens, setTokens] = useState(() => new Map<string, Map<number, LineTokens>>());
+  useEffect(() => {
+    let live = true;
+    setTokens(new Map());
+    for (const id of new Set(refs.map((r) => r.hunk))) {
+      const h = idx.byId.get(id);
+      const lang = h && langFor(h.file);
+      if (!h || !lang) continue;
+      highlightHunk(h, lang).then(
+        (t) => live && setTokens((m) => new Map(m).set(id, t)),
+        () => {},
+      );
+    }
+    return () => {
+      live = false;
+    };
+  }, [refs, idx]);
+  return tokens;
+}
+
+function paint(tokens: LineTokens | undefined, text: string) {
+  if (!tokens) return text || " ";
+  return tokens.map((t, j) =>
+    t.color ? (
+      <span key={j} style={{ color: t.color }}>
+        {t.content}
+      </span>
+    ) : (
+      t.content
+    ),
   );
 }
