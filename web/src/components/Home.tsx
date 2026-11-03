@@ -62,6 +62,10 @@ export function Home() {
     return [...out];
   }, [targets, q]);
 
+  // A count column shows only if some review has a count for it.
+  const anyChats = targets?.some((t) => t.chats > 0);
+  const anyVersions = targets?.some((t) => t.versions > 1);
+
   if (!targets) return <main className="landing" />;
   if (!targets.length)
     return (
@@ -103,26 +107,32 @@ export function Home() {
                 }}
               >
                 {t.local ? ic(GitBranch, 15) : <GithubIcon size={15} />}
-                <span className="t">
-                  <b>{name(t)}</b>
+                <span className="t">{title(t)}</span>
+                <span className="w">
+                  {name(t)}
                   <span className="rf">{ref(t)}</span>
-                  <span className="ttl">{title(t)}</span>
                 </span>
-                <span className="m">
-                  {t.chats > 0 && (
-                    <span title="Chats">
-                      {ic(MessageCircle, 13)}
-                      {t.chats}
-                    </span>
-                  )}
-                  {t.versions > 1 && (
-                    <span title="Versions">
-                      {ic(History, 13)}
-                      {t.versions}
-                    </span>
-                  )}
-                  <span className="age">{ago(t.updated_at)}</span>
-                </span>
+                {anyChats && (
+                  <span className="m" title={t.chats > 0 ? "Chats" : undefined}>
+                    {t.chats > 0 && (
+                      <>
+                        {ic(MessageCircle, 13)}
+                        {t.chats}
+                      </>
+                    )}
+                  </span>
+                )}
+                {anyVersions && (
+                  <span className="m" title={t.versions > 1 ? "Versions" : undefined}>
+                    {t.versions > 1 && (
+                      <>
+                        {ic(History, 13)}
+                        {t.versions}
+                      </>
+                    )}
+                  </span>
+                )}
+                <span className="age">{ago(t.updated_at)}</span>
               </a>
             ))}
           </section>

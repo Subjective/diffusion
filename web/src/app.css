@@ -89,7 +89,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 48px;
+  height: 44px;
   padding: 0 12px;
   border-radius: 10px;
   font-size: 14px;
@@ -112,35 +112,38 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-r .t b {
-  font-weight: 500;
+.home-r .w {
+  flex: none;
+  max-width: 220px;
+  margin-left: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--subtle);
 }
 .home-r .rf {
   margin-left: 6px;
   font-family: var(--mono);
-  font-size: 12.5px;
-  color: var(--subtle);
+  font-size: 12px;
 }
-.home-r .ttl {
-  margin-left: 12px;
-  color: var(--muted);
-}
-.home-r .m {
+/* Fixed slots, so counts and ages line up from row to row whether or not a row has them. */
+.home-r .m,
+.home-r .age {
   flex: none;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 12.5px;
-  color: var(--subtle);
-}
-.home-r .m span {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
+  font-size: 12.5px;
+  color: var(--subtle);
+  font-variant-numeric: tabular-nums;
+}
+.home-r .m {
+  width: 34px;
 }
 .home-r .age {
-  min-width: 28px;
-  justify-content: flex-end;
+  width: 30px;
 }
 button.brand {
   border: 0;
