@@ -13,8 +13,13 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path, PurePosixPath
 
+import tree_sitter_c
+import tree_sitter_c_sharp
+import tree_sitter_cpp
 import tree_sitter_go
+import tree_sitter_java
 import tree_sitter_javascript
+import tree_sitter_kotlin
 import tree_sitter_python
 import tree_sitter_rust
 import tree_sitter_typescript
@@ -80,6 +85,63 @@ _RS = """
 (mod_item name: (identifier) @name) @def
 (macro_definition name: (identifier) @name) @def
 """
+_CS = """
+(class_declaration name: (identifier) @name) @def
+(interface_declaration name: (identifier) @name) @def
+(struct_declaration name: (identifier) @name) @def
+(record_declaration name: (identifier) @name) @def
+(enum_declaration name: (identifier) @name) @def
+(delegate_declaration name: (identifier) @name) @def
+(method_declaration name: (identifier) @name) @def
+(constructor_declaration name: (identifier) @name) @def
+(property_declaration name: (identifier) @name) @def
+(field_declaration (variable_declaration (variable_declarator name: (identifier) @name))) @def
+(event_field_declaration (variable_declaration (variable_declarator name: (identifier) @name))) @def
+(enum_member_declaration name: (identifier) @name) @def
+"""
+_JAVA = """
+(class_declaration name: (identifier) @name) @def
+(interface_declaration name: (identifier) @name) @def
+(record_declaration name: (identifier) @name) @def
+(enum_declaration name: (identifier) @name) @def
+(annotation_type_declaration name: (identifier) @name) @def
+(method_declaration name: (identifier) @name) @def
+(constructor_declaration name: (identifier) @name) @def
+(field_declaration declarator: (variable_declarator name: (identifier) @name)) @def
+(enum_constant name: (identifier) @name) @def
+"""
+_KT = """
+(class_declaration name: (identifier) @name) @def
+(object_declaration name: (identifier) @name) @def
+(function_declaration name: (identifier) @name) @def
+(property_declaration (variable_declaration (identifier) @name)) @def
+(type_alias type: (identifier) @name) @def
+"""
+# Definitions only: a prototype or a `struct S` without a body is a reference.
+_C_COMMON = """
+(function_definition declarator: (function_declarator declarator: (identifier) @name)) @def
+(function_definition declarator: (pointer_declarator declarator: (function_declarator declarator: (identifier) @name))) @def
+(struct_specifier name: (type_identifier) @name body: (_)) @def
+(union_specifier name: (type_identifier) @name body: (_)) @def
+(enum_specifier name: (type_identifier) @name body: (_)) @def
+(enumerator name: (identifier) @name) @def
+(type_definition declarator: (type_identifier) @name) @def
+(preproc_def name: (identifier) @name) @def
+(preproc_function_def name: (identifier) @name) @def
+(translation_unit (declaration declarator: (init_declarator declarator: (identifier) @name)) @def)
+"""
+_C = _C_COMMON
+_CPP = (
+    _C_COMMON
+    + """
+(class_specifier name: (type_identifier) @name body: (_)) @def
+(function_definition declarator: (function_declarator declarator: (qualified_identifier name: (identifier) @name))) @def
+(function_definition declarator: (function_declarator declarator: (field_identifier) @name)) @def
+(field_declaration declarator: (function_declarator declarator: (field_identifier) @name)) @def
+(field_declaration declarator: (field_identifier) @name) @def
+(alias_declaration name: (type_identifier) @name) @def
+"""
+)
 
 _LANGS = {
     "typescript": (tree_sitter_typescript.language_typescript, _TS),
@@ -88,6 +150,11 @@ _LANGS = {
     "python": (tree_sitter_python.language, _PY),
     "go": (tree_sitter_go.language, _GO),
     "rust": (tree_sitter_rust.language, _RS),
+    "csharp": (tree_sitter_c_sharp.language, _CS),
+    "java": (tree_sitter_java.language, _JAVA),
+    "kotlin": (tree_sitter_kotlin.language, _KT),
+    "c": (tree_sitter_c.language, _C),
+    "cpp": (tree_sitter_cpp.language, _CPP),
 }
 _EXT = {
     ".ts": "typescript",
@@ -102,9 +169,34 @@ _EXT = {
     ".pyi": "python",
     ".go": "go",
     ".rs": "rust",
+    ".cs": "csharp",
+    ".java": "java",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".c": "c",
+    # Headers are often C++; its grammar reads C headers too.
+    ".h": "cpp",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".cxx": "cpp",
+    ".hh": "cpp",
+    ".hpp": "cpp",
+    ".hxx": "cpp",
 }
 # Languages that can name each other's definitions; a name clicked in one doesn't resolve into another.
-_FAMILY = {"typescript": "js", "tsx": "js", "javascript": "js", "python": "py", "go": "go", "rust": "rs"}
+_FAMILY = {
+    "typescript": "js",
+    "tsx": "js",
+    "javascript": "js",
+    "python": "py",
+    "go": "go",
+    "rust": "rs",
+    "csharp": "cs",
+    "java": "jvm",
+    "kotlin": "jvm",
+    "c": "c",
+    "cpp": "c",
+}
 
 
 def _family(path: str) -> str | None:
@@ -113,7 +205,9 @@ def _family(path: str) -> str | None:
 
 
 # Extensions an import specifier may leave off.
-_MODULE_EXT = re.compile(r"(\.d)?\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py|pyi|go|rs)$")
+_MODULE_EXT = re.compile(
+    r"(\.d)?\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py|pyi|go|rs|cs|java|kts?|c|h|cc|cpp|cxx|hh|hpp|hxx)$"
+)
 NAME = re.compile(r"^[A-Za-z_$][\w$]*$")
 
 
@@ -165,10 +259,13 @@ class SymbolIndex:
             except OSError:
                 continue
             for name, d in definitions_in(rel, source):
-                self.by_name[name].append(d)
+                # `typedef struct S {…} S;` defines S twice on one line.
+                if not any(o.path == d.path and o.line == d.line for o in self.by_name[name][-2:]):
+                    self.by_name[name].append(d)
 
     def lookup(self, name: str, from_path: str, limit: int = 8) -> list[Definition]:
-        """Definitions of `name`, nearest to `from_path` first: same file, files it imports, same directory.
+        """Definitions of `name`, nearest to `from_path` first: same file, files it imports, same directory, then
+        a file named after it.
 
         From a source file, only definitions in its own language family count (a Python `from` isn't a
         TypeScript variable); from anything else (docs, config), any language does."""
@@ -190,7 +287,9 @@ class SymbolIndex:
                 else 3
             )  # fmt: skip
             test = bool(re.search(r"(^|/)(tests?|__tests__)/|[._-]test\.|_test\.|/test_", d.path))
-            return (near, test, len(d.path), d.path, d.line)
+            # Java, Kotlin and C# name a file after its main type: `Request` lives in Request.kt.
+            named = PurePosixPath(d.path).stem == name
+            return (near, test, not named, len(d.path), d.path, d.line)
 
         return sorted(found, key=rank)[:limit]
 
@@ -201,6 +300,8 @@ class SymbolIndex:
 
 _SPEC = re.compile(r"""(?:from\s+['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"])""")
 _PY_FROM = re.compile(r"^\s*from\s+([.\w]+)\s+import\b|^\s*import\s+([\w.]+)", re.M)
+_JVM_IMPORT = re.compile(r"^\s*import\s+(?:static\s+)?([\w.]+)", re.M)
+_INCLUDE = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.M)
 
 
 def _imports(root: Path, from_path: str) -> list[str]:
@@ -226,6 +327,12 @@ def _imports(root: Path, from_path: str) -> list[str]:
                 out.append(str(base / rest) if rest else str(base))
             else:
                 out.append(rest)
+    lang = _EXT.get(PurePosixPath(from_path).suffix)
+    if lang in ("java", "kotlin"):
+        out += [m.group(1).replace(".", "/") for m in _JVM_IMPORT.finditer(text)]
+    if lang in ("c", "cpp"):
+        for m in _INCLUDE.finditer(text):
+            out += [_resolve(here, m.group(1)), m.group(1)]
     return [_MODULE_EXT.sub("", o) for o in out if o]
 
 
