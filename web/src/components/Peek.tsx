@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, FileCode, LoaderCircle, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type DefinitionMatch, fetchDefinition } from "../api";
 import { backStack } from "../lib/definition";
 import { highlightLines, type LineTokens, langFor } from "../lib/highlight";
@@ -18,6 +18,7 @@ export function PeekRow({ peek }: { peek: Peek }) {
   // Stay hidden while the lookup is quick, so a jump to a definition already in the diff doesn't flash a popup.
   const [slow, setSlow] = useState(false);
   const close = () => useUI.getState().setPeek(null);
+  const row = useRef<HTMLTableRowElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -55,10 +56,16 @@ export function PeekRow({ peek }: { peek: Peek }) {
     return () => removeEventListener("keydown", onKey);
   }, []);
 
+  // A name clicked near the bottom of the pane would open its peek out of sight; keep it in view as it grows.
+  const phase = matches ? "found" : error ? "error" : slow ? "loading" : null;
+  useEffect(() => {
+    if (phase) row.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [phase]);
+
   const m = matches?.[i];
-  if (!matches && !error && !slow) return null;
+  if (!phase) return null;
   return (
-    <tr className="peek-row">
+    <tr className="peek-row" ref={row}>
       <td colSpan={4}>
         <div className="peek" role="dialog" aria-label={`Definition of ${peek.symbol}`}>
           <div className="peek-h">
