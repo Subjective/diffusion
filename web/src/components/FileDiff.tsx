@@ -78,7 +78,13 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
   const hasHidden = gaps.some((g) => g.end == null || g.end >= g.start);
 
   return (
-    <section className={`file${file.skip ? " skip" : ""}${collapsed ? " collapsed" : ""}`} data-path={file.path}>
+    <section
+      className={`file${file.skip ? " skip" : ""}${collapsed ? " collapsed" : ""}`}
+      data-path={file.path}
+      style={{
+        containIntrinsicSize: `auto ${collapsed ? 44 : 44 + file.hunks.reduce((n, h) => n + 22 * h.lines.length + 32, 0)}px`,
+      }}
+    >
       <div className="file-h" onClick={() => toggleCollapsed(file.path)}>
         <span className="chev">{ic(ChevronDown, 14)}</span>
         {ic(Lead, 14)}

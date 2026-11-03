@@ -1,3 +1,5 @@
+<img src="docs/assets/logo.svg" width="64" alt="" />
+
 # Diffusion
 
 AI has made it cheaper than ever to write code, but that's only shifted the burden to reviewing it, which is still

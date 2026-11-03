@@ -32,11 +32,12 @@ export function mergeSpans(spans: Span[], gap = 1): Span[] {
 
 /** Highlighted rows of the pane, measured in scroll-content coordinates. Rows in collapsed files are skipped. */
 export function measureRows(pane: HTMLElement, keys: Iterable<string>): Span[] {
+  const want = new Set(keys);
+  if (!want.size) return [];
   const base = pane.getBoundingClientRect().top - pane.scrollTop;
   const spans: Span[] = [];
-  for (const k of new Set(keys)) {
-    const el = pane.querySelector<HTMLElement>(`tr[data-rk="${CSS.escape(k)}"]`);
-    if (!el?.offsetParent) continue;
+  for (const el of pane.querySelectorAll<HTMLElement>("tr[data-rk]")) {
+    if (!want.has(el.dataset.rk!) || !el.offsetParent) continue;
     const r = el.getBoundingClientRect();
     spans.push({
       top: r.top - base,
