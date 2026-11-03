@@ -131,6 +131,11 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     async def health() -> dict:
         return {"ok": True, "app": "diffusion", "version": __version__, "ui": dist is not None}
 
+    @app.get("/api/targets")
+    async def targets() -> list[dict]:
+        """Everything reviewed so far, for the home page."""
+        return d().store.list_targets()
+
     def versions(prep: Prepared) -> list[dict]:
         return d().store.list_guides(prep.meta.ref.key, prep.meta.head_sha)
 
@@ -380,5 +385,7 @@ def save_chat_guide(deps: Deps, prep: Prepared, raw: str, meta: dict, chat: dict
             "created_at": time.time(),
         },
     }
-    n = deps.store.save_guide(prep.meta.ref.key, prep.meta.head_sha, record, draft.model_dump(by_alias=True))
+    n = deps.store.save_guide(
+        prep.meta.ref.key, prep.meta.head_sha, record, draft.model_dump(by_alias=True), prep.meta.summary()
+    )
     return n, ""

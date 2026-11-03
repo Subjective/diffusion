@@ -150,3 +150,18 @@ export interface PRPayload {
   guide: Guide | null;
   versions: GuideVersion[];
 }
+
+/** A past review on the home page. */
+export interface Target {
+  url: string;
+  owner: string;
+  repo: string;
+  number: number;
+  local?: boolean;
+  title: string;
+  head_ref: string;
+  label: string;
+  versions: number;
+  chats: number;
+  updated_at: number;
+}

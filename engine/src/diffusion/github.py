@@ -97,6 +97,17 @@ class PRMeta:
             "commits": self.commits,
         }
 
+    def summary(self) -> dict:
+        """What the home page shows for this target. A local target's generic "repo: head vs base" title is left
+        out, so the guide's label shows instead."""
+        generic = self.ref.is_local and self.title.endswith(f"{self.head_ref} vs {self.base_ref}")
+        d = {
+            k: v
+            for k, v in self.to_dict().items()
+            if k in ("url", "owner", "repo", "number", "local", "head_ref")
+        }
+        return {**d, "title": "" if generic else self.title}
+
 
 def meta_from_json(ref: PRRef, data: dict) -> PRMeta:
     return PRMeta(

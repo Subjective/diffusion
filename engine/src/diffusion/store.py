@@ -3,6 +3,9 @@
 Guides are kept per target and head commit as numbered versions: every submit, and every guide edit made from
 chat, adds one. ``<n>.json`` is the checked guide the UI renders; ``<n>.draft.json`` is the guide as the agent
 wrote it (refs by path and line), which is what an agent edits to make the next version.
+
+``targets/<key>.json`` says what each target is (its URL, title, branch) and which head its last guide was saved
+against, so the home page can list past reviews.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -56,15 +60,17 @@ class Store:
     def load_draft(self, pr_key: str, head_sha: str, version: int) -> dict | None:
         return self._read(self.draft_path(pr_key, head_sha, version))
 
+    def _target_path(self, pr_key: str) -> Path:
+        return self.root / "targets" / f"{pr_key}.json"
+
     def latest_head(self, pr_key: str) -> str | None:
         """The head commit the last guide for this target was saved against."""
-        try:
-            return (self.root / "guides" / f"{pr_key}.head").read_text().strip() or None
-        except OSError:
-            return None
+        t = self._read(self._target_path(pr_key)) or {}
+        return t.get("head_sha") or None
 
-    def save_guide(self, pr_key: str, head_sha: str, record: dict, draft: dict) -> int:
-        """Store ``record`` (and the ``draft`` it was checked from) as the next version; return its number."""
+    def save_guide(self, pr_key: str, head_sha: str, record: dict, draft: dict, target: dict) -> int:
+        """Store ``record`` (and the ``draft`` it was checked from) as the next version; return its number.
+        ``target`` describes what was reviewed, for the home page."""
         d = self.guide_dir(pr_key, head_sha)
         d.mkdir(parents=True, exist_ok=True)
         n = (self._numbers(pr_key, head_sha) or [0])[-1] + 1
@@ -73,7 +79,9 @@ class Store:
                 with open(d / f"{n}.json", "x") as fh:
                     json.dump({**record, "version": n}, fh, ensure_ascii=False)
                 self._write(self.draft_path(pr_key, head_sha, n), draft)
-                (self.root / "guides" / f"{pr_key}.head").write_text(head_sha)
+                self._write(
+                    self._target_path(pr_key), {**target, "head_sha": head_sha, "saved_at": time.time()}
+                )
                 return n
             except FileExistsError:
                 n += 1
@@ -94,6 +102,27 @@ class Store:
                 }
             )
         return out
+
+    def list_targets(self) -> list[dict]:
+        """Every target with a guide, most recently active first, with its version and chat counts."""
+        out = []
+        for p in (self.root / "targets").glob("*.json"):
+            t = self._read(p)
+            if not t or not t.get("head_sha"):
+                continue
+            key = p.stem
+            chats = [c for c in self.list_chats(key) if c.get("turns")]
+            latest = self.load_guide(key, t["head_sha"]) or {}
+            out.append(
+                {
+                    **t,
+                    "label": latest.get("label") or "",
+                    "versions": len(self._numbers(key, t["head_sha"])),
+                    "chats": len(chats),
+                    "updated_at": max([t.get("saved_at") or 0] + [c.get("updated_at") or 0 for c in chats]),
+                }
+            )
+        return sorted(out, key=lambda t: t["updated_at"], reverse=True)
 
     # ---------- chats ----------
 

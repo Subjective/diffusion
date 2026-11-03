@@ -13,6 +13,33 @@ vi.mock("../api", () => ({
   fetchGuide: vi.fn(),
   fetchFile: vi.fn(async () => Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")),
   fetchDefinition: vi.fn(),
+  fetchTargets: vi.fn(async () => [
+    {
+      url: payload.pr.url,
+      owner: payload.pr.owner,
+      repo: payload.pr.repo,
+      number: payload.pr.number,
+      title: "Add token refresh",
+      head_ref: "feature",
+      label: "Everything",
+      versions: 2,
+      chats: 1,
+      updated_at: Date.now() / 1000 - 60,
+    },
+    {
+      url: "local:/src/sample#main..demo",
+      owner: "local",
+      repo: "sample-1234",
+      number: 0,
+      local: true,
+      title: "",
+      head_ref: "demo",
+      label: "Map test",
+      versions: 1,
+      chats: 0,
+      updated_at: Date.now() / 1000 - 40 * 86400,
+    },
+  ]),
 }));
 // jsdom has no caret-from-point; the clicked name comes from here
 const nav = vi.hoisted(() => ({ word: "refreshTokens" }));
@@ -41,6 +68,30 @@ async function mount() {
   render(<App />);
   await waitFor(() => expect(screen.getByText("Add token refresh")).toBeTruthy());
 }
+
+test("home lists past reviews, filters them, opens one, and the brand goes back", async () => {
+  useApp.setState({ url: "", pr: null });
+  render(<App />);
+  await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
+  expect([...document.querySelectorAll(".home-g")].map((g) => g.textContent)).toEqual(["Today", "Older"]);
+  const local = document.querySelectorAll(".home-r")[1];
+  expect(local.querySelector(".t > span")!.textContent).toBe("Map test");
+  expect(local.querySelector(".w")!.textContent).toBe("sample · demo");
+  const search = screen.getByPlaceholderText("Search");
+  fireEvent.keyDown(document.body, { key: "/" });
+  expect(document.activeElement).toBe(search);
+  fireEvent.change(search, { target: { value: "sample demo" } });
+  expect(document.querySelectorAll(".home-r")).toHaveLength(1);
+  fireEvent.keyDown(search, { key: "Escape" });
+  expect(document.querySelectorAll(".home-r")).toHaveLength(2);
+
+  fireEvent.click(document.querySelector(".home-r")!);
+  await waitFor(() => expect(document.querySelectorAll(".step")).toHaveLength(3));
+  expect(new URLSearchParams(location.search).get("pr")).toBe(payload.pr.url);
+  fireEvent.click(screen.getByTitle("Home"));
+  await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
+  expect(location.search).toBe("");
+});
 
 test("renders guide, diff in guide order, skippable collapsed", async () => {
   await mount();
