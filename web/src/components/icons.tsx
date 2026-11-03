@@ -65,3 +65,20 @@ export function GithubIcon({ size = 16 }: { size?: number }) {
     </svg>
   );
 }
+
+/** Dots on a golden-angle spiral, thinning toward the edge: the Diffusion mark. */
+const BLOOM = Array.from({ length: 27 }, (_, i) => {
+  const r = 2.05 * Math.sqrt(i + 0.5);
+  const a = (i * 137.508 * Math.PI) / 180;
+  return [12 + r * Math.cos(a), 12 + r * Math.sin(a), 1.25 * (1 - r / 14) + 0.25];
+});
+
+export function Logo({ size = 20 }: { size?: number }) {
+  return (
+    <svg className="ic" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-label="Diffusion">
+      {BLOOM.map(([cx, cy, r]) => (
+        <circle key={`${cx}`} cx={cx} cy={cy} r={r} />
+      ))}
+    </svg>
+  );
+}

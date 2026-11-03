@@ -1,15 +1,17 @@
-import { Check, GitBranch, History, ListOrdered, Map as MapIcon, Moon, PanelRight, Route, Sun } from "lucide-react";
+import { Check, GitBranch, History, ListOrdered, Map as MapIcon, Moon, PanelRight, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ago } from "../lib/time";
 import { useApp } from "../store";
 import { useUI } from "../ui";
-import { GithubIcon, ic } from "./icons";
+import { GithubIcon, ic, Logo } from "./icons";
 
 export function TopBar() {
   const { theme, toggleTheme, chatOpen, toggleChat } = useApp();
   return (
     <header className="top">
-      <div className="brand">{ic(Route, 16)}</div>
+      <div className="brand">
+        <Logo />
+      </div>
       <Target />
       <div className="top-r">
         <ModeToggle />
