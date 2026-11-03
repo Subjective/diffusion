@@ -863,7 +863,9 @@ svg.dim .m-region {
 .files.hide-skip .file.skip {
   display: none;
 }
+/* Off-screen files skip layout and paint; their size is estimated from line counts (FileDiff). */
 .file {
+  content-visibility: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: clip;
