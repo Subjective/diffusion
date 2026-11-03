@@ -13,6 +13,7 @@ import { useUI } from "../ui";
 import { ic } from "./icons";
 import { MapCanvas } from "./MapCanvas";
 
+const mac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || navigator.userAgent);
 const reduceMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** The map: a view of the change in the guide pane's place. j/k (or ←/→) walk its scenes with an animated camera,
@@ -297,7 +298,9 @@ function MapBody() {
         return setVB([v[0] + (e.deltaX * v[2]) / r.width, v[1] + (e.deltaY * v[3]) / r.height, v[2], v[3]]);
       }
       const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * r.height : e.deltaY;
-      zoomBy(Math.exp(Math.max(-250, Math.min(250, dy)) * 0.0018), fx, fy, 200);
+      // macOS flips wheel deltas for natural scrolling (on by default), so rolling the wheel toward you reads as
+      // scrolling up there; undo that so toward you zooms out everywhere.
+      zoomBy(Math.exp(Math.max(-250, Math.min(250, mac ? -dy : dy)) * 0.0018), fx, fy, 200);
     };
     p.addEventListener("wheel", onWheel, { passive: false });
     return () => p.removeEventListener("wheel", onWheel);
