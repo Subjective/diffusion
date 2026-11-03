@@ -75,8 +75,8 @@ test("home lists past reviews, filters them, opens one, and the brand goes back"
   await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
   expect([...document.querySelectorAll(".home-g")].map((g) => g.textContent)).toEqual(["Today", "Older"]);
   const local = document.querySelectorAll(".home-r")[1];
-  expect(local.querySelector(".t")!.textContent).toBe("Map test");
-  expect(local.querySelector(".w")!.textContent).toBe("sampledemo");
+  expect(local.querySelector(".t > span")!.textContent).toBe("Map test");
+  expect(local.querySelector(".w")!.textContent).toBe("sample · demo");
   const search = screen.getByPlaceholderText("Search");
   fireEvent.keyDown(document.body, { key: "/" });
   expect(document.activeElement).toBe(search);

@@ -107,12 +107,11 @@ export function Home() {
                 }}
               >
                 {t.local ? ic(GitBranch, 15) : <GithubIcon size={15} />}
-                <span className="t" title={title(t)}>
-                  {title(t)}
-                </span>
-                <span className="w">
-                  {name(t)}
-                  <span className="rf">{ref(t)}</span>
+                <span className="t">
+                  <span title={title(t)}>{title(t)}</span>
+                  <span className="w">
+                    {name(t)} · {ref(t)}
+                  </span>
                 </span>
                 {anyChats && (
                   <span className="m" title={t.chats > 0 ? "Chats" : undefined}>
