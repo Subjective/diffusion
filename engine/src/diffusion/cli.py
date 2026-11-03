@@ -134,7 +134,9 @@ def submit(
         },
     }
     store = Store(cfg.cache_dir)
-    n = store.save_guide(prep.meta.ref.key, prep.meta.head_sha, record, draft.model_dump(by_alias=True))
+    n = store.save_guide(
+        prep.meta.ref.key, prep.meta.head_sha, record, draft.model_dump(by_alias=True), prep.meta.summary()
+    )
     v = g.validation
     _err(
         f"Saved version {n}: {len(g.steps)} steps, refs {v.total_refs - v.invalid_refs}/{v.total_refs} valid"

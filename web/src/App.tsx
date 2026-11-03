@@ -5,7 +5,8 @@ import { AskPopup } from "./components/AskPopup";
 import { type ChatLinkProps, ChatPanel } from "./components/ChatPanel";
 import type { AskComment } from "./components/Comments";
 import { DiffPane, DiffRail } from "./components/DiffPane";
-import { GuidePane, NoGuide } from "./components/GuidePane";
+import { GuidePane } from "./components/GuidePane";
+import { Home } from "./components/Home";
 import { ic } from "./components/icons";
 import { MapPane } from "./components/MapPane";
 import { useQuestionBadges } from "./components/QuestionBadges";
@@ -165,15 +166,15 @@ export function App() {
         </div>
       )}
       {!pr ? (
-        <main className="landing">
-          {url || loading ? (
+        url || loading ? (
+          <main className="landing">
             <div className="landing-i">
               {loading ? <span className="spin">{ic(GitPullRequest, 22)}</span> : ic(GitPullRequest, 22)}
             </div>
-          ) : (
-            <NoGuide landing />
-          )}
-        </main>
+          </main>
+        ) : (
+          <Home />
+        )
       ) : (
         <main
           className={`app${chatOpen ? "" : " no-chat"}${noDiff ? " no-diff" : ""}`}

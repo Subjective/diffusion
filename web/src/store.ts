@@ -21,6 +21,10 @@ interface State {
   toggleTheme(): void;
   toggleChat(open?: boolean): void;
   load(url?: string): Promise<void>;
+  /** Open a past review from the home page, as a new history entry. */
+  open(url: string): void;
+  /** Back to the home page. */
+  home(): void;
   showVersion(v: number): Promise<void>;
   /** Pick up versions saved since the page loaded (a resubmit, or an edit from chat). */
   refresh(): Promise<void>;
@@ -37,10 +41,12 @@ function setParams(url: string, v: number | null) {
   history.replaceState(null, "", `?${q}`);
 }
 
+const cleared = { url: "", pr: null, files: [], guide: null, versions: [], error: null, loading: false };
+
 const latest = (vs: GuideVersion[]) => vs.at(-1)?.version ?? null;
 
 export const useApp = create<State>((set, get) => ({
-  url: params().get("pr") ?? storage.get("rv-url", ""),
+  url: params().get("pr") ?? "",
   theme: storage.get("rv-theme", matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
   chatOpen: storage.get("rv-chat-open", true),
 
@@ -68,7 +74,6 @@ export const useApp = create<State>((set, get) => ({
     if (!url) return;
     const v = url === get().url ? versionParam() : null;
     set({ url, loading: true, error: null });
-    storage.set("rv-url", url);
     try {
       let data = await fetchPR(url, v);
       if (!data.guide && v && data.versions.length) data = await fetchPR(url); // a version of an older head
@@ -85,6 +90,16 @@ export const useApp = create<State>((set, get) => ({
     } catch (e) {
       set({ loading: false, error: String((e as Error).message ?? e) });
     }
+  },
+
+  open(url) {
+    history.pushState(null, "", `?${new URLSearchParams({ pr: url })}`);
+    void get().load(url);
+  },
+
+  home() {
+    if (location.search) history.pushState(null, "", location.pathname);
+    set(cleared);
   },
 
   async showVersion(v) {
@@ -122,3 +137,10 @@ export const useApp = create<State>((set, get) => ({
     if (v && following) await get().showVersion(v);
   },
 }));
+
+// Back and forward move between the home page and reviews.
+addEventListener("popstate", () => {
+  const url = params().get("pr") ?? "";
+  if (!url) useApp.setState(cleared);
+  else if (url !== useApp.getState().url || !useApp.getState().pr) void useApp.getState().load(url);
+});

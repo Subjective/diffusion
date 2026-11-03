@@ -6,10 +6,16 @@ import { useUI } from "../ui";
 import { GithubIcon, ic } from "./icons";
 
 export function TopBar() {
-  const { theme, toggleTheme, chatOpen, toggleChat } = useApp();
+  const { theme, toggleTheme, chatOpen, toggleChat, url, home } = useApp();
   return (
     <header className="top">
-      <div className="brand">{ic(Route, 16)}</div>
+      {url ? (
+        <button type="button" className="brand" title="Home" onClick={home}>
+          {ic(Route, 16)}
+        </button>
+      ) : (
+        <div className="brand">{ic(Route, 16)}</div>
+      )}
       <Target />
       <div className="top-r">
         <ModeToggle />

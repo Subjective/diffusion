@@ -42,7 +42,7 @@ def submit(deps, prep, raw, source="agent", **meta):
         "meta": {"head_sha": prep.meta.head_sha, "source": source, **meta},
     }
     return deps.store.save_guide(
-        prep.meta.ref.key, prep.meta.head_sha, record, draft.model_dump(by_alias=True)
+        prep.meta.ref.key, prep.meta.head_sha, record, draft.model_dump(by_alias=True), prep.meta.summary()
     )
 
 
@@ -118,6 +118,20 @@ async def test_guide_versions(setup):
     assert (await client.get("/api/guide", params={"url": URL, "v": 9})).status_code == 404
     polled = (await client.get("/api/guides", params={"url": URL})).json()
     assert polled["head_sha"] == prep.meta.head_sha and len(polled["versions"]) == 2
+
+
+async def test_targets_list_what_was_reviewed(setup):
+    client, _, deps, prep = setup
+    assert (await client.get("/api/targets")).json() == []
+    submit(deps, prep, guide_for(prep))
+    submit(deps, prep, guide_for(prep))
+    deps.store.save_chat(prep.meta.ref.key, {"id": "c1", "turns": [{}], "updated_at": 4e9})
+    deps.store.save_chat(
+        prep.meta.ref.key, {"id": "c2", "turns": [], "updated_at": 5e9}
+    )  # never asked anything
+    [t] = (await client.get("/api/targets")).json()
+    assert (t["url"], t["title"], t["head_ref"], t["label"]) == (URL, "T", "feature", "Everything")
+    assert (t["versions"], t["chats"], t["updated_at"]) == (2, 1, 4e9)
 
 
 async def test_polling_after_a_push_does_not_re_prepare(setup):
