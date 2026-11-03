@@ -77,9 +77,13 @@ test("home lists past reviews, filters them, opens one, and the brand goes back"
   const local = document.querySelectorAll(".home-r")[1];
   expect(local.querySelector("b")!.textContent).toBe("sample");
   expect(local.querySelector(".ttl")!.textContent).toBe("Map test");
-  fireEvent.change(screen.getByLabelText("Filter"), { target: { value: "sample demo" } });
+  const search = screen.getByPlaceholderText("Search");
+  fireEvent.keyDown(document.body, { key: "/" });
+  expect(document.activeElement).toBe(search);
+  fireEvent.change(search, { target: { value: "sample demo" } });
   expect(document.querySelectorAll(".home-r")).toHaveLength(1);
-  fireEvent.change(screen.getByLabelText("Filter"), { target: { value: "" } });
+  fireEvent.keyDown(search, { key: "Escape" });
+  expect(document.querySelectorAll(".home-r")).toHaveLength(2);
 
   fireEvent.click(document.querySelector(".home-r")!);
   await waitFor(() => expect(document.querySelectorAll(".step")).toHaveLength(3));

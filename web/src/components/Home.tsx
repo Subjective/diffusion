@@ -1,5 +1,5 @@
 import { GitBranch, History, MessageCircle, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchTargets } from "../api";
 import { ago } from "../lib/time";
 import { useApp } from "../store";
@@ -29,6 +29,20 @@ export function Home() {
   const open = useApp((s) => s.open);
   const [targets, setTargets] = useState<Target[] | null>(null);
   const [q, setQ] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+
+  // "/" jumps to the search field, as on GitHub.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey || el.closest("input, textarea, [contenteditable]"))
+        return;
+      e.preventDefault();
+      input.current?.focus();
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     fetchTargets()
@@ -60,7 +74,19 @@ export function Home() {
       <div className="home-in">
         <label className="home-search">
           {ic(Search, 15)}
-          <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter" spellCheck={false} />
+          <input
+            ref={input}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              setQ("");
+              e.currentTarget.blur();
+            }}
+            placeholder="Search"
+            spellCheck={false}
+          />
+          <kbd>/</kbd>
         </label>
         {groups.map(([g, ts]) => (
           <section key={g}>
