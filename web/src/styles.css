@@ -335,10 +335,15 @@ code {
   touch-action: none;
   overscroll-behavior: contain;
 }
-.guide.map:active {
+/* Panning the map drags the canvas, never a text selection, and holds the grabbing hand wherever the pointer goes. */
+body.map-panning,
+body.map-panning *,
+body.map-panning .guide.map {
   cursor: grabbing;
+  user-select: none;
 }
 .guide.map > svg {
+  user-select: none;
   position: absolute;
   inset: 0;
   width: 100%;
@@ -470,6 +475,9 @@ svg.dim .m-box:not(.lit),
 svg.dim .m-arrow:not(.lit) {
   opacity: 0.28;
 }
+.m-region {
+  transition: opacity 0.25s;
+}
 svg.dim .m-region {
   opacity: 0.6;
 }
@@ -536,6 +544,20 @@ svg.dim .m-region {
 }
 .map-count {
   font-family: var(--mono);
+}
+.map-card-b {
+  animation: map-card-in 0.3s ease-out;
+}
+@keyframes map-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-card-b {
+    animation: none;
+  }
 }
 .map-card-h .icon-btn:disabled {
   opacity: 0.35;
@@ -841,7 +863,9 @@ svg.dim .m-region {
 .files.hide-skip .file.skip {
   display: none;
 }
+/* Off-screen files skip layout and paint; their size is estimated from line counts (FileDiff). */
 .file {
+  content-visibility: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: clip;

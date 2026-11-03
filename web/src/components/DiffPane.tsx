@@ -273,6 +273,7 @@ function ScrollMarks({ pane }: { pane: RefObject<HTMLElement | null> }) {
     const p = pane.current;
     if (!p) return;
     const measure = () => {
+      if (!hover.size && !pin.size) return setMarks([]);
       const h = p.scrollHeight;
       const spans = h > p.clientHeight ? mergeSpans(measureRows(p, hover.size ? hover : pin), 24) : [];
       setMarks(spans.map((s) => ({ top: s.top / h, height: (s.bottom - s.top) / h })));
