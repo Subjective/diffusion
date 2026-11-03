@@ -103,6 +103,15 @@ _EXT = {
     ".go": "go",
     ".rs": "rust",
 }
+# Languages that can name each other's definitions; a name clicked in one doesn't resolve into another.
+_FAMILY = {"typescript": "js", "tsx": "js", "javascript": "js", "python": "py", "go": "go", "rust": "rs"}
+
+
+def _family(path: str) -> str | None:
+    lang = _EXT.get(PurePosixPath(path).suffix)
+    return _FAMILY[lang] if lang else None
+
+
 # Extensions an import specifier may leave off.
 _MODULE_EXT = re.compile(r"(\.d)?\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py|pyi|go|rs)$")
 NAME = re.compile(r"^[A-Za-z_$][\w$]*$")
@@ -159,8 +168,13 @@ class SymbolIndex:
                 self.by_name[name].append(d)
 
     def lookup(self, name: str, from_path: str, limit: int = 8) -> list[Definition]:
-        """Definitions of `name`, nearest to `from_path` first: same file, files it imports, same directory."""
+        """Definitions of `name`, nearest to `from_path` first: same file, files it imports, same directory.
+
+        From a source file, only definitions in its own language family count (a Python `from` isn't a
+        TypeScript variable); from anything else (docs, config), any language does."""
         found = self.by_name.get(name, [])
+        if fam := _family(from_path):
+            found = [d for d in found if _family(d.path) == fam]
         if not found:
             return []
         imported = _imports(self.root, from_path)

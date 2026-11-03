@@ -40,6 +40,7 @@ def test_lookup_prefers_the_file_imports(tmp_path):
         "pkg/mod.py": "from .util import helper\nhelper()\n",
         "pkg/util.py": "def helper():\n    return 1\n",
         "pkg/tests/test_util.py": "def helper():\n    pass\n",
+        "web/lib/helper.ts": "export const helper = 1;\n",
     }
     for p, text in files.items():
         (tmp_path / p).parent.mkdir(parents=True, exist_ok=True)
@@ -54,3 +55,10 @@ def test_lookup_prefers_the_file_imports(tmp_path):
     assert [d.path for d in index.lookup("helper", "pkg/mod.py")] == ["pkg/util.py", "pkg/tests/test_util.py"]
     assert index.snippet(index.lookup("helper", "pkg/mod.py")[0]) == "def helper():\n    return 1"
     assert index.lookup("missing", "pkg/mod.py") == []
+    # Other languages only answer for files that aren't code.
+    assert [d.path for d in index.lookup("helper", "web/app/view.ts")] == ["web/lib/helper.ts"]
+    assert {d.path for d in index.lookup("helper", "README.md")} == {
+        "pkg/util.py",
+        "pkg/tests/test_util.py",
+        "web/lib/helper.ts",
+    }
