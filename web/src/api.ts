@@ -1,5 +1,5 @@
 import { errorText } from "./lib/sse";
-import type { Guide, GuideVersion, PRPayload } from "./types";
+import type { Guide, GuideVersion, PRPayload, Target } from "./types";
 
 /** The diff and a guide: version `v`, or the latest. */
 export async function fetchPR(url: string, v?: number | null): Promise<PRPayload> {
@@ -41,4 +41,11 @@ export async function fetchDefinition(url: string, symbol: string, path: string)
   const res = await fetch(`/api/definition?${q}`);
   if (!res.ok) throw new Error(await errorText(res));
   return (await res.json()).matches;
+}
+
+/** Everything reviewed so far, most recent first. */
+export async function fetchTargets(): Promise<Target[]> {
+  const res = await fetch("/api/targets");
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
 }
