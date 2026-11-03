@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, FileCode, Maximize, Minus, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { easeInOut, easeOut, fromTrackpad, lerpVB, type VB, zoomVB } from "../lib/camera";
 import { type Box, boundsOf, layoutView, type PlacedBlock } from "../lib/layout";
 import { refsOf, refsTarget, useHunkIndex } from "../lib/linking";
 import { Inline } from "../lib/md";
@@ -12,7 +13,6 @@ import { useUI } from "../ui";
 import { ic } from "./icons";
 import { MapCanvas } from "./MapCanvas";
 
-type VB = [number, number, number, number];
 const reduceMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** The map: a view of the change in the guide pane's place. j/k (or ←/→) walk its scenes with an animated camera,
@@ -76,11 +76,19 @@ function MapBody() {
   const svg = useRef<SVGSVGElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const vb = useRef<VB | null>(null);
+  /** Where the camera is easing to, while it moves; wheel zooms add to it so fast notches stay smooth. */
+  const goal = useRef<VB | null>(null);
+  /** Whether the reader has panned or zoomed since the camera last framed the stop. */
+  const moved = useRef(false);
   const raf = useRef(0);
 
   const setVB = useCallback((v: VB) => {
     vb.current = v;
     svg.current?.setAttribute("viewBox", v.join(" "));
+  }, []);
+  const halt = useCallback(() => {
+    cancelAnimationFrame(raf.current);
+    goal.current = null;
   }, []);
   /** The viewBox that shows `box` in the part of the pane the scene card doesn't cover. */
   const frame = useCallback((box: Box): VB | null => {
@@ -97,22 +105,24 @@ function MapBody() {
     const s = Math.min(aw / box.w, ah / box.h, 1.1);
     return [box.x - left / s - (aw / s - box.w) / 2, box.y - top / s - (ah / s - box.h) / 2, W / s, H / s];
   }, []);
+  /** Ease the camera to `to` over `ms`, or jump there when there's nowhere to ease from. */
   const camera = useCallback(
-    (to: VB | null, animate = true) => {
+    (to: VB | null, ms = 650, ease = easeInOut) => {
       if (!to) return;
-      cancelAnimationFrame(raf.current);
+      halt();
       const from = vb.current;
-      if (!animate || !from || reduceMotion()) return setVB(to);
+      if (!ms || !from || reduceMotion()) return setVB(to);
+      goal.current = to;
       const t0 = performance.now();
-      const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
       const tick = (now: number) => {
-        const k = ease(Math.min(1, (now - t0) / 600));
-        setVB(from.map((f, i) => f + (to[i] - f) * k) as VB);
-        if (k < 1) raf.current = requestAnimationFrame(tick);
+        const t = Math.min(1, (now - t0) / ms);
+        setVB(lerpVB(from, to, ease(t)));
+        if (t < 1) raf.current = requestAnimationFrame(tick);
+        else goal.current = null;
       };
       raf.current = requestAnimationFrame(tick);
     },
-    [setVB],
+    [setVB, halt],
   );
   const stopBox = useCallback(
     (s: Stop | undefined) =>
@@ -125,12 +135,16 @@ function MapBody() {
     [layout],
   );
   const frameStop = useCallback(
-    (animate = true) => {
+    (ms?: number) => {
       const b = stopBox(stop);
-      if (b) camera(frame(b), animate);
+      if (!b) return;
+      moved.current = false;
+      camera(frame(b), ms);
     },
     [stop, stopBox, camera, frame],
   );
+  const frameNow = useRef(frameStop);
+  frameNow.current = frameStop;
 
   // A view opens on the scene for the step pinned in the steps, if it has one, else on its overview.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when the view changes.
@@ -139,7 +153,6 @@ function MapBody() {
     const i = step == null ? 0 : stops.findIndex((s) => !s.overview && s.step === step);
     setAt(Math.max(0, i));
     setOn(null);
-    vb.current = null;
     if (i > 0) pin(refsOfBlocks(stops[i].blocks));
   }, [view]);
   // Leaving the map on a step's scene pins that step for the steps view.
@@ -156,20 +169,37 @@ function MapBody() {
     },
     [],
   );
-  // Frame the stop; animate between stops, but not on first paint or a resize.
-  const first = useRef(true);
+  // Frame the stop, easing from wherever the camera is; the first paint just lands there.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-frame only when the stop changes.
   useLayoutEffect(() => {
-    frameStop(!first.current && vb.current != null);
-    first.current = false;
+    frameStop(vb.current ? undefined : 0);
   }, [stop, layout]);
+  // When the pane resizes (the diff opens beside it, or a splitter drags), keep what's on screen where it is,
+  // then ease to a fresh framing of the stop unless the reader has moved the camera themselves.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the pane mounts with the first layout.
   useEffect(() => {
     const p = pane.current;
     if (!p || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => frameStop(false));
+    let size = [p.clientWidth, p.clientHeight];
+    let later = 0;
+    const ro = new ResizeObserver(() => {
+      const [w, h] = [p.clientWidth, p.clientHeight];
+      const v = vb.current;
+      if (!w || !h || (w === size[0] && h === size[1])) return;
+      if (v && size[0] && size[1]) {
+        halt();
+        setVB([v[0], v[1], (v[2] * w) / size[0], (v[3] * h) / size[1]]);
+      }
+      size = [w, h];
+      clearTimeout(later);
+      if (!moved.current) later = window.setTimeout(() => frameNow.current(vb.current ? 450 : 0), 120);
+    });
     ro.observe(p);
-    return () => ro.disconnect();
-  }, [frameStop]);
+    return () => {
+      ro.disconnect();
+      clearTimeout(later);
+    };
+  }, [halt, setVB, !layout]);
 
   const refsOfBlocks = useCallback(
     (ids: string[]): Ref[] => {
@@ -238,8 +268,9 @@ function MapBody() {
     return () => removeEventListener("keydown", onKey);
   }, [go, at]);
 
-  // Trackpad: two-finger scroll pans, pinch zooms (a pinch arrives as a wheel event with ctrlKey). Mouse: the wheel
-  // pans, ⌘/Ctrl + wheel zooms, dragging the background pans.
+  // A mouse wheel zooms about the pointer, a trackpad pinch zooms (it arrives as a wheel event with ctrlKey), and
+  // two fingers on a trackpad pan. Dragging anywhere pans.
+  const trackpad = useRef({ on: false, t: 0 });
   useEffect(() => {
     const p = pane.current;
     if (!p) return;
@@ -247,27 +278,54 @@ function MapBody() {
       const v = vb.current;
       if (!v) return;
       e.preventDefault();
-      cancelAnimationFrame(raf.current);
+      setPeek(null);
+      moved.current = true;
+      // A gesture keeps the device it started with, so a trackpad's momentum never turns into zooming.
+      const g = trackpad.current;
+      const now = performance.now();
+      g.on = (now - g.t < 300 && g.on) || fromTrackpad(e as WheelEvent & { wheelDeltaY?: number });
+      g.t = now;
       const r = p.getBoundingClientRect();
-      if (e.ctrlKey || e.metaKey)
-        return zoomAt(Math.exp(e.deltaY * (e.ctrlKey && !e.metaKey ? 0.01 : 0.0015)), e.clientX, e.clientY);
-      const k = e.deltaMode === 1 ? 16 : 1;
-      setVB([v[0] + (e.deltaX * k * v[2]) / r.width, v[1] + (e.deltaY * k * v[3]) / r.height, v[2], v[3]]);
+      const fx = (e.clientX - r.left) / r.width;
+      const fy = (e.clientY - r.top) / r.height;
+      if (e.ctrlKey && g.on) {
+        halt();
+        return setVB(zoomVB(v, Math.exp(e.deltaY * 0.01), fx, fy, ...zoomRange()));
+      }
+      if (g.on && !e.metaKey) {
+        halt();
+        return setVB([v[0] + (e.deltaX * v[2]) / r.width, v[1] + (e.deltaY * v[3]) / r.height, v[2], v[3]]);
+      }
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * r.height : e.deltaY;
+      zoomBy(Math.exp(Math.max(-250, Math.min(250, dy)) * 0.0018), fx, fy, 200);
     };
     p.addEventListener("wheel", onWheel, { passive: false });
     return () => p.removeEventListener("wheel", onWheel);
   });
-  const zoomAt = (k: number, cx?: number, cy?: number) => {
-    const p = pane.current;
-    const v = vb.current;
-    if (!p || !v) return;
-    const r = p.getBoundingClientRect();
-    const px = v[0] + (((cx ?? r.left + r.width / 2) - r.left) / r.width) * v[2];
-    const py = v[1] + (((cy ?? r.top + r.height / 2) - r.top) / r.height) * v[3];
-    cancelAnimationFrame(raf.current);
-    setVB([px - (px - v[0]) * k, py - (py - v[1]) * k, v[2] * k, v[3] * k]);
+  /** How far the camera may zoom: from a tenth of the view's width (close) to four times it (far). */
+  const zoomRange = (): [number, number] => {
+    const w = Math.max(layout?.width ?? 0, layout?.height ?? 0, 400);
+    return [w / 10, w * 4];
   };
-  const drag = useRef<{ x: number; y: number; v: VB } | null>(null);
+  /** Zoom by `k` about a point given as fractions of the pane, easing over `ms`. */
+  const zoomBy = (k: number, fx = 0.5, fy = 0.5, ms = 260) => {
+    const from = goal.current ?? vb.current;
+    if (!from) return;
+    moved.current = true;
+    camera(zoomVB(from, k, fx, fy, ...zoomRange()), ms, easeOut);
+  };
+  const drag = useRef<{ x: number; y: number; v: VB; id: number; on: boolean } | null>(null);
+  const dragged = useRef(false);
+  const endDrag = () => {
+    if (drag.current?.on) {
+      dragged.current = true;
+      setTimeout(() => {
+        dragged.current = false;
+      });
+    }
+    drag.current = null;
+    document.body.classList.remove("map-panning");
+  };
 
   const enter = (b: PlacedBlock, el: SVGGElement) => {
     const keys = refsTarget(b.refs, idx).keys;
@@ -294,15 +352,33 @@ function MapBody() {
     <aside
       className="guide map"
       ref={pane}
+      onMouseDown={(e) => {
+        // Pressing the map never starts a text selection; it still takes focus from an input, like a click would.
+        if ((e.target as Element).closest(".map-float")) return;
+        e.preventDefault();
+        (document.activeElement as HTMLElement | null)?.blur?.();
+      }}
       onPointerDown={(e) => {
-        if ((e.target as Element).closest(".m-box, .map-float") || !vb.current) return;
-        drag.current = { x: e.clientX, y: e.clientY, v: vb.current };
-        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+        if (e.button !== 0 || (e.target as Element).closest(".map-float") || !vb.current) return;
+        drag.current = { x: e.clientX, y: e.clientY, v: vb.current, id: e.pointerId, on: false };
       }}
       onPointerMove={(e) => {
         const d = drag.current;
         const p = pane.current;
         if (!d || !p) return;
+        // A press on a box only becomes a drag once it moves a few pixels, so clicks still pick the box.
+        if (!d.on) {
+          if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
+          d.on = true;
+          halt();
+          d.v = vb.current ?? d.v;
+          d.x = e.clientX;
+          d.y = e.clientY;
+          moved.current = true;
+          setPeek(null);
+          document.body.classList.add("map-panning");
+          p.setPointerCapture?.(d.id);
+        }
         const r = p.getBoundingClientRect();
         setVB([
           d.v[0] - ((e.clientX - d.x) / r.width) * d.v[2],
@@ -311,8 +387,10 @@ function MapBody() {
           d.v[3],
         ]);
       }}
-      onPointerUp={() => {
-        drag.current = null;
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onClickCapture={(e) => {
+        if (dragged.current) e.stopPropagation();
       }}
     >
       <MapCanvas
@@ -344,10 +422,10 @@ function MapBody() {
         </div>
       )}
       <div className="map-float map-zoom">
-        <button type="button" className="icon-btn sm" title="Zoom in" onClick={() => zoomAt(0.8)}>
+        <button type="button" className="icon-btn sm" title="Zoom in" onClick={() => zoomBy(0.75)}>
           {ic(Plus, 15)}
         </button>
-        <button type="button" className="icon-btn sm" title="Zoom out" onClick={() => zoomAt(1.25)}>
+        <button type="button" className="icon-btn sm" title="Zoom out" onClick={() => zoomBy(1 / 0.75)}>
           {ic(Minus, 15)}
         </button>
         <button type="button" className="icon-btn sm" title="Fit" onClick={() => frameStop()}>
@@ -384,15 +462,17 @@ function MapBody() {
             </button>
           </div>
         )}
-        <div className="map-card-t">
-          {stop.step != null && <span className="dot">{stop.step}</span>}
-          {stop.title}
+        <div className="map-card-b" key={`${vi}:${at}`}>
+          <div className="map-card-t">
+            {stop.step != null && <span className="dot">{stop.step}</span>}
+            {stop.title}
+          </div>
+          {stop.text && (
+            <p className="map-card-s">
+              <Inline text={stop.text} />
+            </p>
+          )}
         </div>
-        {stop.text && (
-          <p className="map-card-s">
-            <Inline text={stop.text} />
-          </p>
-        )}
       </div>
       {peek && (
         <div
