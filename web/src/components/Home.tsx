@@ -79,7 +79,7 @@ export function Home() {
                 {t.local ? ic(GitBranch, 15) : <GithubIcon size={15} />}
                 <span className="t">
                   <b>{name(t)}</b>
-                  <span className="ref">{ref(t)}</span>
+                  <span className="rf">{ref(t)}</span>
                   <span className="ttl">{title(t)}</span>
                 </span>
                 <span className="m">
