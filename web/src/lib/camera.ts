@@ -14,9 +14,10 @@ export function lerpVB(a: VB, b: VB, k: number): VB {
   return [cx - w / 2, cy - h / 2, w, h];
 }
 
-/** `v` scaled by `k` about the point (`fx`, `fy`), given as fractions of the view, with its width kept in [min, max]. */
+/** `v` scaled by `k` about the point (`fx`, `fy`), given as fractions of the view. Zooming stops at a width of
+ *  `min` (in) or `max` (out), but never turns around: a view already past a limit just can't go further. */
 export function zoomVB(v: VB, k: number, fx = 0.5, fy = 0.5, min = 0, max = Number.POSITIVE_INFINITY): VB {
-  const s = Math.max(min / v[2], Math.min(max / v[2], k));
+  const s = k > 1 ? Math.min(k, Math.max(1, max / v[2])) : Math.max(k, Math.min(1, min / v[2]));
   const px = v[0] + fx * v[2];
   const py = v[1] + fy * v[3];
   return [px - (px - v[0]) * s, py - (py - v[1]) * s, v[2] * s, v[3] * s];

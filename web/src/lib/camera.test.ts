@@ -17,6 +17,9 @@ test("zoomVB keeps the point under the pointer still and clamps the width", () =
   expect(z).toEqual([25, 25, 100, 50]);
   expect(zoomVB(v, 0.01, 0.5, 0.5, 50)[2]).toBe(50);
   expect(zoomVB(v, 100, 0.5, 0.5, 0, 400)[2]).toBe(400);
+  // Past a limit, zooming further that way does nothing, and the other way still works.
+  expect(zoomVB(v, 1.5, 0.5, 0.5, 0, 150)[2]).toBe(200);
+  expect(zoomVB(v, 0.5, 0.5, 0.5, 0, 150)[2]).toBe(100);
 });
 
 test("fromTrackpad tells a notched wheel from a trackpad", () => {

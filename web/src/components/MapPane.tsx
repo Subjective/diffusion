@@ -288,7 +288,9 @@ function MapBody() {
       const r = p.getBoundingClientRect();
       const fx = (e.clientX - r.left) / r.width;
       const fy = (e.clientY - r.top) / r.height;
-      if (e.ctrlKey && g.on) {
+      // A pinch is a ctrl-wheel with small pixel deltas, whatever the device check says; ctrl + a mouse wheel
+      // notch is far bigger and eases like any other notch below.
+      if (e.ctrlKey && e.deltaMode === 0 && Math.abs(e.deltaY) < 50) {
         halt();
         return setVB(zoomVB(v, Math.exp(e.deltaY * 0.01), fx, fy, ...zoomRange()));
       }
@@ -299,13 +301,34 @@ function MapBody() {
       const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * r.height : e.deltaY;
       zoomBy(Math.exp(Math.max(-250, Math.min(250, dy)) * 0.0018), fx, fy, 200);
     };
+    // Safari reports a pinch as gesture events instead of ctrl-wheels.
+    let scale = 1;
+    const onGesture = (e: Event) => {
+      const ge = e as Event & { scale: number; clientX: number; clientY: number };
+      const v = vb.current;
+      e.preventDefault();
+      if (e.type === "gesturestart") scale = 1;
+      if (!v || !ge.scale) return;
+      halt();
+      moved.current = true;
+      const r = p.getBoundingClientRect();
+      setVB(
+        zoomVB(v, scale / ge.scale, (ge.clientX - r.left) / r.width, (ge.clientY - r.top) / r.height, ...zoomRange()),
+      );
+      scale = ge.scale;
+    };
     p.addEventListener("wheel", onWheel, { passive: false });
-    return () => p.removeEventListener("wheel", onWheel);
+    for (const t of ["gesturestart", "gesturechange"]) p.addEventListener(t, onGesture, { passive: false });
+    return () => {
+      p.removeEventListener("wheel", onWheel);
+      for (const t of ["gesturestart", "gesturechange"]) p.removeEventListener(t, onGesture);
+    };
   });
-  /** How far the camera may zoom: from a tenth of the view's width (close) to four times it (far). */
+  /** How far the camera may zoom: from a tenth of the view's width (close) to four times it, or three pane-widths
+   *  of a small view on a big screen (far). */
   const zoomRange = (): [number, number] => {
     const w = Math.max(layout?.width ?? 0, layout?.height ?? 0, 400);
-    return [w / 10, w * 4];
+    return [w / 10, Math.max(w * 4, (pane.current?.clientWidth ?? 0) * 3)];
   };
   /** Zoom by `k` about a point given as fractions of the pane, easing over `ms`. */
   const zoomBy = (k: number, fx = 0.5, fy = 0.5, ms = 260) => {
