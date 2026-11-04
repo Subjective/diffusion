@@ -14,7 +14,7 @@ import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
 import { useApp } from "../store";
 import type { FileDiff as FD, Guide, Ref } from "../types";
-import { markDiffActivity, useUI } from "../ui";
+import { diffActivity, markDiffActivity, useUI } from "../ui";
 import { type AskComment, commentRows } from "./Comments";
 import { type Dot, FileDiff, type Gutter } from "./FileDiff";
 import { FileRail, fileInView } from "./FileRail";
@@ -94,11 +94,12 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
 
   useEffect(() => {
     if (!scrollTo) return;
-    // wait a frame for expanded files to render
-    requestAnimationFrame(() => {
-      const p = scroller.current;
-      const first = p?.querySelector<HTMLElement>(`tr[data-rk="${CSS.escape(scrollTo.keys[0])}"]`);
-      if (!p || !first) return;
+    const p = scroller.current;
+    if (!p) return;
+    // Where the focused lines should sit, from where they are now.
+    const target = () => {
+      const first = p.querySelector<HTMLElement>(`tr[data-rk="${CSS.escape(scrollTo.keys[0])}"]`);
+      if (!first) return null;
       const file = first.closest<HTMLElement>(".file");
       const header = file?.querySelector<HTMLElement>(".file-h")?.offsetHeight ?? 0;
       const top = focusScrollTop(
@@ -108,8 +109,34 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
         header,
         2 * first.offsetHeight,
       );
-      p.scrollTo({ top, behavior: "smooth" });
-    });
+      return Math.min(top, p.scrollHeight - p.clientHeight);
+    };
+    // Off-screen files are laid out from estimated heights (content-visibility), so the lines move as the files
+    // on the way render. Once the scroll settles, aim again, until it lands or the reviewer takes over.
+    const started = Date.now();
+    let frame = 0;
+    let settle = 0;
+    let tries = 0;
+    const go = () => {
+      const top = target();
+      if (top == null || Math.abs(top - p.scrollTop) < 2) return stop();
+      p.scrollTo({ top, behavior: tries++ ? "auto" : "smooth" });
+    };
+    const onScroll = () => {
+      clearTimeout(settle);
+      settle = window.setTimeout(() => (diffActivity.at > started || tries > 4 ? stop() : go()), 120);
+    };
+    const stop = () => {
+      clearTimeout(settle);
+      p.removeEventListener("scroll", onScroll);
+    };
+    p.addEventListener("scroll", onScroll, { passive: true });
+    // wait a frame for expanded files to render
+    frame = requestAnimationFrame(go);
+    return () => {
+      cancelAnimationFrame(frame);
+      stop();
+    };
   }, [scrollTo]);
 
   // Go to definition: ⌘/Ctrl-click a name. Holding the key underlines names; ⌘[ returns from a jump.

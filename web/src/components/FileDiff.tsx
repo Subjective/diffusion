@@ -82,7 +82,7 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
       className={`file${file.skip ? " skip" : ""}${collapsed ? " collapsed" : ""}`}
       data-path={file.path}
       style={{
-        containIntrinsicSize: `auto ${collapsed ? 44 : 44 + file.hunks.reduce((n, h) => n + 22 * h.lines.length + 32, 0)}px`,
+        containIntrinsicSize: `auto ${estimateHeight(file, collapsed)}px`,
       }}
     >
       <div className="file-h" onClick={() => toggleCollapsed(file.path)}>
@@ -158,6 +158,14 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
     </section>
   );
 });
+
+/** A file's height before it first renders, for content-visibility: header, then a header row and lines per
+ *  hunk. Jumps re-aim once they land, so this only needs to be close. */
+function estimateHeight(file: FD, collapsed: boolean): number {
+  const header = 42;
+  if (collapsed) return header;
+  return header + file.hunks.reduce((n, h) => n + 26 + 20 * h.lines.length, 0);
+}
 
 /** Scrolls long lines sideways. Its scrollbar sticks to the bottom of the pane while the file is in view, not just the file's end. */
 function HScroll({ children }: { children: ReactNode }) {

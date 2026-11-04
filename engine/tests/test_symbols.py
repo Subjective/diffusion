@@ -31,6 +31,56 @@ def test_python_go_rust_definitions():
     assert names("x.txt", "def f(): pass") == {}
 
 
+def test_csharp_java_kotlin_definitions():
+    cs = names(
+        "x.cs",
+        """namespace N {
+public class C : B {
+    public int P { get; set; }
+    private int f, g;
+    public C() {}
+    public void M() {}
+    public event Handler Ev;
+}
+interface I { void Q(); }
+struct S {}
+enum En { A }
+record R(int X);
+delegate void D();
+}
+""",
+    )
+    assert {"C", "P", "f", "g", "M", "Ev", "I", "Q", "S", "En", "A", "R", "D"} <= cs.keys()
+    assert cs["M"] == (6, 6)
+    java = names(
+        "X.java",
+        "class C {\n  int f;\n  C() {}\n  void m() {}\n}\ninterface I { void q(); }\nenum E { A }\nrecord R(int x) {}\n",
+    )
+    assert {"C", "f", "m", "I", "q", "E", "A", "R"} <= java.keys()
+    kt = names(
+        "x.kt",
+        "class C(val p: Int) {\n    val f = 1\n    fun m() {}\n}\nobject O {}\nfun top() {}\ntypealias T = Int\n",
+    )
+    assert {"C", "f", "m", "O", "top", "T"} <= kt.keys()
+
+
+def test_c_cpp_definitions():
+    c = names(
+        "x.c",
+        "int f(int a) { return a; }\nchar *g(void) { return 0; }\nint proto(void);\nstruct S { int x; };\n"
+        "typedef struct S T;\nenum E { A };\n#define M 1\n#define F(x) x\nint v = 1;\n",
+    )
+    assert {"f", "g", "S", "T", "E", "A", "M", "F", "v"} <= c.keys()
+    assert "proto" not in c  # a prototype isn't the definition
+    cpp = names(
+        "x.cpp",
+        "namespace n {\nclass C {\n public:\n  void m();\n  int f;\n};\nvoid C::m() {}\n"
+        "template <class T> T id(T x) { return x; }\nusing A = int;\n}\n",
+    )
+    assert {"C", "m", "f", "id", "A"} <= cpp.keys()
+    assert "S" in names("x.h", "struct S { int x; };\n")
+
+
 def test_lookup_prefers_the_file_imports(tmp_path):
     files = {
         "web/lib/refs.ts": "export function rowKey() {}\n",
@@ -40,6 +90,10 @@ def test_lookup_prefers_the_file_imports(tmp_path):
         "pkg/mod.py": "from .util import helper\nhelper()\n",
         "pkg/util.py": "def helper():\n    return 1\n",
         "pkg/tests/test_util.py": "def helper():\n    pass\n",
+        "web/lib/helper.ts": "export const helper = 1;\n",
+        "jvm/Helper.java": "class Helper { static int helper() { return 1; } }\n",
+        "jvm/Use.kt": "fun use() = Helper.helper()\n",
+        "jvm/Box.kt": "class Box {\n    class Helper\n}\n",
     }
     for p, text in files.items():
         (tmp_path / p).parent.mkdir(parents=True, exist_ok=True)
@@ -54,3 +108,15 @@ def test_lookup_prefers_the_file_imports(tmp_path):
     assert [d.path for d in index.lookup("helper", "pkg/mod.py")] == ["pkg/util.py", "pkg/tests/test_util.py"]
     assert index.snippet(index.lookup("helper", "pkg/mod.py")[0]) == "def helper():\n    return 1"
     assert index.lookup("missing", "pkg/mod.py") == []
+    # Other languages only answer for files that aren't code.
+    assert [d.path for d in index.lookup("helper", "web/app/view.ts")] == ["web/lib/helper.ts"]
+    # Kotlin and Java see each other's definitions.
+    assert [d.path for d in index.lookup("helper", "jvm/Use.kt")] == ["jvm/Helper.java"]
+    # A type is nearest in the file named after it.
+    assert [d.path for d in index.lookup("Helper", "jvm/Use.kt")] == ["jvm/Helper.java", "jvm/Box.kt"]
+    assert {d.path for d in index.lookup("helper", "README.md")} == {
+        "pkg/util.py",
+        "pkg/tests/test_util.py",
+        "web/lib/helper.ts",
+        "jvm/Helper.java",
+    }
