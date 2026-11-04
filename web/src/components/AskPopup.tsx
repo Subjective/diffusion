@@ -60,9 +60,15 @@ export function AskPopup({
     >
       <div className="ask-ctx">
         {ic(a.commentTitle ? MessageCircle : FileCode, 13)}
-        {a.commentTitle && <b className="ask-cmt">{a.commentTitle}</b>}
-        <b>{a.file.split("/").pop()}</b>
-        <span>{rangeText(a.start, a.end)}</span>
+        {a.commentTitle && (
+          <b className="ask-cmt" title={a.commentTitle}>
+            {a.commentTitle}
+          </b>
+        )}
+        <b className="ask-file" title={a.file}>
+          {a.file.split("/").pop()}
+        </b>
+        <span className="ask-range">{rangeText(a.start, a.end)}</span>
         <span className="grow" />
         <button type="button" className="icon-btn sm" onClick={onClose} title="Close">
           {ic(X, 13)}

@@ -136,18 +136,20 @@ function Header() {
     <div className="pr">
       <h1>{pr.title}</h1>
       <div className="meta">
-        {ic(GitPullRequest, 14)}
+        {/* The branch (or repo) gives way first, so the stats always fit on one line. */}
         {pr.local ? (
-          <span title={pr.url}>
-            {pr.head_ref} → {pr.base_ref}
+          <span className="meta-ref" title={`${pr.head_ref} → ${pr.base_ref}`}>
+            {ic(GitPullRequest, 14)}
+            <span className="trunc">{pr.head_ref}</span>→ {pr.base_ref}
           </span>
         ) : (
-          <a href={pr.url} target="_blank" rel="noreferrer">
-            {pr.repo} #{pr.number}
+          <a className="meta-ref" href={pr.url} target="_blank" rel="noreferrer" title={`${pr.repo} #${pr.number}`}>
+            {ic(GitPullRequest, 14)}
+            <span className="trunc">{pr.repo}</span>#{pr.number}
           </a>
         )}
-        <span className="sep" />
-        <span className="avatar" title={pr.author}>
+        <span className="sep meta-who" />
+        <span className="avatar meta-who" title={pr.author}>
           {pr.author.slice(0, 2).toUpperCase()}
         </span>
         <span className="sep" />
