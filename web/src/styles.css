@@ -225,12 +225,36 @@ code {
 }
 .meta {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
   margin: 0 4px;
   color: var(--subtle);
   font-size: 12.5px;
+}
+.meta > * {
+  flex: none;
+}
+.meta > .meta-ref {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.meta-ref svg {
+  flex: none;
+  margin-right: 4px;
+}
+.trunc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@container guide (max-width: 300px) {
+  .meta > .meta-who {
+    display: none;
+  }
 }
 .avatar {
   width: 18px;
@@ -1148,6 +1172,23 @@ tr.ln:hover .ask-btn {
 .ask-ctx b {
   color: var(--text);
   font-weight: 500;
+}
+/* Narrow: the comment title gives way first, then the file name; the line range always shows. */
+.ask-ctx > :not(.grow) {
+  flex: none;
+  white-space: nowrap;
+}
+.ask-ctx > .ask-cmt,
+.ask-ctx > .ask-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ask-ctx > .ask-cmt {
+  flex: 0 1 auto;
+  min-width: 3em;
+}
+.ask-ctx > .ask-file {
+  max-width: 50%;
 }
 .ask-in {
   display: flex;
