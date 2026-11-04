@@ -1697,15 +1697,26 @@ body.resizing * {
   margin-top: 6px;
 }
 .rail-dir {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 6px;
   height: 26px;
   padding: 0 8px;
+  border-radius: 8px;
   color: var(--subtle);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
+  text-align: left;
+}
+.rail-dir:hover {
+  background: var(--hover);
+  color: var(--muted);
+}
+/* A folded directory holding the file in view stands in for it. */
+.rail-dir.on {
+  color: var(--text);
 }
 .rail-dir span {
   overflow: hidden;

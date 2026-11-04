@@ -1,5 +1,5 @@
-import { FolderClosed } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { FolderClosed, FolderOpen } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff as FD } from "../types";
 import { useUI } from "../ui";
 import { ic } from "./icons";
@@ -12,11 +12,18 @@ interface Props {
   onPick(path: string): void;
 }
 
-/** Changed files grouped by directory, A–Z. The file in view is highlighted and kept in sight. */
+/** Changed files grouped by directory, A–Z. Directories fold. The file in view is highlighted and kept in sight. */
 export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
   const viewed = useUI((s) => s.viewed);
   const hideSkip = useUI((s) => s.hideSkip);
   const nav = useRef<HTMLElement>(null);
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (dir: string) =>
+    setFolded((s) => {
+      const n = new Set(s);
+      if (!n.delete(dir)) n.add(dir);
+      return n;
+    });
 
   const groups = useMemo(() => {
     const by = new Map<string, FD[]>();
@@ -35,48 +42,58 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
 
   return (
     <nav className="rail" ref={nav} aria-label="Files">
-      {groups.map(([dir, fs]) => (
-        <div key={dir} className="rail-g">
-          {dir && (
-            <div className="rail-dir" title={dir}>
-              {ic(FolderClosed, 13)}
-              <span>{dir}</span>
-            </div>
-          )}
-          {fs.map((f) => {
-            const cls = [
-              "rail-f",
-              f.path === current && "on",
-              viewed[f.path] && "viewed",
-              skip.has(f.path) && "skip",
-              dir && "nested",
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
+      {groups.map(([dir, fs]) => {
+        const shut = folded.has(dir);
+        return (
+          <div key={dir} className="rail-g">
+            {dir && (
               <button
-                key={f.path}
                 type="button"
-                className={cls}
-                data-path={f.path}
-                title={f.path}
-                onClick={() => onPick(f.path)}
+                className={`rail-dir${shut && fs.some((f) => f.path === current) ? " on" : ""}`}
+                title={dir}
+                aria-expanded={!shut}
+                onClick={() => toggle(dir)}
               >
-                <span className="nm">{f.path.slice(dir.length)}</span>
-                <span className="grow" />
-                {(fileSteps.get(f.path) ?? []).map((s) => (
-                  <span key={s} className="dot sm" data-step={s}>
-                    {s}
-                  </span>
-                ))}
-                <span className="cnt">
-                  <span className="a">+{f.additions}</span> <span className="d">−{f.deletions}</span>
-                </span>
+                {ic(shut ? FolderClosed : FolderOpen, 13)}
+                <span>{dir}</span>
               </button>
-            );
-          })}
-        </div>
-      ))}
+            )}
+            {!shut &&
+              fs.map((f) => {
+                const cls = [
+                  "rail-f",
+                  f.path === current && "on",
+                  viewed[f.path] && "viewed",
+                  skip.has(f.path) && "skip",
+                  dir && "nested",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+                return (
+                  <button
+                    key={f.path}
+                    type="button"
+                    className={cls}
+                    data-path={f.path}
+                    title={f.path}
+                    onClick={() => onPick(f.path)}
+                  >
+                    <span className="nm">{f.path.slice(dir.length)}</span>
+                    <span className="grow" />
+                    {(fileSteps.get(f.path) ?? []).map((s) => (
+                      <span key={s} className="dot sm" data-step={s}>
+                        {s}
+                      </span>
+                    ))}
+                    <span className="cnt">
+                      <span className="a">+{f.additions}</span> <span className="d">−{f.deletions}</span>
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+        );
+      })}
     </nav>
   );
 }
