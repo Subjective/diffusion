@@ -10,7 +10,7 @@ works, and why.
 
 ## Demo
 
-https://github.com/user-attachments/assets/996590b5-219a-4786-a07c-42482bfacdaf
+https://github.com/user-attachments/assets/759bcf0b-d89a-4d07-8d20-f0b2ce0254bc
 
 ## From your coding agent
 
