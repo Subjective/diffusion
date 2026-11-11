@@ -369,7 +369,7 @@ const TOOL_ICONS: Partial<Record<string, typeof Wrench>> = {
   Grep: Search,
   Glob: Search,
   Search: Search,
-  Hunk: FileCode,
+  Diff: FileCode,
   Show: FileCode,
 };
 
