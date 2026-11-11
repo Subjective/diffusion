@@ -1257,14 +1257,6 @@ tr.ln:hover .ask-btn {
   gap: 18px;
   color: var(--subtle);
 }
-.empty .big {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  display: grid;
-  place-items: center;
-}
 .sugg {
   display: flex;
   flex-wrap: wrap;
