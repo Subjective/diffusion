@@ -11,6 +11,7 @@ from diffusion.chat_agent import (
     Question,
     SectionSplitter,
     format_turn,
+    hunk_summary,
     run_turn,
     seed_context,
     show_code_tool,
@@ -103,6 +104,12 @@ def test_format_turn_includes_the_comment_asked_about(prep):
     a = Anchor(file="src/auth/types.ts", start=4, end=4, comment="Unit unclear. Seconds or milliseconds?")
     s = format_turn([Question(n=1, text="Is this a real problem?", anchor=a)], prep.index)
     assert "Your guide left this comment on those lines: Unit unclear. Seconds or milliseconds?" in s
+
+
+def test_hunk_summary_names_files_and_lines(prep):
+    assert hunk_summary("Hunk H2, H3", prep.index) == "Diff client.ts:1–7, session.ts:1–25"
+    assert hunk_summary("Hunk H5", prep.index) == "Diff legacy.ts:1"  # a deleted file: old lines
+    assert hunk_summary("Hunk H999", prep.index) == "Hunk H999"
 
 
 async def test_run_turn_routes_sections_and_tools(prep):

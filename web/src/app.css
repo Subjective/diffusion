@@ -685,9 +685,20 @@ tr.cmt-row[data-tone="bug"] .cmt-tone {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 100%;
   padding: 2px 0;
   color: var(--subtle);
   font-size: 12px;
+  text-align: left;
+}
+.trace-l {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace-h .ic {
+  flex-shrink: 0;
 }
 .trace-h:hover {
   color: var(--muted);
@@ -729,15 +740,22 @@ tr.cmt-row[data-tone="bug"] .cmt-tone {
   min-width: 0;
   color: var(--subtle);
   font-size: 12px;
+  line-height: 18px;
 }
-.trace-tool code {
-  font: 11.5px var(--mono);
-  color: var(--muted);
-  background: none;
-  padding: 0;
+.trace-tool :is(.ic, .verb) {
+  flex-shrink: 0;
+}
+.trace-tool :is(code, .arg) {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.trace-tool code {
+  font: 11.5px / 18px var(--mono);
+  color: var(--muted);
+  background: none;
+  padding: 0;
 }
 .trace-think {
   color: var(--subtle);

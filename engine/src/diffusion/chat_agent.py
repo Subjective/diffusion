@@ -237,6 +237,17 @@ class GuideBlock:
         return out
 
 
+def hunk_summary(summary: str, idx: DiffIndex) -> str:
+    """``Hunk H1, H2`` names hunks by ID, which mean nothing to the reviewer; say which lines they cover instead:
+    ``Diff session.ts:1–8, types.ts:1–3``."""
+    spans: dict[str, list[str]] = {}
+    for hid in re.findall(r"H\d+", summary.upper()):
+        if h := idx.by_id.get(hid):
+            a, b = (h.new_start, h.new_end) if h.new_len else (h.old_start, h.old_end)
+            spans.setdefault(Path(h.file).name, []).append(f"{a}–{b}" if b > a else str(a))
+    return "Diff " + ", ".join(f"{f}:{', '.join(r)}" for f, r in spans.items()) if spans else summary
+
+
 def hunk_tool(idx: DiffIndex) -> ToolSpec:
     async def get_hunk(args: dict) -> str:
         ids = args.get("ids") or []
@@ -374,6 +385,8 @@ async def run_turn(
             # Text before a tool call is narration ("Let me check…"); reset so it doesn't glue to the answer.
             for n, t in split.break_line():
                 yield ChatDelta(n, t)
+            if ev.name.endswith("get_hunk"):
+                ev = ToolEvent(ev.name, hunk_summary(ev.summary, prep.index))
             yield ev
         elif isinstance(ev, DoneEvent):
             for n, t in split.feed(block.flush()) + split.flush():
