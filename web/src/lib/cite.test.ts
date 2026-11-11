@@ -1,5 +1,5 @@
 import { files } from "../test/fixture";
-import { findFile, parseCite, resolveLoc } from "./cite";
+import { expandCites, findFile, parseCite, parseCites, resolveLoc } from "./cite";
 import { indexFiles } from "./refs";
 
 test("parseCite accepts path:line and ranges, rejects other code", () => {
@@ -10,6 +10,23 @@ test("parseCite accepts path:line and ranges, rejects other code", () => {
   expect(parseCite(".github/workflows/ci.yml:4")).toMatchObject({ file: ".github/workflows/ci.yml" });
   for (const s of ["end()", "a:b", "localhost:8080", "std::vector", "session.ts", "http://x.io:80"])
     expect(parseCite(s)).toBeNull();
+});
+
+test("parseCites links each range of a list on one file", () => {
+  expect(parseCites("session.ts:2, 6–7")).toEqual([
+    { loc: { file: "session.ts", start: 2, end: 2, side: "new" }, text: "session.ts:2" },
+    { loc: { file: "session.ts", start: 6, end: 7, side: "new" }, text: "6–7" },
+  ]);
+  expect(parseCites("a.py:L3,L9")?.map((c) => c.loc.start)).toEqual([3, 9]);
+  expect(parseCites("a.py:3, b")).toBeNull();
+});
+
+test("expandCites names the file in bare line citations that follow a full one", () => {
+  expect(expandCites("at `src/a.ts:7`, declared at `:5` and `L9–12`")).toBe(
+    "at `src/a.ts:7`, declared at `src/a.ts:5` and `src/a.ts:L9–12`",
+  );
+  expect(expandCites("`a.ts:1` then `b.go:4`, then `:6`")).toBe("`a.ts:1` then `b.go:4`, then `b.go:6`");
+  expect(expandCites("`:5` alone, `L2` and `x:3` stay")).toBe("`:5` alone, `L2` and `x:3` stay");
 });
 
 test("findFile resolves exact and unique suffix paths", () => {

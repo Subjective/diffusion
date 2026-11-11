@@ -1335,23 +1335,8 @@ tr.ln:hover .ask-btn {
   -webkit-mask-image: linear-gradient(#000 60%, transparent);
 }
 .msg.ai {
-  display: grid;
-  grid-template-columns: 26px 1fr;
-  gap: 10px;
   font-size: 14px;
   line-height: 1.6;
-}
-.ai-av {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  display: grid;
-  place-items: center;
-  color: var(--text);
-}
-.ai-body {
-  padding-top: 2px;
 }
 .ai-body code {
   font-size: 12px;

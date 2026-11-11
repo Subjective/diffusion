@@ -19,9 +19,9 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Anchor, type Question, type Show, useChat } from "../chat";
-import { type CodeLoc, parseCite, type Resolved, resolveLoc } from "../lib/cite";
+import { type CodeLoc, expandCites, parseCites, type Resolved, resolveLoc } from "../lib/cite";
 import { useHunkIndex } from "../lib/linking";
 import { InlineCodeContext, Markdown } from "../lib/md";
 import { CHAT_W, startResize } from "../lib/panes";
@@ -138,12 +138,26 @@ const locLink = (r: Resolved) => ({
 });
 
 /** Inline code in answers: `path:line` citations of diff lines become links (shown by file name; full path on
- *  hover); others stay plain code. */
+ *  hover); others stay plain code. A list on one file (`a.ts:3, 8–10`) links each range. */
 function Cite({ text }: { text: string }) {
+  const cites = useMemo(() => parseCites(text), [text]);
+  if (!cites) return <code>{text}</code>;
+  if (cites.length === 1) return <CiteLink {...cites[0]} />;
+  return (
+    <span className="cite-list">
+      {cites.map((c, i) => (
+        <Fragment key={i}>
+          {i > 0 && ", "}
+          <CiteLink {...c} />
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+function CiteLink({ loc, text }: { loc: CodeLoc; text: string }) {
   const resolve = useResolveLoc();
-  const loc = useMemo(() => parseCite(text), [text]);
-  const r = useMemo(() => (loc ? resolve(loc) : null), [loc, resolve]);
-  if (!loc) return <code>{text}</code>;
+  const r = useMemo(() => resolve(loc), [loc, resolve]);
   if (!r)
     return (
       <code className="cite off" title="Not part of this diff">
@@ -311,7 +325,6 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
         ))}
       </div>
       <div className="msg ai">
-        <div className="ai-av">{ic(Sparkles, 14)}</div>
         <div className="ai-body">
           <Trace q={qs[0]} pending={pending} />
           {qs.map((q) => (
@@ -327,7 +340,7 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
                 </div>
               )}
               <div className="ans-t">
-                {q.answer ? <Markdown text={q.answer} /> : null}
+                {q.answer ? <Markdown text={expandCites(q.answer)} /> : null}
                 {q.status === "pending" && <span className="cursor" />}
                 {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
               </div>
@@ -370,11 +383,11 @@ function ToolRow({ summary }: { summary: string }) {
       {ic(Icon ?? Wrench, 12)}
       {Icon ? (
         <>
-          <span>{verb}</span>
+          <span className="verb">{verb}</span>
           <code>{summary.slice(sp + 1)}</code>
         </>
       ) : (
-        <span>{summary}</span>
+        <span className="arg">{summary}</span>
       )}
     </li>
   );
@@ -403,8 +416,8 @@ function Trace({ q, pending }: { q: Question; pending: boolean }) {
   }
   return (
     <div className={`trace${open ? " open" : ""}`}>
-      <button type="button" className="trace-h" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span key={pending ? label : undefined} className={pending ? "trace-live" : undefined}>
+      <button type="button" className="trace-h" title={label} onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span key={pending ? label : undefined} className={`trace-l${pending ? " trace-live" : ""}`}>
           {label}
         </span>
         {ic(ChevronRight, 12)}

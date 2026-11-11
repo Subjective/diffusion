@@ -15,15 +15,47 @@ export interface Resolved {
   files: string[];
 }
 
-const CITE = /^(?:\.\/)?((?:[\w@.+-]+\/)*[\w@+-][\w@.+-]*\.[\w]+):L?(\d+)(?:\s*[-–—]\s*L?(\d+))?$/;
+const PATH = String.raw`(?:\.\/)?((?:[\w@.+-]+\/)*[\w@+-][\w@.+-]*\.\w+)`;
+const RANGE = String.raw`L?(\d+)(?:\s*[-–—]\s*L?(\d+))?`;
+const CITE = new RegExp(`^${PATH}:(${RANGE}(?:\\s*,\\s*${RANGE})*)$`);
+const ONE_RANGE = new RegExp(`^${RANGE}$`);
+/** `:12` or `L12–20` on its own: a line in the file cited just before it. */
+const BARE = new RegExp(`^(?::L?|L)${RANGE.slice(2)}$`);
 
-/** Parse an inline-code citation. Only `file.ext:N` or `file.ext:N–M` shapes count, so `a:b` code is left alone. */
-export function parseCite(text: string): CodeLoc | null {
+const loc = (file: string, a: number, b = a): CodeLoc => ({
+  file,
+  start: Math.min(a, b),
+  end: Math.max(a, b),
+  side: "new",
+});
+
+/** Parse an inline-code citation: `file.ext:N`, `file.ext:N–M`, or a list on one file (`file.ext:3, 8–10`).
+ *  Other shapes return null, so `a:b` code is left alone. One location per range, with the text it was cited as. */
+export function parseCites(text: string): { loc: CodeLoc; text: string }[] | null {
   const m = text.trim().match(CITE);
   if (!m) return null;
-  const a = Number(m[2]);
-  const b = m[3] ? Number(m[3]) : a;
-  return { file: m[1], start: Math.min(a, b), end: Math.max(a, b), side: "new" };
+  return m[2].split(",").map((part, i) => {
+    const r = part.trim().match(ONE_RANGE)!;
+    const a = Number(r[1]);
+    return { loc: loc(m[1], a, r[2] ? Number(r[2]) : a), text: i ? part.trim() : `${m[1]}:${part.trim()}` };
+  });
+}
+
+/** The first location of a citation (see `parseCites`). */
+export function parseCite(text: string): CodeLoc | null {
+  return parseCites(text)?.[0].loc ?? null;
+}
+
+/** Answers sometimes cite a file once and then only line numbers (`a.ts:3` … `:9`). Spell those out so every
+ *  citation names its file. */
+export function expandCites(md: string): string {
+  let file: string | null = null;
+  return md.replace(/`([^`\n]+)`/g, (span, inner: string) => {
+    const full = inner.trim().match(CITE);
+    if (full) file = full[1];
+    else if (file && BARE.test(inner.trim())) return `\`${file}:${inner.trim().replace(/^:/, "")}\``;
+    return span;
+  });
 }
 
 /** Exact path, else the unique diff file whose path ends with `/file` (answers often cite short paths). */

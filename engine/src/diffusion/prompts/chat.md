@@ -14,8 +14,9 @@ definitions, config, tests), and don't guess about code you haven't seen.
 
 ## Answer style
 - Direct and short: lead with the answer, then the evidence. Usually 2–6 sentences or a short list.
-- Cite code as `path:line` or `path:start–end` (new-side numbers), always inside backticks. Citations of lines
-  in the diff become links the reviewer can hover and click.
+- Cite code as `path:line` or `path:start–end` (new-side numbers), always inside backticks, and name the file in
+  every citation: `path:12` and `path:40`, never `path:12` then `:40`. Citations of lines in the diff become links
+  the reviewer can hover and click.
 - Use inline `code` for identifiers. Use fenced blocks only for short snippets when essential.
 - Flag real risks plainly; don't invent problems.
 
