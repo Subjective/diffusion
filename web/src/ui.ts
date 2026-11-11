@@ -69,6 +69,8 @@ export interface Peek {
   rk: string;
   file: string;
   symbol: string;
+  /** Open on the name's uses (⇧⌘-click). */
+  refs?: boolean;
 }
 
 const persist = (k: string, s: Pick<UI, "viewed" | "readSteps" | "resolved">) =>

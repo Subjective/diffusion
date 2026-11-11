@@ -1889,10 +1889,131 @@ tr.peek-row > td {
 .peek-h .sym {
   color: var(--text);
 }
-.peek-nav {
+.peek-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--chip);
+  font: 12px var(--sans);
+}
+.peek-tabs button {
   display: inline-flex;
   align-items: center;
-  font-size: 11.5px;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.peek-tabs button.on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.peek-tabs .cnt {
+  color: var(--subtle);
+  font-variant-numeric: tabular-nums;
+}
+.peek-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 248px;
+}
+.peek-split > .peek-b {
+  min-width: 0;
+}
+.peek-list {
+  max-height: 320px;
+  overflow: auto;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  padding: 4px 0;
+  font-size: 12px;
+}
+.peek-list .grp-h {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 12px 2px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.peek-list .grp-h .name {
+  color: var(--text);
+  font-weight: 500;
+}
+.peek-list .grp-h .dir {
+  color: var(--subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.peek-list .grp-h .cnt {
+  color: var(--subtle);
+  font-variant-numeric: tabular-nums;
+}
+.peek-list .hit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 22px;
+  padding: 0 12px 0 14px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 11.5px var(--mono);
+  text-align: left;
+  cursor: pointer;
+}
+.peek-list .hit:hover {
+  background: var(--hover);
+}
+.peek-list .hit.on {
+  background: var(--hl);
+  color: var(--text);
+}
+.peek-list .hit .no {
+  flex: 0 0 auto;
+  min-width: 26px;
+  color: var(--subtle);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.peek-list .hit .txt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peek mark {
+  background: none;
+  color: var(--text);
+  font-weight: 600;
+}
+.peek-list .hit .chg {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--add-fg);
+}
+@container (max-width: 560px) {
+  .peek-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .peek-list {
+    order: -1;
+    max-height: 160px;
+    border-left: 0;
+    border-bottom: 1px solid var(--border);
+  }
 }
 .peek-b {
   max-height: 320px;

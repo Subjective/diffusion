@@ -9,7 +9,7 @@ import os
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -175,17 +175,19 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             raise HTTPException(413, f"{path} is too large to show in full")
         return {"path": path, "text": text}
 
+    async def symbol_index(url: str) -> SymbolIndex:
+        root = (await get_prepared(url)).checkout.worktree
+        async with symbol_locks.setdefault(root, asyncio.Lock()):
+            if root not in symbols:
+                symbols[root] = await asyncio.to_thread(SymbolIndex, root)
+        return symbols[root]
+
     @app.get("/api/definition")
     async def definition(url: str, symbol: str, path: str) -> dict:
         """Where `symbol` is defined at the PR head, nearest to `path` first, with each definition's source."""
         if not NAME.match(symbol):
             raise HTTPException(400, "Not a name")
-        prep = await get_prepared(url)
-        root = prep.checkout.worktree
-        async with symbol_locks.setdefault(root, asyncio.Lock()):
-            if root not in symbols:
-                symbols[root] = await asyncio.to_thread(SymbolIndex, root)
-        index = symbols[root]
+        index = await symbol_index(url)
         found = index.lookup(symbol, path)
         return {
             "symbol": symbol,
@@ -193,6 +195,25 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 {"path": m.path, "line": m.line, "end": m.end, "text": index.snippet(m)} for m in found
             ],
         }
+
+    @app.get("/api/references")
+    async def references(url: str, symbol: str, path: str) -> dict:
+        """Lines at the PR head that use `symbol`, nearest to `path` first."""
+        if not NAME.match(symbol):
+            raise HTTPException(400, "Not a name")
+        index = await symbol_index(url)
+        found = await asyncio.to_thread(index.references, symbol, path)
+        return {"symbol": symbol, "matches": [asdict(r) for r in found]}
+
+    @app.get("/api/around")
+    async def around(url: str, path: str, line: int, end: int = 0) -> dict:
+        """A definition or reference in its file, with a few lines either side, for the peek's preview."""
+        index = await symbol_index(url)
+        try:
+            first, text = await asyncio.to_thread(index.around, path, line, max(end, line), 6)
+        except (KeyError, OSError) as e:
+            raise HTTPException(404, f"{path} isn't indexed") from e
+        return {"path": path, "first": first, "text": text}
 
     # ---------- chats ----------
 

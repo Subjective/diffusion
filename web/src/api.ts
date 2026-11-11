@@ -43,6 +43,33 @@ export async function fetchDefinition(url: string, symbol: string, path: string)
   return (await res.json()).matches;
 }
 
+export interface ReferenceMatch {
+  path: string;
+  line: number;
+  col: number;
+  text: string;
+}
+
+export async function fetchReferences(url: string, symbol: string, path: string): Promise<ReferenceMatch[]> {
+  const q = new URLSearchParams({ url, symbol, path });
+  const res = await fetch(`/api/references?${q}`);
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()).matches;
+}
+
+/** A definition or reference with a few lines either side; `first` is the first line's number. */
+export async function fetchAround(
+  url: string,
+  path: string,
+  line: number,
+  end: number,
+): Promise<{ first: number; text: string }> {
+  const q = new URLSearchParams({ url, path, line: String(line), end: String(end) });
+  const res = await fetch(`/api/around?${q}`);
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
 /** Everything reviewed so far, most recent first. */
 export async function fetchTargets(): Promise<Target[]> {
   const res = await fetch("/api/targets");

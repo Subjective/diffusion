@@ -113,7 +113,8 @@ export function useAsk() {
       open(rows, e.clientX, e.clientY);
     };
     const onMouseUp = (e: MouseEvent) => {
-      if (drag.current || !inDiff(e)) return;
+      // ⌘-click is go to definition, and ⇧ with it would otherwise extend a selection.
+      if (drag.current || !inDiff(e) || e.metaKey || e.ctrlKey) return;
       setTimeout(() => {
         const rows = selectionRows(getSelection());
         if (rows) open(rows, e.clientX, e.clientY);

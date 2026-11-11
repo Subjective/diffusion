@@ -167,7 +167,8 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
     if (!symbol || !/^[A-Za-z_$][\w$]*$/.test(symbol)) return;
     e.preventDefault();
     e.stopPropagation();
-    useUI.getState().setPeek({ rk: row.dataset.rk!, file: row.dataset.file!, symbol });
+    if (e.shiftKey) getSelection()?.removeAllRanges();
+    useUI.getState().setPeek({ rk: row.dataset.rk!, file: row.dataset.file!, symbol, refs: e.shiftKey });
   };
 
   // Track the file in view for the rail, once per frame while scrolling.
