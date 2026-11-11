@@ -1,5 +1,6 @@
 import subprocess
 
+from diffusion.repo import git
 from diffusion.symbols import SymbolIndex, definitions_in
 
 
@@ -120,3 +121,22 @@ def test_lookup_prefers_the_file_imports(tmp_path):
         "web/lib/helper.ts",
         "jvm/Helper.java",
     }
+
+
+def test_references_skip_definitions_comments_and_other_languages(tmp_path):
+    files = {
+        "web/lib/refs.ts": "export function rowKey() {}\n// rowKey in a comment\n",
+        "web/app/view.ts": 'import { rowKey } from "../lib/refs";\nconst rowKeys = 1;\nrowKey();\n',
+        "pkg/mod.py": "rowKey = 1\nprint(rowKey)\n",
+    }
+    for p, text in files.items():
+        (tmp_path / p).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / p).write_text(text)
+    git("init", "-q", cwd=tmp_path)
+    git("add", ".", cwd=tmp_path)
+    index = SymbolIndex(tmp_path)
+    refs = index.references("rowKey", "web/app/view.ts")
+    assert [(r.path, r.line) for r in refs] == [("web/app/view.ts", 1), ("web/app/view.ts", 3)]
+    assert index.references("nothing", "web/app/view.ts") == []
+    first, text = index.around("web/app/view.ts", 3, 3, 1)
+    assert (first, text.splitlines()[0]) == (2, "const rowKeys = 1;")

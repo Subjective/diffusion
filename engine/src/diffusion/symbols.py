@@ -25,11 +25,12 @@ import tree_sitter_rust
 import tree_sitter_typescript
 from tree_sitter import Language, Parser, Query, QueryCursor
 
-from .repo import git
+from .repo import RepoError, git
 
 MAX_FILE_BYTES = 512_000
 MAX_FILES = 30_000
 MAX_SNIPPET_LINES = 80
+MAX_REFERENCES = 300
 
 _TS_COMMON = """
 (function_declaration name: (identifier) @name) @def
@@ -226,6 +227,18 @@ class Definition:
     end: int
 
 
+@dataclass(frozen=True)
+class Reference:
+    path: str
+    line: int  # 1-based
+    col: int  # 1-based, in bytes
+    text: str
+
+
+# A line that is only a comment: `// x`, `# x`, ` * x`, `/* x`, `-- x`.
+_COMMENT = re.compile(r"^\s*(//|#(?!\s*include)|\*|/\*|--)")
+
+
 def definitions_in(path: str, source: bytes) -> list[tuple[str, Definition]]:
     lang = _EXT.get(PurePosixPath(path).suffix)
     if not lang:
@@ -250,6 +263,7 @@ class SymbolIndex:
         self.root = root
         self.by_name: dict[str, list[Definition]] = defaultdict(list)
         files = [f for f in git("ls-files", "-z", cwd=root).split("\0") if PurePosixPath(f).suffix in _EXT]
+        self.files = set(files)
         for rel in files[:MAX_FILES]:
             p = root / rel
             try:
@@ -274,6 +288,42 @@ class SymbolIndex:
             found = [d for d in found if _family(d.path) == fam]
         if not found:
             return []
+        return sorted(found, key=self._ranker(name, from_path))[:limit]
+
+    def references(self, name: str, from_path: str, limit: int = MAX_REFERENCES) -> list[Reference]:
+        """Lines that use `name`, ranked like `lookup`: whole-word matches outside its definitions and comments.
+
+        Search-based like `lookup`, so a different thing with the same name counts too."""
+        fam = _family(from_path)
+        exts = [e for e, lang in _EXT.items() if not fam or _FAMILY[lang] == fam]
+        try:
+            out = git(
+                "grep",
+                "-z",
+                "-n",
+                "--column",
+                "-w",
+                "-I",
+                "-F",
+                "-e",
+                name,
+                "--",
+                *[f"*{e}" for e in exts],
+                cwd=self.root,
+            )
+        except RepoError:  # no matches
+            return []
+        defs = {(d.path, d.line) for d in self.by_name.get(name, [])}
+        refs = []
+        for row in out.splitlines():
+            path, line, col, text = row.split("\0", 3)
+            if (path, int(line)) in defs or _COMMENT.match(text):
+                continue
+            refs.append(Reference(path, int(line), int(col), text.rstrip()[:400]))
+        rank = self._ranker(name, from_path)
+        return sorted(refs, key=lambda r: rank(Definition(r.path, r.line, r.line)))[:limit]
+
+    def _ranker(self, name: str, from_path: str):
         imported = _imports(self.root, from_path)
         here = PurePosixPath(from_path).parent
 
@@ -291,7 +341,16 @@ class SymbolIndex:
             named = PurePosixPath(d.path).stem == name
             return (near, test, not named, len(d.path), d.path, d.line)
 
-        return sorted(found, key=rank)[:limit]
+        return rank
+
+    def around(self, path: str, line: int, end: int, context: int) -> tuple[int, str]:
+        """Lines `line`..`end` of an indexed file with `context` lines either side, and the first one's number."""
+        if path not in self.files:
+            raise KeyError(path)
+        lines = (self.root / path).read_text(errors="replace").splitlines()
+        first = max(1, line - context)
+        last = min(len(lines), max(min(end, line + MAX_SNIPPET_LINES), line + 2 * context))
+        return first, "\n".join(lines[first - 1 : last])
 
     def snippet(self, d: Definition) -> str:
         lines = (self.root / d.path).read_text(errors="replace").splitlines()

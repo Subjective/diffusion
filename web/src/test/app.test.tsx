@@ -13,6 +13,10 @@ vi.mock("../api", () => ({
   fetchGuide: vi.fn(),
   fetchFile: vi.fn(async () => Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")),
   fetchDefinition: vi.fn(),
+  fetchReferences: vi.fn(async () => []),
+  fetchAround: vi.fn(async () => {
+    throw new Error("offline");
+  }),
   fetchTargets: vi.fn(async () => [
     {
       url: payload.pr.url,
