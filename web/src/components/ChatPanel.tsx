@@ -11,7 +11,6 @@ import {
   MessageCircle,
   Search,
   ShieldAlert,
-  Sparkles,
   SquarePen,
   SquareTerminal,
   Trash2,
@@ -256,7 +255,6 @@ function Empty() {
   const ask = useChat((s) => s.ask);
   return (
     <div className="empty">
-      <div className="big">{ic(Sparkles, 20)}</div>
       <div className="sugg">
         {SUGG.map((s) => (
           <button type="button" key={s.label} onClick={() => ask(s.q)}>
