@@ -1249,18 +1249,13 @@ tr.ln:hover .ask-btn {
   flex-direction: column;
   gap: 18px;
 }
+/* Empty chat: starters sit just above the composer, where the conversation will begin */
 .empty {
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  color: var(--subtle);
+  margin-top: auto;
 }
 .sugg {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 6px;
 }
 .sugg button {
