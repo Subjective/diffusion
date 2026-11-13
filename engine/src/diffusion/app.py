@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .agent import DoneEvent, Runner, ThinkingEvent, ToolEvent, make_runner
-from .chat_agent import ChatDelta, ChatFocus, GuideBlock, Question, run_turn
+from .chat_agent import ChatDelta, GuideBlock, Question, run_turn
 from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
 from .pipeline import Prepared, prepare, target_ref
@@ -279,7 +279,6 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     "answers": {str(q.n): "" for q in req.questions},
                     "tools": [],
                     "trace": [],  # what the agent did, in order: {"think": text} and {"tool": summary}
-                    "shows": [],
                     "status": "streaming",
                 }
                 chat["turns"].append(record)
@@ -302,9 +301,6 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                     said = True
                                     record["answers"][str(ev.n)] += ev.text
                                     yield "delta", {"n": ev.n, "text": ev.text}
-                                elif isinstance(ev, ChatFocus):
-                                    record["shows"].append(ev.to_dict())
-                                    yield "focus", ev.to_dict()
                                 elif isinstance(ev, ThinkingEvent):
                                     said = True
                                     trace = record["trace"]

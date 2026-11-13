@@ -3,9 +3,7 @@
 The first turn forks the session that wrote the guide when the agent can (so chat starts from everything that
 session read); otherwise it starts fresh. A turn carries one or more questions (queued line comments are sent
 together). Multi-question turns ask the model for ``### Q<n>`` sections; ``SectionSplitter`` routes streamed
-text to each question as it arrives. The model can point the reviewer's diff at a region with ``show_code``;
-each accepted call becomes a ``ChatFocus`` attached to the question being answered at that moment. Asked to
-change the guide, it ends its answer with the whole updated guide in a ``diffusion-guide`` block, which
+text to each question as it arrives. Asked to change the guide, the model ends its answer with the whole updated guide in a ``diffusion-guide`` block, which
 ``GuideBlock`` keeps out of the streamed answer and the caller stores as a new version.
 """
 
@@ -26,10 +24,8 @@ from .pipeline import Prepared
 
 SYSTEM_PROMPT = files("diffusion.prompts").joinpath("chat.md").read_text()
 MAX_ANCHOR_LINES = 80
-MAX_SHOWS_PER_TURN = 6
 MAX_HUNKS_PER_CALL = 12
 GUIDE_FENCE = "```diffusion-guide"
-SHOW_REMINDER = "(If a question asks where something is or happens, or to show code, call `show_code` first.)"
 
 
 class Anchor(BaseModel):
@@ -101,8 +97,6 @@ def format_turn(questions: list[Question], idx: DiffIndex) -> str:
     if multi:
         nums = ", ".join(f"Q{q.n}" for q in questions)
         blocks.append(f"Answer {nums}, each under its own `### Q<n>` heading.")
-    # A per-turn reminder: the system prompt alone gets show_code skipped on plain "where is…" questions.
-    blocks.append(SHOW_REMINDER)
     return "\n\n".join(blocks)
 
 
@@ -169,22 +163,6 @@ class SectionSplitter:
 class ChatDelta:
     n: int
     text: str
-
-
-@dataclass
-class ChatFocus:
-    """A diff region the model asked the reviewer's view to focus on (validated against the diff)."""
-
-    n: int
-    file: str
-    start: int
-    end: int
-    side: str
-    label: str = ""
-
-    def to_dict(self) -> dict:
-        return {"n": self.n, "file": self.file, "start": self.start, "end": self.end, "side": self.side,
-                "label": self.label}  # fmt: skip
 
 
 def _could_open(partial: str) -> bool:
@@ -274,63 +252,6 @@ def hunk_tool(idx: DiffIndex) -> ToolSpec:
     )
 
 
-def show_code_tool(idx: DiffIndex, shown: list[dict]) -> ToolSpec:
-    async def show_code(args: dict) -> str:
-        if len(shown) >= MAX_SHOWS_PER_TURN:
-            return f"rejected: at most {MAX_SHOWS_PER_TURN} regions per answer"
-        f = idx.resolve(str(args.get("file", "")))
-        if not f:
-            return "rejected: file is not in the diff; cite it as `path:line` in the answer instead"
-        side = "old" if args.get("side") == "old" else "new"
-        try:
-            start = int(args["start"])
-            end = int(args.get("end") or start)
-        except (KeyError, TypeError, ValueError):
-            return "rejected: start/end must be line numbers"
-        start, end = min(start, end), max(start, end)
-        spans = [(h.new_start, h.new_end) if side == "new" else (h.old_start, h.old_end) for h in f.hunks]
-        hit = [(lo, hi) for lo, hi in spans if start <= hi and end >= lo]
-        if not hit:
-            near = ", ".join(f"{lo}–{hi}" for lo, hi in spans) or "none"
-            return f"rejected: {f.path}:{start}–{end} is outside the diff ({side} side hunks: {near})"
-        # Clamp to the changed region so the client can always highlight something.
-        start, end = max(start, min(lo for lo, _ in hit)), min(end, max(hi for _, hi in hit))
-        label = str(args.get("label") or "").strip()[:80]
-        q = args.get("q")
-        q = int(q) if isinstance(q, int | str) and str(q).isdigit() else None
-        shown.append({"file": f.path, "start": start, "end": end, "side": side, "label": label, "q": q})
-        return f"shown {f.path}:{start}–{end}"
-
-    return ToolSpec(
-        "show_code",
-        "Focus the reviewer's diff view on a region of the diff. Use when the reviewer asks where something "
-        "happens or asks you to show them code. Only regions inside the diff (see the hunk table) can be shown.",
-        {
-            "type": "object",
-            "properties": {
-                "file": {"type": "string", "description": "Path as in the hunk table."},
-                "start": {"type": "integer", "description": "First line (on `side`)."},
-                "end": {"type": "integer", "description": "Last line, inclusive; defaults to start."},
-                "side": {
-                    "type": "string",
-                    "enum": ["new", "old"],
-                    "description": "'old' only for deleted lines.",
-                },
-                "label": {
-                    "type": "string",
-                    "description": "A few words on what is there, e.g. 'retry loop'.",
-                },
-                "q": {
-                    "type": "integer",
-                    "description": "When answering several questions: which one (2 for Q2).",
-                },
-            },
-            "required": ["file", "start"],
-        },
-        show_code,
-    )
-
-
 async def run_turn(
     prep: Prepared,
     guide: dict | None,
@@ -342,10 +263,9 @@ async def run_turn(
     cwd: Path | None = None,
     block: GuideBlock | None = None,
     max_turns: int = 24,
-) -> AsyncIterator[ChatDelta | ChatFocus | ToolEvent | ThinkingEvent | DoneEvent]:
+) -> AsyncIterator[ChatDelta | ToolEvent | ThinkingEvent | DoneEvent]:
     """``block`` collects an updated guide the answer ends with (``block.found``)."""
-    shown: list[dict] = []
-    tools = [hunk_tool(prep.index), show_code_tool(prep.index, shown)]
+    tools = [hunk_tool(prep.index)]
     req = AgentRequest(
         system_prompt=SYSTEM_PROMPT + "\n\n" + seed_context(prep, guide),
         prompt=format_turn(questions, prep.index),
@@ -359,23 +279,9 @@ async def run_turn(
     )
     block = block if block is not None else GuideBlock()
     split = SectionSplitter([q.n for q in questions])
-    drained = 0
-
-    def focuses() -> list[ChatFocus]:
-        # Tool handlers run inside the runner; pick up what they accepted since the last event.
-        nonlocal drained
-        new, drained = shown[drained:], len(shown)
-        out = []
-        for s in new:
-            # The model may call show_code before writing a question's marker, so prefer the question it names.
-            n = s["q"] if s["q"] in split.valid else split.cur
-            out.append(ChatFocus(n, s["file"], s["start"], s["end"], s["side"], s["label"]))
-        return out
 
     ev: Event
     async for ev in runner(req):
-        for f in focuses():
-            yield f
         if isinstance(ev, TextEvent):
             for n, t in split.feed(block.feed(ev.text)):
                 yield ChatDelta(n, t)
@@ -391,8 +297,6 @@ async def run_turn(
         elif isinstance(ev, DoneEvent):
             for n, t in split.feed(block.flush()) + split.flush():
                 yield ChatDelta(n, t)
-            for f in focuses():
-                yield f
             yield ev
 
 

@@ -6,7 +6,6 @@ from diffusion.agent import DoneEvent, TextEvent, ToolEvent
 from diffusion.chat_agent import (
     Anchor,
     ChatDelta,
-    ChatFocus,
     GuideBlock,
     Question,
     SectionSplitter,
@@ -14,7 +13,6 @@ from diffusion.chat_agent import (
     hunk_summary,
     run_turn,
     seed_context,
-    show_code_tool,
 )
 from diffusion.github import PRMeta, PRRef
 from diffusion.hunks import parse_diff
@@ -133,73 +131,15 @@ async def test_run_turn_routes_sections_and_tools(prep):
     assert text[2] == EXPECTED[2] and text[3] == EXPECTED[3]
     assert any(isinstance(e, ToolEvent) for e in evs) and isinstance(evs[-1], DoneEvent)
     req = seen["req"]
-    assert (
-        req.resume == "sess-1"
-        and req.include_partial
-        and [t.name for t in req.tools] == ["get_hunk", "show_code"]
-    )
+    assert req.resume == "sess-1" and req.include_partial and [t.name for t in req.tools] == ["get_hunk"]
     assert prep.index.table() in req.system_prompt
 
 
-async def test_show_code_validates_against_diff(prep):
-    shown: list[dict] = []
-    tool = show_code_tool(prep.index, shown)
-    ok = await tool.handler({"file": "session.ts", "start": 3, "end": 40, "label": "refresh timer"})
-    assert ok == "shown src/auth/session.ts:3–25"  # short path resolved, end clamped to the hunk
-    assert shown == [
-        {
-            "file": "src/auth/session.ts",
-            "start": 3,
-            "end": 25,
-            "side": "new",
-            "label": "refresh timer",
-            "q": None,
-        }
-    ]
-    assert (await tool.handler({"file": "README.md", "start": 1})).startswith(
-        "rejected: file is not in the diff"
-    )
-    assert "outside the diff" in await tool.handler({"file": "src/auth/types.ts", "start": 50})
-    assert (await tool.handler({"file": "src/legacy.ts", "start": 1, "side": "old"})).startswith("shown")
-    assert "line numbers" in await tool.handler({"file": "src/auth/types.ts", "start": "x"})
-    assert len(shown) == 2
+def test_index_resolves_short_and_dotted_paths(prep):
+    assert prep.index.resolve("session.ts").path == "src/auth/session.ts"
     f = prep.index.resolve("./src/auth/types.ts")
     assert f and f.path == "src/auth/types.ts"
     assert prep.index.resolve(".auth/types.ts") is None  # a leading dot is part of the name
-    assert set(tool.schema["properties"]) == {"file", "start", "end", "side", "label", "q"}
-
-
-async def test_run_turn_attaches_focus_to_current_question(prep):
-    async def runner(req):
-        show = next(t for t in req.tools if t.name == "show_code")
-        yield TextEvent("### Q1\nSee below.\n### Q2\n")
-        yield ToolEvent("show_code", "Show client.ts:2")
-        await show.handler({"file": "src/api/client.ts", "start": 2, "end": 4})
-        yield TextEvent("It's in `client.ts:2–4`.")
-        yield DoneEvent(1, 0.0, False, "s")
-
-    qs = [Question(n=1, text="a"), Question(n=2, text="where?")]
-    evs = [e async for e in run_turn(prep, None, qs, runner, "m", None)]
-    focus = [e for e in evs if isinstance(e, ChatFocus)]
-    assert focus == [ChatFocus(2, "src/api/client.ts", 2, 4, "new")]
-    assert evs.index(focus[0]) < len(evs) - 1 and isinstance(evs[-1], DoneEvent)
-
-
-async def test_run_turn_focus_prefers_named_question(prep):
-    async def runner(req):
-        show = next(t for t in req.tools if t.name == "show_code")
-        await show.handler({"file": "src/api/client.ts", "start": 2, "q": 2})  # before any marker
-        await show.handler(
-            {"file": "src/api/client.ts", "start": 3, "q": 9}
-        )  # unknown: falls back to current
-        yield TextEvent("### Q1\nx\n### Q2\ny")
-        yield DoneEvent(1, 0.0, False, "s")
-
-    qs = [Question(n=1, text="a"), Question(n=2, text="where?")]
-    focus = [
-        e for e in [e async for e in run_turn(prep, None, qs, runner, "m", None)] if isinstance(e, ChatFocus)
-    ]
-    assert [(f.n, f.start) for f in focus] == [(2, 2), (1, 3)]
 
 
 def test_guide_block_is_held_back_and_kept():

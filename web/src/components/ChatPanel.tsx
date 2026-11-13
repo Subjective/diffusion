@@ -7,7 +7,6 @@ import {
   FlaskConical,
   History,
   Layers,
-  LocateFixed,
   MessageCircle,
   Search,
   ShieldAlert,
@@ -20,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Anchor, type Question, type Show, useChat } from "../chat";
+import { type Anchor, type Question, useChat } from "../chat";
 import { type CodeLoc, expandCites, parseCites, type Resolved, resolveLoc } from "../lib/cite";
 import { useHunkIndex } from "../lib/linking";
 import { InlineCodeContext, Markdown } from "../lib/md";
@@ -56,16 +55,6 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
 
   const turns = groupTurns(sent);
   const waiting = chat.questions.filter((q) => q.status === "waiting");
-
-  // The model's first show_code of a turn jumps the diff (chat.ts decides whether the reviewer was busy there).
-  const autoShow = useChat((s) => s.autoShow);
-  const resolve = useResolveLoc();
-  useEffect(() => {
-    if (!autoShow) return;
-    const show = useChat.getState().chat.questions.find((q) => q.id === autoShow.q)?.shows[autoShow.i];
-    const r = show && resolve(show);
-    if (r) useUI.getState().focus(r.keys, r.files);
-  }, [autoShow, resolve]);
 
   return (
     <aside className="chat">
@@ -168,33 +157,6 @@ function CiteLink({ loc, text }: { loc: CodeLoc; text: string }) {
     <button type="button" className="cite" title={`${r.file} · Show in diff`} {...locLink(r)}>
       <code>{text.trim().replace(/^.*\//, "")}</code>
     </button>
-  );
-}
-
-const locText = (s: CodeLoc) => `${s.file.split("/").pop()}:${s.start}${s.end !== s.start ? `–${s.end}` : ""}`;
-
-/** Regions the model pointed at with show_code. */
-function Shows({ shows }: { shows: Show[] }) {
-  const resolve = useResolveLoc();
-  return (
-    <div className="shows">
-      {shows.map((s, i) => {
-        const r = resolve(s);
-        return (
-          <button
-            key={i}
-            className="show-chip"
-            disabled={!r}
-            title={r ? "Show in diff" : "No longer in this diff"}
-            {...(r ? locLink(r) : {})}
-          >
-            {ic(LocateFixed, 13)}
-            {s.label && <span className="lbl">{s.label}</span>}
-            <span className="loc">{locText(s)}</span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -344,7 +306,6 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
                 {q.status === "pending" && <span className="cursor" />}
                 {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
               </div>
-              {q.shows.length > 0 && <Shows shows={q.shows} />}
               {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
             </div>
           ))}
@@ -370,7 +331,6 @@ const TOOL_ICONS: Partial<Record<string, typeof Wrench>> = {
   Glob: Search,
   Search: Search,
   Diff: FileCode,
-  Show: FileCode,
 };
 
 /** One tool call as a quiet line, the way chat apps show them: an icon, a verb, and what it acted on. */

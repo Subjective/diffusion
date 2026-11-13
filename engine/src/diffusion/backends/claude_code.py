@@ -42,7 +42,7 @@ def mcp_name(tool: str) -> str:
 
 
 def tool_names_note(tools: list[ToolSpec]) -> str:
-    """Prompts name engine tools plainly (`show_code`); here they're namespaced, and models sometimes call the
+    """Prompts name engine tools plainly (`get_hunk`); here they're namespaced, and models sometimes call the
     plain name, fail, and give up. Spell out the mapping."""
     if not tools:
         return ""

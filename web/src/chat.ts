@@ -1,10 +1,8 @@
 // Chat state: one active chat at a time; each chat owns its questions, anchors, queue, and thread.
 import { create } from "zustand";
-import type { CodeLoc } from "./lib/cite";
 import { errorText, postSSE } from "./lib/sse";
 import { useApp } from "./store";
 import type { Ref } from "./types";
-import { diffActivity } from "./ui";
 
 export interface Anchor {
   file: string;
@@ -35,8 +33,6 @@ export interface Question {
   answer: string;
   tools: string[];
   turn: number | null;
-  /** Diff regions the model chose to show for this question (`show_code`). */
-  shows: Show[];
   /** What the agent did this turn, in order: reasoning as its CLI reports it, and tool calls (shared by the turn's
    * questions). */
   trace?: TraceItem[];
@@ -53,10 +49,6 @@ export function extendTrace(trace: TraceItem[] = [], item: TraceItem): TraceItem
   const last = trace.at(-1);
   if ("think" in item && last && "think" in last) return [...trace.slice(0, -1), { think: last.think + item.think }];
   return [...trace, item];
-}
-
-export interface Show extends CodeLoc {
-  label: string;
 }
 
 export interface ChatSummary {
@@ -82,8 +74,6 @@ interface State {
   history: ChatSummary[];
   historyOpen: boolean;
   error: string | null;
-  /** The diff should jump to this show: the model's first `show_code` of a turn, if the diff wasn't touched since asking. */
-  autoShow: { q: string; i: number; n: number } | null;
 
   reset(pr: string): void;
   newChat(): void;
@@ -165,8 +155,6 @@ export const useChat = create<State>((set, get) => {
     const byN = new Map(sent.map((q) => [q.n ?? 0, q.id]));
     const ctrl = new AbortController();
     ctrls.add(ctrl);
-    const askedAt = Date.now();
-    let autoShown = false;
     try {
       const id = await ensureChat();
       await postSSE(
@@ -177,22 +165,6 @@ export const useChat = create<State>((set, get) => {
           if (event === "delta") {
             const target = byN.get(d.n as number);
             if (target) patch(get().chat, [target], (q) => ({ answer: q.answer + (d.text as string) }));
-          } else if (event === "focus") {
-            const target = byN.get(d.n as number);
-            if (!target) return;
-            const show: Show = {
-              file: String(d.file),
-              start: Number(d.start),
-              end: Number(d.end),
-              side: d.side === "old" ? "old" : "new",
-              label: String(d.label ?? ""),
-            };
-            const i = get().chat.questions.find((q) => q.id === target)?.shows.length ?? 0;
-            patch(get().chat, [target], (q) => ({ shows: [...q.shows, show] }));
-            if (!autoShown && diffActivity.at < askedAt && get().chat.key === chatRef.key) {
-              autoShown = true;
-              set((s) => ({ autoShow: { q: target, i, n: (s.autoShow?.n ?? 0) + 1 } }));
-            }
           } else if (event === "guide") {
             const target = byN.get(d.n as number);
             const v = Number(d.version);
@@ -245,7 +217,6 @@ export const useChat = create<State>((set, get) => {
     history: [],
     historyOpen: false,
     error: null,
-    autoShow: null,
 
     reset(pr) {
       if (pr === get().pr) return;
@@ -286,7 +257,6 @@ export const useChat = create<State>((set, get) => {
         answer: "",
         tools: [],
         turn: null,
-        shows: [],
       };
       set((s) => ({ chat: { ...s.chat, questions: [...s.chat.questions, q], nextN: s.chat.nextN + 1 } }));
       return q;
@@ -300,7 +270,7 @@ export const useChat = create<State>((set, get) => {
     ask(text, anchor = null) {
       const n = anchor ? get().chat.nextN : null;
       if (anchor) set((s) => ({ chat: { ...s.chat, nextN: s.chat.nextN + 1 } }));
-      void send([{ id: qid(), n, text, anchor, status: "pending", answer: "", tools: [], turn: null, shows: [] }]);
+      void send([{ id: qid(), n, text, anchor, status: "pending", answer: "", tools: [], turn: null }]);
     },
     sendStaged(extra) {
       const staged = get().chat.questions.filter((q) => q.status === "staged");
@@ -315,7 +285,6 @@ export const useChat = create<State>((set, get) => {
           answer: "",
           tools: [],
           turn: null,
-          shows: [],
         });
       void send(qs);
     },
@@ -338,7 +307,6 @@ interface WireChat {
     questions: { n: number; text: string; anchor: (WireAnchor & { ui?: Partial<Anchor> }) | null }[];
     answers: Record<string, string>;
     tools: string[];
-    shows?: (Show & { n: number })[];
     guide_version?: number;
     trace?: TraceItem[];
     seconds?: number;
@@ -376,7 +344,6 @@ export function fromWire(c: WireChat): Chat {
         status: t.status === "error" ? "error" : t.status === "done" ? "answered" : "answered",
         answer: t.answers[String(q.n)] ?? "",
         tools: t.tools,
-        shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
         guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
         trace: t.trace ?? t.tools.map((tool) => ({ tool })),
         seconds: t.seconds,

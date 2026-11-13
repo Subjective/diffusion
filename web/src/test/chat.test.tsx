@@ -14,7 +14,6 @@ type Turn = {
   questions: { n: number; text: string; anchor: unknown }[];
   answers: Record<string, string>;
   tools: string[];
-  shows?: unknown[];
   status: string;
 };
 const chats = new Map<string, { id: string; turns: Turn[]; updated_at: number }>();
@@ -61,23 +60,14 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     const body = JSON.parse(String(init!.body));
     turnBodies.push(body);
     const chat = chats.get(m[1])!;
-    // "where…" questions: answer with citations and a show_code focus, like the real engine
+    // "where…" questions: answer with citations, like the real engine
     const where = (q: { text: string }) => q.text.startsWith("where");
     const text = (q: { n: number; text: string }) =>
       where(q) ? "In `session.ts:6–7`, not `README.md:1`." : `answer ${q.n}`;
-    const shows = body.questions.filter(where).map((q: { n: number }) => ({
-      n: q.n,
-      file: "src/auth/session.ts",
-      start: 6,
-      end: 7,
-      side: "new",
-      label: "end() clears timer",
-    }));
     const answers = Object.fromEntries(body.questions.map((q: { n: number; text: string }) => [String(q.n), text(q)]));
-    chat.turns.push({ questions: body.questions, answers, tools: ["Grep x"], shows, status: "done" });
+    chat.turns.push({ questions: body.questions, answers, tools: ["Grep x"], status: "done" });
     const gate = new Promise<void>((r) => (release = r));
     const deltas = body.questions.map((q: { n: number; text: string }) => sse([["delta", { n: q.n, text: text(q) }]]));
-    deltas.push(...shows.map((f: unknown) => sse([["focus", f]])));
     // "change…" questions: the answer saved a new guide version
     const edit = body.questions.find((q: { text: string }) => q.text.startsWith("change"));
     if (edit) deltas.push(sse([["guide", { n: edit.n, version: 2 }]]));
@@ -246,18 +236,17 @@ test("questions asked mid-answer wait, then go out together as one turn", async 
   );
 });
 
-test("answers link citations to diff rows; show_code chips focus the diff, auto-jumping only if it wasn't touched", async () => {
+test("answers link citations to diff rows: hover highlights them, click jumps to them", async () => {
   await mount();
   fireEvent.click(screen.getByTitle("New chat"));
   const row = (k: string) => document.querySelector<HTMLElement>(`tr[data-rk="${k}"]`)!;
+  const { useUI } = await import("../ui");
+  const flashN = useUI.getState().flash.n;
   type("where is the timer cleared?");
   await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
   await act(async () => release!());
-  await waitFor(() => expect(document.querySelector(".show-chip")).toBeTruthy());
-
-  // auto-jump: the first show of the turn flashes its rows
-  await waitFor(() => expect(row("src/auth/session.ts:7").className).toMatch(/flash/));
-  expect(document.querySelector(".show-chip")!.textContent).toBe("end() clears timersession.ts:6–7");
+  await waitFor(() => expect(document.querySelector(".ans-t button.cite")).toBeTruthy());
+  expect(useUI.getState().flash.n).toBe(flashN); // an answer never moves the diff on its own
 
   const cite = document.querySelector<HTMLElement>(".ans-t button.cite")!;
   expect(cite.textContent).toBe("session.ts:6–7");
@@ -269,26 +258,10 @@ test("answers link citations to diff rows; show_code chips focus the diff, auto-
   fireEvent.mouseLeave(cite);
   expect(row("src/auth/session.ts:6").className).not.toMatch(/\bhl\b/);
 
-  // after the reviewer scrolls the diff, a new answer's show_code doesn't move it
-  fireEvent.click(screen.getByTitle("New chat"));
-  const { useUI } = await import("../ui");
-  const flashN = useUI.getState().flash.n;
-  type("where again?");
-  await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
-  fireEvent.wheel(document.getElementById("diffPane")!);
-  await act(async () => release!());
-  await waitFor(() => expect(document.querySelector(".show-chip")).toBeTruthy());
-  expect(useUI.getState().flash.n).toBe(flashN);
-  fireEvent.click(document.querySelector(".show-chip")!); // the chip still works on demand
+  fireEvent.click(cite);
   expect(useUI.getState().flash.n).toBe(flashN + 1);
   expect(useUI.getState().scrollTo?.keys[0]).toBe("src/auth/session.ts:6");
-
-  // shows persist with the chat
-  fireEvent.click(screen.getByTitle("New chat"));
-  fireEvent.click(screen.getByTitle("History"));
-  await waitFor(() => expect(document.querySelectorAll(".h-item").length).toBeGreaterThan(1));
-  fireEvent.click([...document.querySelectorAll(".h-item")].find((h) => h.textContent!.includes("where again?"))!);
-  await waitFor(() => expect(document.querySelector(".show-chip .loc")!.textContent).toBe("session.ts:6–7"));
+  await waitFor(() => expect(row("src/auth/session.ts:7").className).toMatch(/flash/));
 });
 
 test("an answer that changes the guide switches to the new version and links to it", async () => {
