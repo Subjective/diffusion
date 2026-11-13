@@ -62,14 +62,12 @@ def summarize_tool(name: str, args: dict) -> str:
     if short == "get_hunk":
         ids = args.get("ids") or []
         return f"Hunk {', '.join(ids) if isinstance(ids, list) else ids}"
-    if short == "show_code":
-        return f"Show {Path(str(args.get('file', ''))).name}:{args.get('start', '')}"
     return short
 
 
 @dataclass
 class ToolSpec:
-    """A custom tool the engine exposes to the agent (e.g. ``get_hunk``, ``show_code``)."""
+    """A custom tool the engine exposes to the agent (e.g. ``get_hunk``)."""
 
     name: str
     description: str

@@ -1,7 +1,7 @@
 """Backend: the Codex CLI (``codex exec --experimental-json``), using your Codex setup and login.
 
-Codex explores the repository with its own shell tools inside a read-only sandbox. Our custom tools
-(``get_hunk``, ``show_code``) don't cross the process boundary; the chat prompt carries the hunk table, and
+Codex explores the repository with its own shell tools inside a read-only sandbox. Our custom tool
+(``get_hunk``) doesn't cross the process boundary; the chat prompt carries the hunk table, and
 Codex reads the rest with its shell.
 
 Event format follows the official Codex SDK (thread.started, item.*, turn.completed/failed).

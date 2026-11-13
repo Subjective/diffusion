@@ -271,45 +271,6 @@ tr.flash.f1 td.no {
 .ai-body {
   min-width: 0;
 }
-.shows {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.show-chip {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--chip);
-  color: var(--text);
-  font: 12px var(--sans);
-  cursor: pointer;
-  animation: fadeUp 0.25s both;
-}
-.show-chip:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-.show-chip:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.show-chip .lbl {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.show-chip .loc {
-  font: 11px var(--mono);
-  color: var(--subtle);
-  white-space: nowrap;
-}
 .md-pre {
   margin: 0 0 8px;
   padding: 8px 10px;

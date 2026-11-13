@@ -6,8 +6,7 @@ export type Order = "guide" | "alpha";
 /** What the left pane shows: the guide's steps, or the map of the change. */
 export type Mode = "guide" | "map";
 
-/** Last time the reviewer scrolled or clicked in the diff themselves. Chat only auto-jumps the diff if it's older
- *  than the question, so an answer never yanks the view away from what they're reading. */
+/** Last time the reviewer scrolled or clicked in the diff themselves, so a jump still settling stops fighting them. */
 export const diffActivity = { at: 0 };
 export const markDiffActivity = () => {
   diffActivity.at = Date.now();

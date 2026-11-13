@@ -1,4 +1,4 @@
-// Code citations in chat answers (`path:line`, `path:a–b`) and model-requested focus regions, resolved to diff rows.
+// Code citations in chat answers (`path:line`, `path:a–b`), resolved to diff rows.
 import type { FileDiff } from "../types";
 import { type HunkIndex, rowKey, rowsForRef } from "./refs";
 
