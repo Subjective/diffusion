@@ -4,7 +4,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
-  Clock,
   FileCode,
   FilePen,
   FileText,
@@ -17,12 +16,15 @@ import {
   LocateFixed,
   Lock,
   MessageCircle,
+  Minus,
+  Pencil,
   Search,
   ShieldAlert,
   Sparkles,
   Square,
   SquarePen,
   SquareTerminal,
+  Trash2,
   Workflow,
   Wrench,
   X,
@@ -827,10 +829,94 @@ function RemoveBtn({ onClick }: { onClick: () => void }) {
   );
 }
 
+/** Queued messages, one per batch, in send order: the typed text, or the notes it carries. */
+function batches(waiting: Question[]): { batch: string; qs: Question[] }[] {
+  const out: { batch: string; qs: Question[] }[] = [];
+  for (const q of waiting) {
+    const b = q.batch ?? q.id;
+    const last = out.at(-1);
+    if (last?.batch === b) last.qs.push(q);
+    else out.push({ batch: b, qs: [q] });
+  }
+  return out;
+}
+
+/** Messages waiting for the running turn, as Cursor shows them: one per row, sent one per turn. */
+function Queue({
+  waiting,
+  editing,
+  onEdit,
+  link,
+}: {
+  waiting: Question[];
+  editing: string | null;
+  onEdit: (batch: string, text: string) => void;
+  link: ChatLinkProps;
+}) {
+  const { unqueue, sendNow } = useChat();
+  const [open, setOpen] = useState(true);
+  const rows = batches(waiting);
+  if (!open)
+    return (
+      <button type="button" className="queue-pill" onClick={() => setOpen(true)}>
+        Queued <span>{rows.length}</span>
+      </button>
+    );
+  return (
+    <div className="queue">
+      <div className="queue-h">
+        <span>{rows.length} Queued</span>
+        <span className="grow" />
+        <button type="button" className="icon-btn sm" title="Collapse" onClick={() => setOpen(false)}>
+          {ic(Minus, 14)}
+        </button>
+      </div>
+      <div className="queue-rows">
+        {rows.map(({ batch, qs }) => {
+          const typed = qs.find((q) => !q.anchor)?.text ?? "";
+          return (
+            <div key={batch} className={`queue-row${editing === batch ? " editing" : ""}`}>
+              {qs
+                .filter((q) => q.anchor)
+                .map((q) => (
+                  <span key={q.id} className="qn-wrap" {...noteLink(q, link)}>
+                    <Qn q={q} />
+                  </span>
+                ))}
+              <span className="qt">{typed}</span>
+              {editing === batch ? (
+                <span className="queue-tag">Editing</span>
+              ) : (
+                <span className="queue-act">
+                  <button
+                    type="button"
+                    className="text-btn"
+                    title="Stop this answer and send this now"
+                    onClick={() => void sendNow(batch)}
+                  >
+                    Steer
+                  </button>
+                  <button type="button" className="icon-btn sm" title="Edit" onClick={() => onEdit(batch, typed)}>
+                    {ic(Pencil, 14)}
+                  </button>
+                  <button type="button" className="icon-btn sm" title="Remove" onClick={() => unqueue(batch)}>
+                    {ic(Trash2, 14)}
+                  </button>
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Composer({ link }: { link: ChatLinkProps }) {
-  const { chat, unstage, ask, sendStaged, stop } = useChat();
+  const { chat, unstage, ask, sendStaged, stop, editQueued } = useChat();
 
   const [text, setText] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
   const ta = useRef<HTMLTextAreaElement>(null);
   const staged = chat.questions.filter((q) => q.status === "staged");
   const waiting = chat.questions.filter((q) => q.status === "waiting");
@@ -840,42 +926,56 @@ function Composer({ link }: { link: ChatLinkProps }) {
     if (staged.length > queued.current) requestAnimationFrame(() => ta.current?.focus());
     queued.current = staged.length;
   }, [staged.length]);
+  // A queued message that went out (or was removed) while being edited: stop editing it.
+  useEffect(() => {
+    if (editing && !waiting.some((q) => q.batch === editing)) {
+      setEditing(null);
+      setText("");
+    }
+  }, [editing, waiting]);
 
-  const send = () => {
-    if (staged.length) sendStaged(text);
-    else if (text.trim()) ask(text.trim());
-    else return;
+  const reset = () => {
     setText("");
     requestAnimationFrame(() => autosize(ta.current, 12));
+  };
+  const startEdit = (batch: string, t: string) => {
+    setEditing(batch);
+    setText(t);
+    requestAnimationFrame(() => {
+      autosize(ta.current, 12);
+      ta.current?.focus();
+    });
+  };
+  const cancelEdit = () => {
+    setEditing(null);
+    reset();
+  };
+  const send = () => {
+    if (editing) {
+      editQueued(editing, text.trim());
+      setEditing(null);
+    } else if (staged.length) sendStaged(text);
+    else if (text.trim()) ask(text.trim());
+    else return;
+    reset();
   };
 
   return (
     <div className="composer-wrap">
-      {waiting.length > 0 && (
-        <div className="queue">
-          {waiting.map((q) => (
-            <div key={q.id} className="queue-row" {...noteLink(q, link)}>
-              {ic(Clock, 13)}
-              {q.anchor && <Qn q={q} />}
-              <span className="qt">{q.text}</span>
-              <button
-                type="button"
-                className="icon-btn sm"
-                title="Send now"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void stop();
-                }}
-              >
-                {ic(ArrowUp, 13)}
-              </button>
-              <RemoveBtn onClick={() => unstage(q.id)} />
-            </div>
-          ))}
-        </div>
-      )}
+      {waiting.length > 0 && <Queue waiting={waiting} editing={editing} onEdit={startEdit} link={link} />}
       <div className="composer stack">
-        {staged.length > 0 && (
+        {editing && (
+          <div className="notes">
+            <span className="editing-chip">
+              {ic(Pencil, 13)}
+              Editing
+              <button type="button" className="icon-btn sm" title="Cancel (Esc)" onClick={cancelEdit}>
+                {ic(X, 12)}
+              </button>
+            </span>
+          </div>
+        )}
+        {!editing && staged.length > 0 && (
           <div className="notes">
             {staged.map((q) => (
               <div
@@ -904,7 +1004,10 @@ function Composer({ link }: { link: ChatLinkProps }) {
             autosize(e.target, 12);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (e.key === "Escape" && editing) {
+              e.preventDefault();
+              cancelEdit();
+            } else if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
             }
@@ -913,7 +1016,11 @@ function Composer({ link }: { link: ChatLinkProps }) {
         <div className="c-row">
           <ModeMenu />
           <span className="grow" />
-          {chat.busy && !text.trim() && !staged.length ? (
+          {editing ? (
+            <button type="button" id="chatSend" className="icon-btn solid" title="Save" onClick={send}>
+              {ic(Check, 16)}
+            </button>
+          ) : chat.busy && !text.trim() && !staged.length ? (
             <button
               type="button"
               id="chatSend"

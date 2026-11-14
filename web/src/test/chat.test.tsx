@@ -250,7 +250,7 @@ test("drag bubble across lines → popup → queue two → badges → send → l
   await waitFor(() => expect(document.querySelector(".qb.s-answered")).toBeTruthy());
 });
 
-test("questions asked mid-answer wait, then go out together as one turn", async () => {
+test("messages asked mid-answer queue, can be edited or removed, and go out one per turn", async () => {
   await mount();
   fireEvent.click(screen.getByTitle("New chat"));
   turnBodies.length = 0;
@@ -258,29 +258,47 @@ test("questions asked mid-answer wait, then go out together as one turn", async 
   await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
   type("second?");
   type("third?");
+  type("fourth?");
   expect(turnBodies).toHaveLength(1); // nothing new sent while streaming
   // queued above the composer, not in the thread
-  expect([...document.querySelectorAll(".queue-row .qt")].map((q) => q.textContent)).toEqual(["second?", "third?"]);
+  const rows = () => [...document.querySelectorAll(".queue-row .qt")].map((q) => q.textContent);
+  expect(rows()).toEqual(["second?", "third?", "fourth?"]);
+  expect(document.querySelector(".queue-h")!.textContent).toBe("3 Queued");
+
+  // edit one in the composer: the row says so, ✓ saves it back in place
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[1].querySelector('[title="Edit"]')!);
+  const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  expect(ta.value).toBe("third?");
+  expect(document.querySelector(".editing-chip")).toBeTruthy();
+  expect(document.querySelector(".queue-row.editing .queue-tag")!.textContent).toBe("Editing");
+  fireEvent.change(ta, { target: { value: "third, edited?" } });
+  fireEvent.click(screen.getByTitle("Save"));
+  expect(rows()).toEqual(["second?", "third, edited?", "fourth?"]);
+  expect(document.querySelector(".editing-chip")).toBeNull();
+  // remove one
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[2].querySelector('[title="Remove"]')!);
+  expect(rows()).toEqual(["second?", "third, edited?"]);
+  // collapse to a pill and back
+  fireEvent.click(screen.getByTitle("Collapse"));
+  expect(document.querySelector(".queue-pill")!.textContent).toBe("Queued 2");
+  fireEvent.click(document.querySelector(".queue-pill")!);
+
   // with nothing typed, send becomes Stop
   fireEvent.click(screen.getByTitle("Stop"));
   const fetched = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
   expect(fetched.some((u) => /\/api\/chats\/[^/]+\/stop$/.test(u))).toBe(true);
 
-  await act(async () => release!()); // first answer finishes → waiting batch sends
+  // each turn's end sends the next queued message, alone
+  await act(async () => release!());
   await waitFor(() => expect(turnBodies).toHaveLength(2));
-  expect(turnBodies[1].questions.map((q) => [q.n, q.text])).toEqual([
-    [1, "second?"],
-    [2, "third?"],
-  ]);
+  expect(turnBodies[1].questions.map((q) => q.text)).toEqual(["second?"]);
+  expect(rows()).toEqual(["third, edited?"]);
+  await act(async () => release!());
+  await waitFor(() => expect(turnBodies).toHaveLength(3));
+  expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["third, edited?"]);
   expect(document.querySelector(".queue")).toBeNull();
   await act(async () => release!());
-  await waitFor(() =>
-    expect([...document.querySelectorAll(".ans-t")].map((a) => a.textContent)).toEqual([
-      "answer 0",
-      "answer 1",
-      "answer 2",
-    ]),
-  );
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(3));
 });
 
 test("answers link citations to diff rows; show_code chips focus the diff, auto-jumping only if it wasn't touched", async () => {

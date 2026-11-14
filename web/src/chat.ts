@@ -25,7 +25,8 @@ export interface Anchor {
   commentTitle?: string;
 }
 
-// staged: queued line comment (tray) · waiting: sent while a turn was running; goes out with the next turn
+// staged: a line note attached to the next message · waiting: sent while a turn was running; queued, and goes out
+// one message (batch) per turn
 export type QStatus = "staged" | "waiting" | "pending" | "answered" | "error";
 export interface Question {
   id: string; // local id
@@ -47,6 +48,8 @@ export interface Question {
   guideVersion?: number;
   /** Asked of the session somewhere else (its terminal), read from its transcript. */
   fromSession?: boolean;
+  /** Queued: the message it was sent with (a typed message and the notes attached to it go out together). */
+  batch?: string;
 }
 
 export type TraceItem = { think: string } | { tool: string; id?: string; failed?: boolean };
@@ -107,8 +110,13 @@ interface State {
   /** Tool calls waiting on the reviewer in the running turn. */
   asks: Ask[];
   answer(id: string, decision: Decision): Promise<void>;
-  /** End the running turn; anything queued goes out next. */
+  /** End the running turn; the next queued message goes out. */
   stop(): Promise<void>;
+  /** A queued message: drop it, change its text (empty drops the typed part), or send it now (it goes next and
+   *  the running turn stops). */
+  unqueue(batch: string): void;
+  editQueued(batch: string, text: string): void;
+  sendNow(batch: string): Promise<void>;
   /** The diff should jump to this show: the model's first `show_code` of a turn, if the diff wasn't touched since asking. */
   autoShow: { q: string; i: number; n: number } | null;
 
@@ -198,13 +206,14 @@ export const useChat = create<State>((set, get) => {
     if (!qs.length) return;
     const ids0 = new Set(qs.map((q) => q.id));
     if (get().chat.busy) {
-      // One turn at a time: hold these and send them all as the next turn.
+      // One turn at a time: queue this message; each queued one goes out after the turn before it ends.
+      const batch = qid();
       set((s) => ({
         chat: {
           ...s.chat,
           questions: [
             ...s.chat.questions.filter((q) => !ids0.has(q.id)),
-            ...qs.map((q) => ({ ...q, status: "waiting" as const, turn: null })),
+            ...qs.map((q) => ({ ...q, status: "waiting" as const, turn: null, batch })),
           ],
         },
       }));
@@ -307,8 +316,8 @@ export const useChat = create<State>((set, get) => {
       set({ asks: [] });
       if (get().chat.key === chatRef.key) {
         set((s) => ({ chat: { ...s.chat, busy: false } }));
-        const waiting = get().chat.questions.filter((q) => q.status === "waiting");
-        if (waiting.length) void send(waiting);
+        const next = get().chat.questions.find((q) => q.status === "waiting")?.batch;
+        if (next) void send(get().chat.questions.filter((q) => q.status === "waiting" && q.batch === next));
       }
       if (get().historyOpen) void get().loadHistory();
     }
@@ -351,6 +360,47 @@ export const useChat = create<State>((set, get) => {
       }
     },
 
+    unqueue(batch) {
+      set((s) => ({
+        chat: { ...s.chat, questions: s.chat.questions.filter((q) => q.batch !== batch || q.status !== "waiting") },
+      }));
+    },
+    editQueued(batch, text) {
+      set((s) => {
+        const qs = s.chat.questions;
+        const mine = qs.filter((q) => q.status === "waiting" && q.batch === batch);
+        const typed = mine.find((q) => !q.anchor);
+        let out: Question[];
+        if (typed) out = text ? qs.map((q) => (q === typed ? { ...q, text } : q)) : qs.filter((q) => q !== typed);
+        else if (text) {
+          const at = qs.lastIndexOf(mine.at(-1)!);
+          const q: Question = {
+            id: qid(),
+            n: null,
+            text,
+            anchor: null,
+            status: "waiting",
+            answer: "",
+            tools: [],
+            turn: null,
+            shows: [],
+            batch,
+          };
+          out = [...qs.slice(0, at + 1), q, ...qs.slice(at + 1)];
+        } else out = qs;
+        return { chat: { ...s.chat, questions: out } };
+      });
+    },
+    async sendNow(batch) {
+      set((s) => {
+        const mine = s.chat.questions.filter((q) => q.status === "waiting" && q.batch === batch);
+        const rest = s.chat.questions.filter((q) => !mine.includes(q));
+        const at = rest.findIndex((q) => q.status === "waiting");
+        const questions = at < 0 ? [...rest, ...mine] : [...rest.slice(0, at), ...mine, ...rest.slice(at)];
+        return { chat: { ...s.chat, questions } };
+      });
+      await get().stop();
+    },
     async stop() {
       const chat = get().chat;
       if (!chat.busy || !chat.id) return;

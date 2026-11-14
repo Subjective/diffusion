@@ -1735,34 +1735,47 @@ tr.qd.sel td.mark {
   width: 18px;
   height: 18px;
 }
-.note .x,
-.queue-row .x {
+.note .x {
   opacity: 0;
 }
-.note:hover .x,
-.queue-row:hover .x {
+.note:hover .x {
   opacity: 1;
 }
-/* Messages waiting for the running turn to end. */
+/* Messages waiting for the running turn: a panel above the composer, one row each, sent one per turn. */
 .queue {
+  margin: 0 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 4px;
+  animation: pop 0.14s ease-out;
+}
+.queue-h {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0 8px 6px;
+  align-items: center;
+  padding: 2px 4px 2px 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.queue-rows {
+  max-height: 200px;
+  overflow-y: auto;
 }
 .queue-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-height: 30px;
-  padding: 0 4px 0 10px;
-  border-radius: 10px;
-  color: var(--muted);
-  font-size: 13px;
-  animation: pop 0.14s ease-out;
+  padding: 0 4px 0 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 13.5px;
 }
 .queue-row:hover {
   background: var(--chip);
+}
+.queue-row.editing {
+  border-color: var(--border-strong);
 }
 .queue-row .qt {
   flex: 1;
@@ -1770,7 +1783,63 @@ tr.qd.sel td.mark {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.queue-act {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+.queue-row:hover .queue-act {
+  display: flex;
+}
+.queue-act .text-btn {
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.queue-act .text-btn,
+.queue-tag {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.queue-act .text-btn:hover {
   color: var(--text);
+}
+.queue-pill {
+  cursor: pointer;
+  font-family: inherit;
+  margin: 0 4px 8px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+}
+.queue-pill span {
+  margin-left: 4px;
+  color: var(--muted);
+}
+.editing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 2px 0 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hl-bar) 14%, transparent);
+  color: var(--hl-bar);
+  font-size: 13px;
+}
+.editing-chip .icon-btn {
+  width: 18px;
+  height: 18px;
+  color: inherit;
 }
 #chatSend,
 #askSend {
