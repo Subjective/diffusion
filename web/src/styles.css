@@ -2063,8 +2063,7 @@ body.resizing * {
   color: var(--subtle);
 }
 .rail-f.plain:hover .nm,
-.rail-f.plain.on .nm,
-.rail-f.tabbed .nm {
+.rail-f.plain.on .nm {
   color: var(--text);
 }
 .rail-dir .nm,

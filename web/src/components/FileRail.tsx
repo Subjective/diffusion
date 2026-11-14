@@ -65,7 +65,6 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
   const viewed = useUI((s) => s.viewed);
   const hideSkip = useUI((s) => s.hideSkip);
   const mode = useUI((s) => s.railMode);
-  const tabs = useUI((s) => s.tabs);
   const nav = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
@@ -167,7 +166,6 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
         f && viewed[p] && "viewed",
         f && skip.has(p) && "skip",
         !f && "plain",
-        tabs.some((t) => t.path === p) && "tabbed",
       ]
         .filter(Boolean)
         .join(" ");
