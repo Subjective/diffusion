@@ -288,8 +288,15 @@ test("messages asked mid-answer queue, can be edited or removed, and go out one 
   const fetched = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
   expect(fetched.some((u) => /\/api\/chats\/[^/]+\/stop$/.test(u))).toBe(true);
 
-  // each turn's end sends the next queued message, alone
+  // while a queued message is being edited, the queue holds (and Steer is gone); saving lets it go on
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[1].querySelector('[title="Edit"]')!);
+  expect(screen.queryByText("Steer")).toBeNull();
   await act(async () => release!());
+  await new Promise((r) => setTimeout(r, 50));
+  expect(turnBodies).toHaveLength(1);
+  fireEvent.keyDown(document.querySelector(".composer textarea")!, { key: "Escape" });
+
+  // each turn's end sends the next queued message, alone
   await waitFor(() => expect(turnBodies).toHaveLength(2));
   expect(turnBodies[1].questions.map((q) => q.text)).toEqual(["second?"]);
   expect(rows()).toEqual(["third, edited?"]);

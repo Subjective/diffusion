@@ -891,14 +891,16 @@ function Queue({
                 <span className="queue-tag">Editing</span>
               ) : (
                 <span className="queue-act">
-                  <button
-                    type="button"
-                    className="text-btn"
-                    title="Stop this answer and send this now"
-                    onClick={() => void sendNow(batch)}
-                  >
-                    Steer
-                  </button>
+                  {!editing && (
+                    <button
+                      type="button"
+                      className="text-btn"
+                      title="Stop this answer and send this now"
+                      onClick={() => void sendNow(batch)}
+                    >
+                      Steer
+                    </button>
+                  )}
                   <button type="button" className="icon-btn sm" title="Edit" onClick={() => onEdit(batch, typed)}>
                     {ic(Pencil, 14)}
                   </button>
@@ -1022,7 +1024,8 @@ function Composer({ link }: { link: ChatLinkProps }) {
   const { chat, unstage, ask, sendStaged, stop, editQueued } = useChat();
 
   const [text, setText] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
+  const editing = useChat((s) => s.editing);
+  const setEditing = useChat((s) => s.setEditing);
   const [caret, setCaret] = useState(0);
   const ta = useRef<HTMLTextAreaElement>(null);
   const menu = useTypeahead(text, caret, chat.kind === "guide");
@@ -1044,13 +1047,15 @@ function Composer({ link }: { link: ChatLinkProps }) {
     if (staged.length > queued.current) requestAnimationFrame(() => ta.current?.focus());
     queued.current = staged.length;
   }, [staged.length]);
-  // A queued message that went out (or was removed) while being edited: stop editing it.
+  // Closing the chat mid-edit lets the queue go on.
+  useEffect(() => () => useChat.getState().setEditing(null), []);
+  // A queued message that was removed (or went out) while being edited: stop editing it.
   useEffect(() => {
     if (editing && !waiting.some((q) => q.batch === editing)) {
       setEditing(null);
       setText("");
     }
-  }, [editing, waiting]);
+  }, [editing, waiting, setEditing]);
 
   const reset = () => {
     setText("");
@@ -1072,6 +1077,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
     if (editing) {
       editQueued(editing, text.trim());
       setEditing(null);
+      setText("");
     } else if (staged.length) sendStaged(text);
     else if (text.trim()) ask(text.trim());
     else return;

@@ -117,6 +117,9 @@ interface State {
   unqueue(batch: string): void;
   editQueued(batch: string, text: string): void;
   sendNow(batch: string): Promise<void>;
+  /** The queued message being edited in the composer: the queue holds until the edit is saved or cancelled. */
+  editing: string | null;
+  setEditing(batch: string | null): void;
   /** The diff should jump to this show: the model's first `show_code` of a turn, if the diff wasn't touched since asking. */
   autoShow: { q: string; i: number; n: number } | null;
 
@@ -202,11 +205,20 @@ export const useChat = create<State>((set, get) => {
     return c.id;
   }
 
+  /** The next queued message goes out, unless a turn is running or a queued message is being edited. */
+  function sendNext() {
+    const { chat, editing } = get();
+    if (chat.busy || editing) return;
+    const next = chat.questions.find((q) => q.status === "waiting")?.batch;
+    if (next) void send(chat.questions.filter((q) => q.status === "waiting" && q.batch === next));
+  }
+
   async function send(qs: Question[]) {
     if (!qs.length) return;
     const ids0 = new Set(qs.map((q) => q.id));
-    if (get().chat.busy) {
-      // One turn at a time: queue this message; each queued one goes out after the turn before it ends.
+    if (get().chat.busy || get().editing) {
+      // One turn at a time: queue this message; each queued one goes out after the turn before it ends (and not
+      // while one is being edited).
       const batch = qid();
       set((s) => ({
         chat: {
@@ -316,8 +328,7 @@ export const useChat = create<State>((set, get) => {
       set({ asks: [] });
       if (get().chat.key === chatRef.key) {
         set((s) => ({ chat: { ...s.chat, busy: false } }));
-        const next = get().chat.questions.find((q) => q.status === "waiting")?.batch;
-        if (next) void send(get().chat.questions.filter((q) => q.status === "waiting" && q.batch === next));
+        sendNext();
       }
       if (get().historyOpen) void get().loadHistory();
     }
@@ -334,7 +345,12 @@ export const useChat = create<State>((set, get) => {
       storage.get<ChatMode>("rv-chat-mode", "default"),
     ),
     asks: [],
+    editing: null,
 
+    setEditing(batch) {
+      set({ editing: batch });
+      if (!batch) sendNext();
+    },
     setMode(mode) {
       storage.set("rv-chat-mode", mode);
       set({ mode });
