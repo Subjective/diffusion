@@ -396,7 +396,7 @@ test("the guide session runs in the harness's permission modes and asks in the c
   expect(mode().textContent).toBe("Ask before edits");
   fireEvent.click(mode());
   const items = [...document.querySelectorAll(".mode-menu .mode-item")].map((i) => i.textContent);
-  expect(items).toEqual(["Ask before edits", "Accept edits", "Plan", "Bypass permissions", "Read-onlyforks"]);
+  expect(items).toEqual(["Ask before edits", "Accept edits", "Plan", "Bypass permissions"]);
   fireEvent.click(screen.getByText("Plan"));
   expect(mode().textContent).toBe("Plan");
   expect(document.querySelector(".mode-menu")).toBeNull();

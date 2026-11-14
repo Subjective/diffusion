@@ -662,13 +662,6 @@ function ModeMenu() {
               {m === cur && ic(Check, 14)}
             </button>
           ))}
-          <div className="mode-sep" />
-          <div className="mode-item off" title="New chats fork the session and can only read">
-            {ic(Lock, 14)}
-            <span>Read-only</span>
-            <span className="grow" />
-            <span className="mode-note">forks</span>
-          </div>
         </div>
       )}
       <button

@@ -1455,20 +1455,6 @@ tr.ln:hover .ask-btn {
 .mode-item.on {
   background: var(--chip);
 }
-.mode-item.off {
-  color: var(--muted);
-  cursor: default;
-  background: none;
-}
-.mode-note {
-  color: var(--subtle);
-  font-size: 12px;
-}
-.mode-sep {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border);
-}
 
 /* The session's terminal history before this chat, folded to one line */
 .earlier {
