@@ -1697,6 +1697,15 @@ tr.qd.sel td.mark {
   background: var(--hl-bar);
   color: #fff;
 }
+.note-peek {
+  width: auto;
+  max-width: 320px;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
 /* Line notes attached to the next message, as pills in the composer. */
 .notes {
   display: flex;

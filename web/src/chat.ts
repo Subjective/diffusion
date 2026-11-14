@@ -124,6 +124,8 @@ interface State {
 
   stage(text: string, anchor: Anchor): Question;
   unstage(id: string): void;
+  /** Change a line note's text (same number, same lines); empty removes it. */
+  editStaged(id: string, text: string): void;
   clearStaged(): void;
   ask(text: string, anchor?: Anchor | null): void;
   sendStaged(extra?: string): void;
@@ -435,6 +437,10 @@ export const useChat = create<State>((set, get) => {
     },
     unstage(id) {
       set((s) => ({ chat: { ...s.chat, questions: s.chat.questions.filter((q) => q.id !== id) } }));
+    },
+    editStaged(id, text) {
+      if (!text) return get().unstage(id);
+      set((s) => ({ chat: { ...s.chat, questions: s.chat.questions.map((q) => (q.id === id ? { ...q, text } : q)) } }));
     },
     clearStaged() {
       set((s) => ({ chat: { ...s.chat, questions: s.chat.questions.filter((q) => q.status !== "staged") } }));

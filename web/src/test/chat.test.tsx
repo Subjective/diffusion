@@ -220,12 +220,27 @@ test("drag bubble across lines → popup → queue two → badges → send → l
   await waitFor(() => expect(document.querySelector(".composer .note")).toBeTruthy());
   const note = document.querySelector<HTMLElement>(".composer .note")!;
   expect(note.textContent).toBe("1session.ts:5–6");
-  expect(note.title).toBe("Why clear the timer?");
   // the chat box takes focus, so ↵ sends it
   await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".composer textarea")));
   // on the line, the same numbered badge
   expect(document.querySelector(".qb.s-staged")!.textContent).toBe("1");
   expect(document.querySelector("tr.qd")).toBeTruthy();
+
+  // clicking it reopens the popup it was written in, to edit; ↵ saves in place
+  fireEvent.click(document.querySelector<HTMLElement>(".composer .note")!);
+  const edit = await waitFor(() => document.querySelector<HTMLTextAreaElement>(".ask-pop .ask-in textarea")!);
+  expect(edit.value).toBe("Why clear the timer?");
+  fireEvent.change(edit, { target: { value: "Why clear it here?" } });
+  fireEvent.keyDown(edit, { key: "Enter" });
+  await waitFor(() => expect(document.querySelector(".ask-pop")).toBeNull());
+  const { useChat } = await import("../chat");
+  expect(
+    useChat
+      .getState()
+      .chat.questions.filter((q) => q.status === "staged")
+      .map((q) => [q.n, q.text]),
+  ).toEqual([[1, "Why clear it here?"]]);
+  expect(document.querySelector(".composer .note")!.className).toBe("note");
 
   // send all with an extra typed message
   type("anything else?");

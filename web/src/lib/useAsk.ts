@@ -134,5 +134,14 @@ export function useAsk() {
     };
   }, []);
 
-  return { ask, close, open };
+  /** Reopen a line note to edit it: the same popup, on its lines, with its text. */
+  const edit = (id: string, text: string, anchor: Anchor, keys: string[], x: number, y: number) => {
+    clearSel();
+    setSel(
+      keys.flatMap((k) => [...document.querySelectorAll<HTMLElement>(`tr.ln[data-rk="${CSS.escape(k)}"]`)]),
+      true,
+    );
+    setAsk({ anchor, x, y, edit: { id, text } });
+  };
+  return { ask, close, open, edit };
 }

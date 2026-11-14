@@ -58,6 +58,8 @@ export interface ChatLinkProps {
   onHoverQ: (id: string | null) => void;
   /** Click a question to scroll to + flash its lines. */
   onFocusQ: (q: Question) => void;
+  /** Click a line note waiting to be sent to edit it, in the popup it was written in. */
+  onEditQ: (id: string, el: Element | null) => boolean;
   hoverQ: string | null;
   flashQ: { id: string; n: number } | null;
 }
@@ -878,9 +880,12 @@ function Composer({ link }: { link: ChatLinkProps }) {
             {staged.map((q) => (
               <div
                 key={q.id}
-                title={q.text}
-                className={`note${link.hoverQ === q.id || link.flashQ?.id === q.id ? " hover" : ""}${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
+                className={`note${link.hoverQ === q.id ? " hover" : ""}`}
                 {...noteLink(q, link)}
+                onClick={(e) => {
+                  link.onFocusQ(q);
+                  link.onEditQ(q.id, e.currentTarget);
+                }}
               >
                 <Qn q={q} />
                 <span className="ref">{q.anchor ? anchorLabel(q.anchor) : ""}</span>

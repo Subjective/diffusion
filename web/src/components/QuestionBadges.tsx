@@ -43,7 +43,6 @@ export function useQuestionBadges(
                 type="button"
                 key={q.id}
                 className={`qb s-${q.status}${hoverQ === q.id ? " hover" : ""}`}
-                title={q.status === "staged" ? q.text : undefined}
                 data-q={q.id}
                 onMouseEnter={() => onHoverQ(q.id)}
                 onMouseLeave={() => onHoverQ(null)}
