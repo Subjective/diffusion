@@ -8,6 +8,7 @@ transcript, so a Cursor guide session has only the turns asked in Diffusion.
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -39,10 +40,20 @@ def _turn(text: str) -> dict:
             "trace": [], "shows": [], "status": "done", "source": "session"}  # fmt: skip
 
 
-def _user_text(text: str) -> str | None:
+_TAG = re.compile(r"^<([A-Za-z][\w-]*)[\s>]")
+_HUMAN = re.compile(r"<message\b[^>]*\bfrom=\"human\"[^>]*>(.*?)</message>", re.S)
+
+
+def _user_text(text: str) -> str | bool:
+    """A prompt as the person typed it; False for one to leave out (CLI echoes), True for one a harness sent on its
+    own (notifications, other agents' messages), whose answer is left out with it."""
     text = _REMINDER.sub("", text).strip()
     if not text or text.startswith(_INJECTED):
-        return None
+        return False
+    if _TAG.match(text):
+        # A harness envelope: keep the person's own words from it, if there are any.
+        said = [html.unescape(m.strip()) for m in _HUMAN.findall(text)]
+        return "\n\n".join(m for m in said if m) or True
     return text
 
 
@@ -58,13 +69,18 @@ def _lines(path: Path):
 class _Builder:
     def __init__(self) -> None:
         self.turns: list[dict] = []
+        self.muted = False
 
-    def ask(self, text: str) -> None:
-        self.turns.append(_turn(text))
+    def ask(self, text: str | bool) -> None:
+        if text is False:
+            return
+        self.muted = text is True
+        if isinstance(text, str):
+            self.turns.append(_turn(text))
 
     @property
     def cur(self) -> dict | None:
-        return self.turns[-1] if self.turns else None
+        return self.turns[-1] if self.turns and not self.muted else None
 
     def say(self, text: str) -> None:
         if (t := self.cur) is not None and text.strip():
@@ -101,8 +117,7 @@ def read_claude(path: Path) -> list[dict]:
         content = msg.get("content")
         if e.get("type") == "user":
             if isinstance(content, str):
-                if text := _user_text(content):
-                    b.ask(text)
+                b.ask(_user_text(content))
                 continue
             texts = []
             for c in content or []:
@@ -110,8 +125,8 @@ def read_claude(path: Path) -> list[dict]:
                     b.failed(c.get("tool_use_id", ""))
                 elif c.get("type") == "text":
                     texts.append(c.get("text", ""))
-            if texts and (text := _user_text("\n".join(texts))):
-                b.ask(text)
+            if texts:
+                b.ask(_user_text("\n".join(texts)))
         elif e.get("type") == "assistant":
             for c in content if isinstance(content, list) else []:
                 kind = c.get("type")
@@ -134,8 +149,7 @@ def read_codex(path: Path) -> list[dict]:
         if kind == "message":
             text = "\n".join(c.get("text", "") for c in p.get("content") or [] if isinstance(c, dict))
             if p.get("role") == "user":
-                if text := _user_text(text):
-                    b.ask(text)
+                b.ask(_user_text(text))
             elif p.get("role") == "assistant":
                 b.say(text)
         elif kind == "reasoning":
@@ -187,5 +201,7 @@ def merge(session: list[dict] | None, stored: list[dict], asked_here) -> list[di
             (i for i, s in enumerate(rest) if all(q["text"].strip() in text for q in s["questions"])), None
         )
         if i is not None:
-            out.append(rest.pop(i))
+            # Diffusion's record, with the transcript's account of what the agent did (it marks failed calls).
+            mine = rest.pop(i)
+            out.append({**mine, "trace": t["trace"]} if t["trace"] else mine)
     return out + rest

@@ -47,6 +47,22 @@ def test_reads_a_claude_session_as_turns(tmp_path):
     assert turns[1]["answers"]["0"] == "They pass." and turns[1]["source"] == "session"
 
 
+def test_harness_envelopes_keep_the_persons_words_and_drop_the_rest(tmp_path):
+    p = tmp_path / "s.jsonl"
+    wake = '<wake reason="mention"><thread><message from="human" id="m1">No, not &lt;that&gt;.</message></thread></wake>'
+    write(p, [
+        user(wake),
+        assistant({"type": "text", "text": "Got it."}),
+        user("<task-notification>\n<status>pending</status>\n</task-notification>"),
+        assistant({"type": "tool_use", "id": "n1", "name": "ReadNotifications", "input": {}}),
+        assistant({"type": "text", "text": "No response requested."}),
+        user("plain"),
+    ])  # fmt: skip
+    turns = read_claude(p)
+    assert [t["questions"][0]["text"] for t in turns] == ["No, not <that>.", "plain"]
+    assert turns[0]["answers"]["0"] == "Got it." and turns[0]["trace"] == []
+
+
 def test_reads_a_codex_session_as_turns(tmp_path):
     def item(payload):
         return {"type": "response_item", "payload": payload}
@@ -82,7 +98,8 @@ def test_merge_keeps_diffusions_own_record_of_its_turns():
         return {"questions": [{"n": 1, "text": text}], "answers": {}}
 
     session = [t("terminal"), t(f"About `a.ts:3`\nwhy?\n\n{SHOW_REMINDER}"), t("terminal again")]
-    stored = [{**t("why?"), "shows": ["x"]}, t("still streaming")]
+    session[1]["trace"] = [{"tool": "post_message", "id": "t1", "failed": True}]
+    stored = [{**t("why?"), "shows": ["x"], "trace": [{"tool": "post_message"}]}, t("still streaming")]
     out = merge(session, stored, lambda text: text.endswith(SHOW_REMINDER))
     assert [q["questions"][0]["text"] for q in out] == [
         "terminal",
@@ -90,5 +107,5 @@ def test_merge_keeps_diffusions_own_record_of_its_turns():
         "terminal again",
         "still streaming",
     ]
-    assert out[1]["shows"] == ["x"]
+    assert out[1]["shows"] == ["x"] and out[1]["trace"][0]["failed"]
     assert merge(None, stored, lambda _: False) == stored

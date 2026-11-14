@@ -1295,6 +1295,7 @@ tr.ln:hover .ask-btn {
 }
 .bubble {
   background: var(--chip);
+  overflow-wrap: anywhere;
   padding: 9px 14px;
   border-radius: 18px;
   font-size: 14px;
