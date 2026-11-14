@@ -1,4 +1,5 @@
-// The full text of a changed file at the PR head, fetched the first time a gap is expanded and kept per session.
+// The full text of a file at the PR head, fetched the first time it's needed (a gap expanded, a tab opened) and kept
+// per session.
 import { useCallback, useEffect, useState } from "react";
 import { fetchFile } from "../api";
 import { useApp } from "../store";
@@ -12,7 +13,7 @@ export interface FileLines {
 
 const cache = new Map<string, Promise<string[]>>();
 
-function load(url: string, path: string): Promise<string[]> {
+export function loadFile(url: string, path: string): Promise<string[]> {
   const k = `${url}\n${path}`;
   let p = cache.get(k);
   if (!p) {
@@ -33,7 +34,7 @@ export function useFileLines(path: string, lang: string | null) {
   useEffect(() => {
     if (!wanted) return;
     let live = true;
-    load(url, path).then(
+    loadFile(url, path).then(
       async (lines) => {
         if (!live) return;
         setFile({ lines, tokens: [] });

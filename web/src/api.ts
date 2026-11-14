@@ -29,6 +29,13 @@ export async function fetchFile(url: string, path: string): Promise<string> {
   return (await res.json()).text;
 }
 
+/** Every file tracked at the head, for the navigator's all-files view. */
+export async function fetchTree(url: string): Promise<string[]> {
+  const res = await fetch(`/api/tree?url=${encodeURIComponent(url)}`);
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()).files;
+}
+
 export interface DefinitionMatch {
   path: string;
   line: number;

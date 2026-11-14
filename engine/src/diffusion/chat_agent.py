@@ -339,6 +339,7 @@ async def run_turn(
     model: str,
     resume: str | None,
     fork: bool = False,
+    adopt: bool = False,
     cwd: Path | None = None,
     block: GuideBlock | None = None,
     max_turns: int = 24,
@@ -355,6 +356,7 @@ async def run_turn(
         max_turns=max_turns,
         resume=resume,
         fork=fork,
+        adopt=adopt,
         include_partial=True,
     )
     block = block if block is not None else GuideBlock()

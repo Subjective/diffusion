@@ -5,6 +5,7 @@ import {
   FileCode,
   FileText,
   FlaskConical,
+  GitFork,
   History,
   Layers,
   LocateFixed,
@@ -20,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Anchor, type Question, type Show, useChat } from "../chat";
+import { type Anchor, guideSessionOf, type Question, type Show, useChat } from "../chat";
 import { type CodeLoc, expandCites, parseCites, type Resolved, resolveLoc } from "../lib/cite";
 import { useHunkIndex } from "../lib/linking";
 import { InlineCodeContext, Markdown } from "../lib/md";
@@ -30,7 +31,7 @@ import { ago } from "../lib/time";
 import { useApp } from "../store";
 import type { StepKind } from "../types";
 import { useUI } from "../ui";
-import { ic, STEP_ICON } from "./icons";
+import { HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
 
 export interface ChatLinkProps {
   /** Hover a question (by local id) to highlight its lines; null clears. */
@@ -44,6 +45,10 @@ export interface ChatLinkProps {
 export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; link: ChatLinkProps }) {
   const { chat, historyOpen, setHistoryOpen, newChat, error } = useChat();
   const toggleChat = useApp((s) => s.toggleChat);
+  const meta = useApp((s) => s.guide?.meta);
+  const guideHarness = meta?.harness ?? null;
+  // The guide session, unless it can't be continued (then the first question starts a fork).
+  const isGuide = chat.kind === "guide" && (chat.id != null || !!guideSessionOf(meta));
   const msgs = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const sent = chat.questions.filter((q) => q.turn != null);
@@ -71,10 +76,23 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
     <aside className="chat">
       <Resizer onWidth={onWidth} />
       <div className="chat-h">
-        {ic(MessageCircle, 16)}
-        <span className={`chat-title${title ? "" : " none"}`} title={title || undefined}>
-          {title || "New chat"}
+        <span className="chat-mark" title={harnessName(chat.harness ?? guideHarness)}>
+          <HarnessMark harness={chat.harness ?? guideHarness} size={15} />
         </span>
+        {historyOpen ? (
+          <span className="chat-title">History</span>
+        ) : isGuide ? (
+          <span className="chat-title" title="The session that wrote the guide, continued">
+            Guide session
+          </span>
+        ) : (
+          <span className={`chat-title${title ? "" : " none"}`} title={title || undefined}>
+            <span className="kind" title="A fork of the guide session">
+              {ic(GitFork, 13)}
+            </span>
+            {title || "New chat"}
+          </span>
+        )}
         <button
           type="button"
           className={`icon-btn sm${historyOpen ? " on" : ""}`}
@@ -160,9 +178,17 @@ function CiteLink({ loc, text }: { loc: CodeLoc; text: string }) {
   const r = useMemo(() => resolve(loc), [loc, resolve]);
   if (!r)
     return (
-      <code className="cite off" title="Not part of this diff">
-        {text}
-      </code>
+      <button
+        type="button"
+        className="cite"
+        title={`${loc.file} · Open in a tab`}
+        onClick={(e) => {
+          e.stopPropagation();
+          useUI.getState().openFile(loc.file, { line: loc.start, end: loc.end });
+        }}
+      >
+        <code>{text.trim().replace(/^.*\//, "")}</code>
+      </button>
     );
   return (
     <button type="button" className="cite" title={`${r.file} · Show in diff`} {...locLink(r)}>
@@ -219,26 +245,63 @@ function Resizer({ onWidth }: { onWidth: (w: number) => void }) {
 }
 
 function HistoryList() {
-  const { history, chat, openChat } = useChat();
+  const { history, chat, openChat, openGuide } = useChat();
+  const meta = useApp((s) => s.guide?.meta);
+  const live = guideSessionOf(meta);
+  const guide = history.find((c) => c.kind === "guide");
+  const forks = history.filter((c) => c.kind !== "guide");
   return (
     <div className="hist">
-      {!history.length && <div className="h-empty">{ic(History, 18)}</div>}
-      {history.map((c) => (
-        <div key={c.id} className={`h-item${c.id === chat.id ? " active" : ""}`} onClick={() => void openChat(c.id)}>
-          <div className="h-t">{c.title || "Chat"}</div>
-          <div className="h-m">
-            <span>
-              {ic(MessageCircle, 12)}
-              {c.questions}
+      {(live || guide) && (
+        <>
+          <div
+            className={`h-item guide${chat.kind === "guide" ? " active" : ""}`}
+            onClick={() => void openGuide()}
+            title="The session that wrote the guide, continued"
+          >
+            <span className="h-ic">
+              <HarnessMark harness={guide?.harness ?? meta?.harness} size={15} />
             </span>
-            {c.anchored > 0 && (
+            <div className="h-body">
+              <div className="h-t">Guide session</div>
+              <div className="h-m">
+                <span>{harnessName(guide?.harness ?? meta?.harness)}</span>
+                {guide && (
+                  <span>
+                    {ic(MessageCircle, 12)}
+                    {guide.questions}
+                  </span>
+                )}
+                <span className="grow" />
+                {guide && <span>{ago(guide.updated_at)}</span>}
+              </div>
+            </div>
+          </div>
+          {forks.length > 0 && <div className="h-div" />}
+        </>
+      )}
+      {!forks.length && !live && !guide && <div className="h-empty">{ic(History, 18)}</div>}
+      {forks.map((c) => (
+        <div key={c.id} className={`h-item${c.id === chat.id ? " active" : ""}`} onClick={() => void openChat(c.id)}>
+          <span className="h-ic" title="A fork of the guide session">
+            {ic(GitFork, 15)}
+          </span>
+          <div className="h-body">
+            <div className="h-t">{c.title || "Chat"}</div>
+            <div className="h-m">
               <span>
-                {ic(FileCode, 12)}
-                {c.anchored}
+                {ic(MessageCircle, 12)}
+                {c.questions}
               </span>
-            )}
-            <span className="grow" />
-            <span>{ago(c.updated_at)}</span>
+              {c.anchored > 0 && (
+                <span>
+                  {ic(FileCode, 12)}
+                  {c.anchored}
+                </span>
+              )}
+              <span className="grow" />
+              <span>{ago(c.updated_at)}</span>
+            </div>
           </div>
         </div>
       ))}
@@ -551,7 +614,9 @@ function Composer({ link }: { link: ChatLinkProps }) {
               ? "Add a message, or send"
               : chat.busy
                 ? "Ask another — sends after this answer"
-                : "Ask anything"
+                : chat.kind === "guide" && !chat.questions.length
+                  ? "Continue the guide session"
+                  : "Ask anything"
           }
           onChange={(e) => {
             setText(e.target.value);

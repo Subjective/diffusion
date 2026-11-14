@@ -12,6 +12,13 @@ vi.mock("../api", () => ({
   fetchVersions: vi.fn(async () => ({ head_sha: payload.pr.head_sha, versions: payload.versions })),
   fetchGuide: vi.fn(),
   fetchFile: vi.fn(async () => Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")),
+  fetchTree: vi.fn(async () => [
+    "README.md",
+    "docs/guide.md",
+    "package-lock.json",
+    "src/auth/session.ts",
+    "src/auth/types.ts",
+  ]),
   fetchDefinition: vi.fn(),
   fetchReferences: vi.fn(async () => []),
   fetchAround: vi.fn(async () => {
@@ -348,16 +355,17 @@ test("comments sit under their last line, highlight it, and can be hidden, resol
   expect([cmts()[0].querySelector(".cmt-t")!.textContent, tg.textContent]).toEqual(["A 5xx is not retried.", "2"]);
 });
 
-test("file list toggles, groups by directory, and opens a picked file", async () => {
+test("file list toggles, nests directories, and opens a picked file", async () => {
   await mount();
   expect(document.querySelector(".rail")).toBeNull();
   fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
   const rail = document.querySelector(".rail")!;
-  expect([...rail.querySelectorAll(".rail-dir")].map((d) => d.textContent)).toEqual(["src/auth/"]);
+  // folders first, single-child chains joined into one row
+  expect([...rail.querySelectorAll(".rail-dir")].map((d) => d.textContent)).toEqual(["src/auth"]);
   expect([...rail.querySelectorAll(".rail-f")].map((f) => f.querySelector(".nm")!.textContent)).toEqual([
-    "package-lock.json",
     "session.ts",
     "types.ts",
+    "package-lock.json",
   ]);
   expect(rail.querySelector('[data-path="package-lock.json"]')!.classList.contains("skip")).toBe(true);
   // picking a collapsed file opens it and marks it current
@@ -367,6 +375,56 @@ test("file list toggles, groups by directory, and opens a picked file", async ()
   );
   expect(document.querySelector('.file[data-path="package-lock.json"]')!.classList.contains("collapsed")).toBe(false);
   expect(localStorage.getItem("rv-rail")).toBe("true");
+});
+
+test("all files: changed folders open, the rest folded; the filter narrows; other files open in tabs", async () => {
+  const { useUI } = await import("../ui");
+  await mount();
+  if (!document.querySelector(".rail")) fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
+  fireEvent.click(screen.getByTitle("All files"));
+  const rail = document.querySelector(".rail")!;
+  await waitFor(() => expect(rail.querySelector('[data-path="README.md"]')).toBeTruthy());
+  const dirs = () =>
+    [...rail.querySelectorAll<HTMLElement>(".rail-dir")].map((d) => [d.textContent, d.getAttribute("aria-expanded")]);
+  expect(dirs()).toEqual([
+    ["docs", "false"],
+    ["src/auth", "true"],
+  ]);
+  expect(rail.querySelector('[data-path="README.md"]')!.classList.contains("plain")).toBe(true);
+
+  // the filter opens folders to show what matches
+  const filter = rail.querySelector<HTMLInputElement>(".rail-q input")!;
+  fireEvent.change(filter, { target: { value: "guide" } });
+  expect([...rail.querySelectorAll(".rail-f")].map((f) => f.getAttribute("data-path"))).toEqual(["docs/guide.md"]);
+  fireEvent.change(filter, { target: { value: "" } });
+
+  // an unchanged file opens in a preview tab, which the next one replaces; the rail follows it
+  fireEvent.click(rail.querySelector('[data-path="README.md"]')!);
+  await waitFor(() => expect(document.querySelector(".fileview tr.ln")).toBeTruthy());
+  const tabs = () => [...document.querySelectorAll<HTMLElement>(".tab")].map((t) => t.textContent);
+  expect(tabs()).toEqual(["Diff", "README.md"]);
+  expect(document.querySelector<HTMLElement>(".diffpane .diffwrap:not(.fileview)")!.hidden).toBe(true);
+  expect(rail.querySelector('[data-path="README.md"]')!.classList.contains("on")).toBe(true);
+  fireEvent.click(rail.querySelector(".rail-dir")!); // open docs
+  fireEvent.click(rail.querySelector('[data-path="docs/guide.md"]')!);
+  await waitFor(() => expect(tabs()).toEqual(["Diff", "guide.md"]));
+
+  // ⌘-click a changed file: a kept tab, with its added lines marked
+  fireEvent.click(rail.querySelector('[data-path="src/auth/types.ts"]')!, { metaKey: true });
+  await waitFor(() => expect(tabs()).toEqual(["Diff", "guide.md", "types.ts"]));
+  expect(useUI.getState().tabs.map((t) => [t.path, t.pinned])).toEqual([
+    ["docs/guide.md", false],
+    ["src/auth/types.ts", true],
+  ]);
+  await waitFor(() => expect(document.querySelectorAll(".fileview tr.ln.add").length).toBeGreaterThan(0));
+  // a plain click on a changed file goes back to the diff
+  fireEvent.click(rail.querySelector('[data-path="src/auth/session.ts"]')!);
+  await waitFor(() => expect(useUI.getState().tab).toBeNull());
+  expect(document.querySelector(".fileview")).toBeNull();
+  // closing tabs
+  for (const t of [...document.querySelectorAll<HTMLElement>(".tab .x")]) fireEvent.click(t);
+  expect(tabs()).toEqual(["Diff"]);
+  useUI.getState().setRailMode("diff");
 });
 
 test("expanding a gap fetches the file and reveals numbered context rows", async () => {

@@ -65,11 +65,28 @@ export interface ChatSummary {
   questions: number;
   anchored: number;
   updated_at: number;
+  kind?: ChatKind;
+  harness?: string | null;
 }
+
+/** "guide": the agent session that wrote the guide, continued. "fork": a read-only branch of it. */
+export type ChatKind = "guide" | "fork";
+
+/** Agents whose sessions chat can fork or continue (the engine's FORKABLE). */
+const CONTINUABLE = new Set(["claude-code", "codex"]);
+
+/** The session that wrote a guide, if chat can carry it on. */
+export function guideSessionOf(meta: { session?: string | null; harness?: string | null } | undefined) {
+  return meta?.session && meta.harness && CONTINUABLE.has(meta.harness) ? { harness: meta.harness } : null;
+}
+const guideSession = () => guideSessionOf(useApp.getState().guide?.meta);
 
 interface Chat {
   key: number; // stable local identity (id is assigned lazily by the engine)
   id: string | null; // engine id once created
+  kind: ChatKind;
+  /** The agent it runs on, once it has; until then the guide's. */
+  harness: string | null;
   questions: Question[];
   turns: number;
   nextN: number;
@@ -86,6 +103,8 @@ interface State {
   autoShow: { q: string; i: number; n: number } | null;
 
   reset(pr: string): void;
+  /** Open the guide's own session, continued where it (or this chat) left off. */
+  openGuide(): Promise<void>;
   newChat(): void;
   openChat(id: string): Promise<void>;
   loadHistory(): Promise<void>;
@@ -99,7 +118,16 @@ interface State {
 }
 
 let chatSeq = 0;
-const emptyChat = (): Chat => ({ key: ++chatSeq, id: null, questions: [], turns: 0, nextN: 1, busy: false });
+const emptyChat = (kind: ChatKind = "fork"): Chat => ({
+  key: ++chatSeq,
+  id: null,
+  kind,
+  harness: null,
+  questions: [],
+  turns: 0,
+  nextN: 1,
+  busy: false,
+});
 let qSeq = 0;
 const qid = () => `q${++qSeq}`;
 const ctrls = new Set<AbortController>();
@@ -120,14 +148,16 @@ export const useChat = create<State>((set, get) => {
   async function ensureChat(): Promise<string> {
     const { chat, pr } = get();
     if (chat.id) return chat.id;
+    // No session to continue (an agent that can't, or a guide written by hand): it's a fresh chat after all.
+    const kind = chat.kind === "guide" && guideSession() ? "guide" : "fork";
     const c = await json<{ id: string }>(
       await fetch("/api/chats", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: pr }),
+        body: JSON.stringify({ url: pr, kind }),
       }),
     );
-    set((s) => ({ chat: { ...s.chat, id: c.id } }));
+    set((s) => ({ chat: { ...s.chat, id: c.id, kind } }));
     return c.id;
   }
 
@@ -250,12 +280,27 @@ export const useChat = create<State>((set, get) => {
     reset(pr) {
       if (pr === get().pr) return;
       for (const c of ctrls) c.abort();
-      set({ pr, chat: emptyChat(), history: [], historyOpen: false, error: null });
+      // Chat starts in the guide's own session, picking up any earlier turns in it.
+      set({ pr, chat: emptyChat("guide"), history: [], historyOpen: false, error: null });
+      void get().openGuide();
+    },
+    async openGuide() {
+      const from = get().chat.key;
+      let chat = emptyChat("guide");
+      try {
+        const res = await fetch(`/api/chats/guide?url=${encodeURIComponent(get().pr)}`);
+        if (res.ok) chat = fromWire(await res.json());
+      } catch {
+        // no earlier turns: start it fresh
+      }
+      // Don't swap out a chat the reviewer moved to meanwhile.
+      if (get().chat.key !== from) return;
+      set({ chat, historyOpen: false, error: null });
     },
     newChat() {
       const { chat } = get();
-      if (!chat.questions.length) return set({ historyOpen: false });
-      set({ chat: emptyChat(), historyOpen: false, error: null });
+      if (!chat.questions.length && chat.kind === "fork") return set({ historyOpen: false });
+      set({ chat: emptyChat("fork"), historyOpen: false, error: null });
     },
     async openChat(id) {
       const raw = await json<WireChat>(await fetch(`/api/chats/${id}?url=${encodeURIComponent(get().pr)}`));
@@ -334,6 +379,8 @@ interface WireAnchor {
 }
 interface WireChat {
   id: string;
+  kind?: ChatKind;
+  harness?: string | null;
   turns: {
     questions: { n: number; text: string; anchor: (WireAnchor & { ui?: Partial<Anchor> }) | null }[];
     answers: Record<string, string>;
@@ -383,5 +430,14 @@ export function fromWire(c: WireChat): Chat {
       });
     });
   });
-  return { key: ++chatSeq, id: c.id, questions, turns: c.turns.length, nextN, busy: false };
+  return {
+    key: ++chatSeq,
+    id: c.id,
+    kind: c.kind ?? "fork",
+    harness: c.harness ?? null,
+    questions,
+    turns: c.turns.length,
+    nextN,
+    busy: false,
+  };
 }

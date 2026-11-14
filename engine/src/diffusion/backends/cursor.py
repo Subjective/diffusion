@@ -43,7 +43,7 @@ def summarize_call(call: dict) -> tuple[str, str] | None:
 
 
 def compose_prompt(req: AgentRequest) -> str:
-    return f"{req.system_prompt}\n\n{req.prompt}" if not req.resume else req.prompt
+    return f"{req.system_prompt}\n\n{req.prompt}" if not req.resume or req.adopt else req.prompt
 
 
 def cursor_runner(cli_path: str | None = None) -> Runner:

@@ -11,6 +11,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -70,6 +71,11 @@ def sse_response(events: AsyncIterator[tuple[str, dict]]) -> StreamingResponse:
 
 class ChatCreate(BaseModel):
     url: str
+    # "fork": a read-only branch of the session that wrote the guide. "guide": that session itself, continued.
+    kind: Literal["fork", "guide"] = "fork"
+
+
+GUIDE_CHAT = "guide"  # the id of a target's one guide-session chat
 
 
 class TurnReq(BaseModel):
@@ -88,6 +94,8 @@ def chat_summary(c: dict) -> dict:
         "created_at": c["created_at"],
         "updated_at": c["updated_at"],
         "head_sha": c.get("head_sha"),
+        "kind": c.get("kind", "fork"),
+        "harness": c.get("harness"),
     }
 
 
@@ -104,6 +112,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     _latest_seen: dict[str, str | None] = {}
     chat_locks: dict[str, asyncio.Lock] = {}
     symbols: dict[Path, SymbolIndex] = {}
+    trees: dict[tuple[Path, str], frozenset[str]] = {}
     symbol_locks: dict[Path, asyncio.Lock] = {}
 
     async def get_prepared(url: str, refresh: bool = False) -> Prepared:
@@ -159,12 +168,24 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             raise HTTPException(404, f"no version {v}")
         return g
 
+    async def tracked(prep: Prepared) -> frozenset[str]:
+        key = (prep.checkout.worktree, prep.meta.head_sha)
+        if key not in trees:
+            trees[key] = frozenset(await asyncio.to_thread(prep.checkout.files_at_head))
+        return trees[key]
+
+    @app.get("/api/tree")
+    async def tree(url: str) -> dict:
+        """Every file at the PR head, for the file navigator's all-files view."""
+        prep = await get_prepared(url)
+        return {"files": sorted(await tracked(prep))}
+
     @app.get("/api/file")
     async def file(url: str, path: str) -> dict:
-        """A changed file at the PR head, so the diff can show lines around and between hunks."""
+        """A file at the PR head: a changed one, to show lines around its hunks, or any other, to open in a tab."""
         prep = await get_prepared(url)
-        if path not in {f.path for f in prep.index.files}:
-            raise HTTPException(404, f"{path} isn't in this diff")
+        if path not in {f.path for f in prep.index.files} and path not in await tracked(prep):
+            raise HTTPException(404, f"{path} isn't in this repository")
         try:
             text = await asyncio.to_thread(prep.checkout.file_at_head, path)
         except UnicodeDecodeError as e:
@@ -229,15 +250,19 @@ def create_app(deps: Deps | None = None) -> FastAPI:
 
     @app.post("/api/chats")
     async def create_chat(req: ChatCreate) -> dict:
+        key = pr_key(req.url)
+        if req.kind == "guide" and (found := d().store.load_chat(key, GUIDE_CHAT)):
+            return found
         now = time.time()
         chat = {
-            "id": uuid.uuid4().hex[:12],
+            "id": GUIDE_CHAT if req.kind == "guide" else uuid.uuid4().hex[:12],
+            "kind": req.kind,
             "created_at": now,
             "updated_at": now,
             "session_id": None,
             "turns": [],
         }
-        d().store.save_chat(pr_key(req.url), chat)
+        d().store.save_chat(key, chat)
         return chat
 
     @app.get("/api/chats/{chat_id}")
@@ -293,10 +318,12 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 try:
                     for resume, fork, cwd in _sessions(chat, meta, harness):
                         said = False
+                        # The guide's own session, joined for the first time, hasn't seen the chat's instructions.
+                        adopt = bool(resume) and not fork and resume != chat.get("session_id")
                         try:
                             async for ev in run_turn(
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
-                                resume, fork=fork, cwd=cwd, block=block,
+                                resume, fork=fork, adopt=adopt, cwd=cwd, block=block,
                             ):  # fmt: skip
                                 if isinstance(ev, ChatDelta):
                                     said = True
@@ -323,6 +350,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                         raise RuntimeError(ev.result or "agent error")
                                     chat["session_id"] = ev.session_id or chat.get("session_id")
                                     chat["cwd"] = str(cwd) if cwd else None
+                                    if chat.get("kind") == "guide":
+                                        chat["from_session"] = meta.get("session")
                             break
                         except Exception:
                             if said or not fork:
@@ -373,13 +402,22 @@ def _web_dist() -> Path | None:
 
 
 def _sessions(chat: dict, meta: dict, harness: str) -> list[tuple[str | None, bool, Path | None]]:
-    """Sessions a turn can run in, in order: the chat's own; else a fork of the session that wrote the guide
-    (Claude Code finds a session by the directory it ran in), falling back to a fresh one."""
+    """Sessions a turn can run in, in order. A fork: its own session; else a fork of the session that wrote the
+    guide (Claude Code finds a session by the directory it ran in), falling back to a fresh one. The guide chat: the
+    session that wrote the guide, continued, and nothing else (a fresh session would quietly be a different chat)."""
+    guide_cwd = _dir(meta.get("cwd")) if harness == "claude-code" else None
+    if chat.get("kind") == "guide":
+        if not (meta.get("session") and harness in FORKABLE):
+            raise RuntimeError("The guide's session can't be continued here; start a new chat instead.")
+        # Keep going where this chat left off, unless the guide has since been written by another session.
+        if chat.get("session_id") and chat.get("from_session") == meta["session"]:
+            return [(chat["session_id"], False, _dir(chat.get("cwd")))]
+        return [(meta["session"], False, guide_cwd)]
     if chat.get("session_id"):
         return [(chat["session_id"], False, _dir(chat.get("cwd")))]
     out: list[tuple[str | None, bool, Path | None]] = []
     if meta.get("session") and harness in FORKABLE:
-        out.append((meta["session"], True, _dir(meta.get("cwd")) if harness == "claude-code" else None))
+        out.append((meta["session"], True, guide_cwd))
     return [*out, (None, False, None)]
 
 

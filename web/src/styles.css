@@ -1586,9 +1586,40 @@ body.resizing * {
   animation: pop 0.14s ease-out;
 }
 .h-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   padding: 9px 10px;
   border-radius: 10px;
   cursor: pointer;
+}
+.h-ic {
+  flex: none;
+  display: inline-grid;
+  margin-top: 2px;
+  color: var(--subtle);
+}
+.h-item.guide .h-ic {
+  color: var(--text);
+}
+.h-body {
+  flex: 1;
+  min-width: 0;
+}
+.h-div {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border);
+}
+.chat-mark {
+  display: inline-grid;
+  color: var(--text);
+}
+.chat-title .kind {
+  display: inline-flex;
+  margin-right: 6px;
+  vertical-align: -2px;
+  color: var(--subtle);
 }
 .h-item + .h-item {
   margin-top: 2px;
@@ -1712,59 +1743,107 @@ body.resizing * {
 }
 .rail {
   flex: none;
-  width: 220px;
+  width: 240px;
   overflow-y: auto;
   padding: 8px 8px 16px;
   border-right: 1px solid var(--border);
   background: var(--bg);
   font-size: 13px;
 }
-.rail-g + .rail-g {
-  margin-top: 6px;
-}
-.rail-dir {
-  width: 100%;
+.rail-h {
+  position: sticky;
+  top: -8px;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 8px;
+  margin: -8px -8px 6px;
+  padding: 8px;
+  background: var(--bg);
+}
+.rail-h .seg {
+  flex: none;
+  margin: 0;
+}
+.rail-h .seg .icon-btn {
+  width: 28px;
+  height: 24px;
+}
+.rail-q {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 8px;
   border-radius: 8px;
+  background: var(--chip);
   color: var(--subtle);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-align: left;
 }
-.rail-dir:hover {
-  background: var(--hover);
-  color: var(--muted);
+.rail-q input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 12.5px var(--sans);
 }
-/* A folded directory holding the file in view stands in for it. */
-.rail-dir.on {
+.rail-q input::placeholder {
+  color: var(--subtle);
+}
+.rail-q .clr {
+  display: inline-grid;
+  color: var(--subtle);
+}
+.rail-q .clr:hover {
   color: var(--text);
 }
-.rail-dir span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.rail-none {
+  padding: 8px;
+  color: var(--subtle);
+  font-size: 12.5px;
 }
+.rail-dir,
 .rail-f {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 8px;
+  height: 26px;
+  padding-right: 8px;
   border-radius: 8px;
-  color: var(--muted);
   white-space: nowrap;
   text-align: left;
 }
-.rail-f.nested {
-  padding-left: 27px;
+.rail-dir {
+  gap: 4px;
+  color: var(--text);
 }
+.rail-dir .tw {
+  display: inline-grid;
+  color: var(--subtle);
+}
+.rail-dir:hover,
 .rail-f:hover {
   background: var(--hover);
+}
+/* A folded folder holding the file in view stands in for it. */
+.rail-dir.on {
+  background: var(--chip);
+}
+.rail-dir .fd {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--add-fg);
+}
+.rail-f {
+  color: var(--muted);
+}
+.rail-f:hover {
   color: var(--text);
 }
 .rail-f.on {
@@ -1773,16 +1852,137 @@ body.resizing * {
   font-weight: 500;
 }
 .rail-f.viewed .nm,
-.rail-f.skip .nm {
+.rail-f.skip .nm,
+.rail-f.plain .nm {
   color: var(--subtle);
 }
+.rail-f.plain:hover .nm,
+.rail-f.plain.on .nm,
+.rail-f.tabbed .nm {
+  color: var(--text);
+}
+.rail-dir .nm,
 .rail-f .nm {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.rail-f mark {
+  background: rgba(217, 154, 0, 0.25);
+  color: inherit;
+  border-radius: 2px;
+}
 .rail-f .dot.sm {
   flex: none;
 }
+
+/* ---------- tabs ---------- */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 9px;
+  border-radius: 8px;
+  color: var(--muted);
+  font: 12.5px var(--sans);
+  white-space: nowrap;
+}
+.tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.tab.on {
+  background: var(--chip);
+  color: var(--text);
+}
+.tab-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  color: inherit;
+}
+.tab.preview .nm {
+  font-style: italic;
+}
+.tab .chg {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--add-fg);
+}
+.tab .x {
+  display: inline-grid;
+  margin-right: -3px;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--subtle);
+  visibility: hidden;
+}
+.tab.on .x,
+.tab:hover .x {
+  visibility: visible;
+}
+.tab .x:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.diffwrap[hidden] {
+  display: none;
+}
+.file-scroll {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  container-type: inline-size;
+}
+.fileview .file {
+  content-visibility: visible;
+}
+.fileview .file-h {
+  cursor: default;
+}
+.fileview td.no:nth-child(2) {
+  display: none;
+}
+/* One line-number column: it sticks where the diff's first one does. */
+.fileview td.no + td.no {
+  left: 26px;
+}
+.fileview tr.ln.add td.mark {
+  box-shadow: inset 3px 0 0 var(--add-fg);
+}
+.fileview tr.ln.cut td.mark {
+  position: relative;
+}
+/* A notch where lines were deleted. */
+.fileview tr.ln.cut td.mark::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -4px;
+  border-left: 6px solid var(--del-fg);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.peek-h .path.go {
+  cursor: pointer;
+}
+.peek-h .path.go:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* Narrow diff: the rail floats over the code instead of squeezing it. */
 @container (max-width: 600px) {
   .rail {

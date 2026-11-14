@@ -70,14 +70,18 @@ async def test_pr_endpoint_returns_files_and_hunks(setup):
     assert by["src/auth/session.ts"]["hunks"][0]["id"].startswith("H")
 
 
-async def test_file_endpoint_serves_changed_files_at_head(setup):
+async def test_file_endpoint_serves_any_tracked_file_at_head(setup):
     client, *_ = setup
     r = await client.get("/api/file", params={"url": URL, "path": "src/auth/types.ts"})
     assert r.status_code == 200
     assert r.json()["text"].count("expiresAt") == 1
-    # only files in the diff are served
-    r = await client.get("/api/file", params={"url": URL, "path": "README.md"})
-    assert r.status_code == 404
+    # files outside the diff open in tabs; paths the head doesn't track don't
+    tree = (await client.get("/api/tree", params={"url": URL})).json()["files"]
+    assert "src/auth/types.ts" in tree and tree == sorted(tree)
+    other = next(f for f in tree if f.endswith((".ts", ".json", ".md")) and f != "src/auth/types.ts")
+    assert (await client.get("/api/file", params={"url": URL, "path": other})).status_code == 200
+    for bad in ("nope.md", "../etc/passwd", "HEAD"):
+        assert (await client.get("/api/file", params={"url": URL, "path": bad})).status_code == 404
 
 
 async def test_definition_endpoint_finds_imported_definitions(setup):
@@ -211,6 +215,48 @@ async def test_chat_bad_guide_block_is_explained_not_saved(setup):
     )
     assert "wasn't saved" in "".join(d["text"] for e, d in evs if e == "delta")
     assert (await client.get("/api/guides", params={"url": URL})).json()["versions"] == []
+
+
+async def test_guide_chat_continues_the_guide_session(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="codex", session="th_1")
+    seen = []
+
+    async def runner(req):
+        seen.append((req.resume, req.fork, req.adopt))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "th_1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    # one guide chat per target
+    assert (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"] == cid
+    for text in ("a", "b"):
+        r = await client.post(
+            f"/api/chats/{cid}/turn", json={"url": URL, "questions": [{"n": 1, "text": text}]}
+        )
+        assert parse_sse(r.text)[-1][0] == "done"
+    # added to, never forked; only the first turn brings the chat's instructions
+    assert seen == [("th_1", False, True), ("th_1", False, False)]
+    listed = (await client.get("/api/chats", params={"url": URL})).json()
+    assert [(c["id"], c["kind"], c["harness"]) for c in listed] == [(cid, "guide", "codex")]
+
+
+async def test_guide_chat_without_a_session_says_so(setup):
+    client, runners, deps, prep = setup
+    submit(deps, prep, guide_for(prep), harness="cursor", session="c1")
+    runners["chat"] = None
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    evs = parse_sse(
+        (
+            await client.post(
+                f"/api/chats/{cid}/turn", json={"url": URL, "questions": [{"n": 1, "text": "x"}]}
+            )
+        ).text
+    )
+    assert evs[-1][0] == "error" and "can't be continued" in evs[-1][1]["message"]
 
 
 async def test_fork_failure_falls_back_to_a_fresh_session(setup):

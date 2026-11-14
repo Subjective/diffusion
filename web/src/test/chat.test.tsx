@@ -262,7 +262,9 @@ test("answers link citations to diff rows; show_code chips focus the diff, auto-
   const cite = document.querySelector<HTMLElement>(".ans-t button.cite")!;
   expect(cite.textContent).toBe("session.ts:6–7");
   expect(cite.title).toBe("src/auth/session.ts · Show in diff");
-  expect(document.querySelector(".ans-t code.cite.off")!.textContent).toBe("README.md:1"); // not in the diff
+  // not in the diff: opens in a tab
+  const other = document.querySelector<HTMLElement>('.ans-t button.cite[title="README.md · Open in a tab"]')!;
+  expect(other.textContent).toBe("README.md:1");
   fireEvent.mouseEnter(cite);
   expect(row("src/auth/session.ts:6").className).toMatch(/\bhl\b/);
   expect(row("src/auth/session.ts:5").className).not.toMatch(/\bhl\b/);
@@ -331,4 +333,29 @@ test("reasoning headlines: first bold phrase, else first sentence", async () => 
   const { headline } = await import("../components/ChatPanel");
   expect(headline("**Finding callers**\n\nI'll grep.")).toBe("Finding callers");
   expect(headline("Check the timer. Then the API.")).toBe("Check the timer.");
+});
+
+test("chat opens on the guide's session; new chats fork it; history keeps the two apart", async () => {
+  await mount();
+  const g = useApp.getState().guide!;
+  useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "codex", session: "th_1" } } });
+  const { useChat } = await import("../chat");
+  await act(async () => useChat.getState().openGuide());
+  expect(document.querySelector(".chat-title")!.textContent).toBe("Guide session");
+  expect(document.querySelector('.chat-mark svg[aria-label="Codex"]')).toBeTruthy();
+  const posts = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+  type("keep going");
+  await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
+  const post = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+    .slice(posts)
+    .find(([u, i]) => String(u) === "/api/chats" && i?.method === "POST");
+  expect(JSON.parse(String(post![1].body)).kind).toBe("guide");
+  await act(async () => release!());
+
+  fireEvent.click(screen.getByTitle("New chat"));
+  expect(document.querySelector(".chat-title .kind")).toBeTruthy(); // a fork
+  fireEvent.click(screen.getByTitle("History"));
+  expect(document.querySelector(".chat-title")!.textContent).toBe("History");
+  await waitFor(() => expect(document.querySelector(".h-item.guide .h-t")!.textContent).toBe("Guide session"));
+  useApp.setState({ guide: g });
 });

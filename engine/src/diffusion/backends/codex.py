@@ -47,7 +47,7 @@ def summarize_item(item: dict) -> str | None:
 
 def compose_prompt(req: AgentRequest) -> str:
     # A resumed session already has the system prompt; a forked one is someone else's session and doesn't.
-    return f"{req.system_prompt}\n\n{req.prompt}" if not req.resume or req.fork else req.prompt
+    return f"{req.system_prompt}\n\n{req.prompt}" if not req.resume or req.fork or req.adopt else req.prompt
 
 
 def codex_runner(cli_path: str | None = None) -> Runner:

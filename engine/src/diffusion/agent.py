@@ -87,6 +87,7 @@ class AgentRequest:
     max_turns: int = 40
     resume: str | None = None
     fork: bool = False  # branch the resumed session instead of adding to it
+    adopt: bool = False  # add to someone else's session (the guide's), which hasn't seen our system prompt
     include_partial: bool = False
 
 

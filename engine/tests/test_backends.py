@@ -62,6 +62,9 @@ def test_codex_args_resume_or_fork(tmp_path):
     assert build_args(forked)[-2:] == ["fork", "th_1"] and "--model" not in build_args(forked)
     # a fork is someone else's session: it needs our system prompt; our own resumed one already has it
     assert codex_prompt(forked).startswith("s") and codex_prompt(req) == "p"
+    # the guide's own session, continued: written into, but it hasn't seen our system prompt yet
+    adopted = AgentRequest("s", "p", "", tmp_path, resume="th_1", adopt=True)
+    assert build_args(adopted)[-2:] == ["resume", "th_1"] and codex_prompt(adopted).startswith("s")
 
 
 def fake_codex(tmp_path, events, code=0):
