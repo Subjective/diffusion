@@ -20,13 +20,14 @@ from pydantic import BaseModel
 
 from . import __version__
 from .agent import DoneEvent, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
-from .chat_agent import ChatDelta, ChatFocus, GuideBlock, Question, run_turn
+from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, GuideBlock, Question, run_turn
 from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
 from .symbols import NAME, SymbolIndex
+from .transcripts import merge, session_turns
 from .validate import DraftError, check
 
 PrepareFn = Callable[[Config, str], Prepared]
@@ -267,10 +268,31 @@ def create_app(deps: Deps | None = None) -> FastAPI:
 
     @app.get("/api/chats/{chat_id}")
     async def get_chat(chat_id: str, url: str) -> dict:
-        chat = d().store.load_chat(pr_key(url), chat_id)
+        key = pr_key(url)
+        chat = d().store.load_chat(key, chat_id)
+        if chat_id == GUIDE_CHAT:
+            return await guide_chat(
+                url, chat or {"id": GUIDE_CHAT, "kind": "guide", "session_id": None, "turns": []}
+            )
         if not chat:
             raise HTTPException(404, "chat not found")
         return chat
+
+    async def guide_chat(url: str, chat: dict) -> dict:
+        """The guide chat as the session itself has it: the transcript is the history, so the conversation that
+        wrote the guide shows up, and so does anything said to that session in the terminal since."""
+        prep = await get_prepared(url)
+        guide = d().store.load_guide(pr_key(url), prep.meta.head_sha) or {}
+        meta = guide.get("meta") or {}
+        harness = chat.get("harness") or meta.get("harness")
+        session = chat.get("session_id") if chat.get("from_session") == meta.get("session") else None
+        session = session or meta.get("session")
+        if not (harness and session):
+            return {**chat, "harness": harness}
+        found = await asyncio.to_thread(session_turns, harness, session)
+        reminder = SHOW_REMINDER.strip()
+        turns = merge(found, chat.get("turns") or [], lambda text: text.rstrip().endswith(reminder))
+        return {**chat, "harness": harness, "turns": turns}
 
     @app.post("/api/chats/{chat_id}/turn")
     async def turn(chat_id: str, req: TurnReq) -> StreamingResponse:

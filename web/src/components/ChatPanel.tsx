@@ -47,6 +47,16 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
   const toggleChat = useApp((s) => s.toggleChat);
   const meta = useApp((s) => s.guide?.meta);
   const guideHarness = meta?.harness ?? null;
+  // Back from the terminal: show what was said to the guide's session there.
+  useEffect(() => {
+    const sync = () => document.visibilityState === "visible" && void useChat.getState().syncGuide();
+    addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, []);
   // The guide session, unless it can't be continued (then the first question starts a fork).
   const isGuide = chat.kind === "guide" && (chat.id != null || !!guideSessionOf(meta));
   const msgs = useRef<HTMLDivElement>(null);

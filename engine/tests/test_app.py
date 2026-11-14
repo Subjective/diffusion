@@ -465,3 +465,53 @@ async def test_local_target_end_to_end(tmp_path):
     submit(deps, prep, guide_for(prep, "local!"))
     g = (await client.get("/api/pr", params={"url": target})).json()["guide"]
     assert g["tldr"] == "local!" and g["uncovered"] == []
+
+
+async def test_guide_chat_history_is_the_sessions_transcript(setup, tmp_path, monkeypatch):
+    client, runners, deps, prep = setup
+    import json
+
+    from diffusion.agent import TextEvent
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    path = tmp_path / "claude/projects/-repo/s1.jsonl"
+    path.parent.mkdir(parents=True)
+
+    def log(*entries):
+        with path.open("a") as f:
+            f.writelines(json.dumps(e) + "\n" for e in entries)
+
+    def said(role, text):
+        return {
+            "type": role,
+            "message": {
+                "role": role,
+                "content": text if role == "user" else [{"type": "text", "text": text}],
+            },
+        }
+
+    log(said("user", "write the guide"), said("assistant", "written"))
+    # before anything is asked here, the guide chat already shows the conversation that wrote the guide
+    got = (await client.get("/api/chats/guide", params={"url": URL})).json()
+    assert [(t["questions"][0]["text"], t["answers"]["0"]) for t in got["turns"]] == [
+        ("write the guide", "written")
+    ]
+    assert got["harness"] == "claude-code"
+
+    async def runner(req):
+        log(said("user", req.prompt), said("assistant", "ok"))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    await client.post(f"/api/chats/{cid}/turn", json={"url": URL, "questions": [{"n": 1, "text": "why?"}]})
+    log(said("user", "from the terminal"), said("assistant", "sure"))
+    got = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()
+    assert [t["questions"][0]["text"] for t in got["turns"]] == [
+        "write the guide",
+        "why?",
+        "from the terminal",
+    ]
+    assert got["turns"][1]["answers"] == {"1": "ok"}  # Diffusion's own record of its turn

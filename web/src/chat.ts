@@ -105,6 +105,8 @@ interface State {
   reset(pr: string): void;
   /** Open the guide's own session, continued where it (or this chat) left off. */
   openGuide(): Promise<void>;
+  /** Pick up what was said to the guide's session elsewhere (its terminal) since the chat was loaded. */
+  syncGuide(): Promise<void>;
   newChat(): void;
   openChat(id: string): Promise<void>;
   loadHistory(): Promise<void>;
@@ -300,6 +302,21 @@ export const useChat = create<State>((set, get) => {
       // Don't swap out a chat the reviewer moved to meanwhile.
       if (get().chat.key !== from) return;
       set({ chat, historyOpen: false, error: null });
+    },
+    async syncGuide() {
+      const { chat, pr } = get();
+      const settled = (c: Chat) => !c.busy && c.questions.every((q) => q.status === "answered" || q.status === "error");
+      if (chat.kind !== "guide" || !settled(chat)) return;
+      try {
+        const res = await fetch(`/api/chats/guide?url=${encodeURIComponent(pr)}`);
+        if (!res.ok) return;
+        const next = fromWire(await res.json());
+        const now = get().chat;
+        if (now.key !== chat.key || !settled(now) || next.questions.length === now.questions.length) return;
+        set({ chat: { ...next, key: now.key } });
+      } catch {
+        // offline: keep what's on screen
+      }
     },
     newChat() {
       const { chat } = get();
