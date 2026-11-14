@@ -1406,13 +1406,95 @@ tr.ln:hover .ask-btn {
 .composer .mode.ro {
   cursor: default;
 }
-.composer .mode.m-auto-edit {
-  color: var(--add-fg, var(--text));
+.composer.stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 8px 8px 16px;
+  border-radius: 20px;
+}
+.c-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -8px;
+}
+.composer .mode.m-bypassPermissions {
+  color: var(--del-fg);
+}
+.mode-box {
+  position: relative;
+}
+.mode-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  min-width: 230px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.mode-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: 13px / 18px var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.mode-item:hover,
+.mode-item.on {
+  background: var(--chip);
+}
+.mode-item.off {
+  color: var(--muted);
+  cursor: default;
+  background: none;
+}
+.mode-note {
+  color: var(--subtle);
+  font-size: 12px;
+}
+.mode-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 
-/* A tool call waiting on the reviewer */
+/* The session's terminal history before this chat, folded to one line */
+.earlier {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: none;
+  color: var(--muted);
+  font: 13px / 18px var(--sans);
+  cursor: pointer;
+}
+.earlier:hover {
+  color: var(--text);
+}
+.earlier.open .ic:last-child {
+  transform: rotate(180deg);
+}
+
+/* A tool call waiting on the reviewer, in the conversation */
 .ask-card {
-  margin-bottom: 8px;
+  margin: 4px 0 14px;
   padding: 10px 12px;
   border: 1px solid var(--border-strong);
   border-radius: 14px;
@@ -1423,7 +1505,50 @@ tr.ln:hover .ask-btn {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
   color: var(--text);
+}
+.ask-h .verb {
+  font-weight: 500;
+}
+.ask-h code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px / 18px var(--mono);
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--chip);
+}
+.ask-h .cnt {
+  font: 12px var(--mono);
+}
+.ask-h .cnt .a {
+  color: var(--add-fg);
+}
+.ask-h .cnt .d {
+  color: var(--del-fg);
+}
+.ask-diff {
+  margin: 8px -12px;
+  padding: 6px 0;
+  max-height: 220px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font: 12px / 19px var(--mono);
+  white-space: pre;
+}
+.ask-diff span {
+  display: block;
+  padding: 0 12px;
+}
+.ask-diff .add {
+  background: var(--add);
+}
+.ask-diff .del {
+  background: var(--del);
 }
 .ask-d {
   margin: 8px 0;
@@ -1438,8 +1563,16 @@ tr.ln:hover .ask-btn {
 }
 .ask-b {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 6px;
+}
+.ask-act.ghost {
+  border-color: transparent;
+  color: var(--muted);
+}
+.ask-act .k {
+  margin-left: 4px;
+  opacity: 0.6;
 }
 .ask-act {
   height: 28px;
@@ -2064,6 +2197,25 @@ body.resizing * {
 }
 .peek-h .path.go {
   cursor: pointer;
+}
+.peek-f {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--subtle);
+  font: 11.5px / 16px var(--sans);
+}
+.peek-f kbd {
+  display: inline-block;
+  min-width: 16px;
+  margin-right: 2px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 11px / 15px var(--sans);
+  text-align: center;
 }
 .peek-h .path.go:hover {
   text-decoration: underline;

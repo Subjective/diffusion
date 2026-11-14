@@ -23,10 +23,12 @@ const CONTEXT = 6;
 
 /** Go to a result: in the diff if it shows the line (remembering where we were, for ⌘[), else in a file tab.
  *  `tab` always opens a tab, kept rather than a preview. */
+const inDiff = (h: Hit) => !!document.querySelector(`.diff-scroll tr[data-rk="${CSS.escape(rowKey(h.path, h.line))}"]`);
+
 function jump(h: Hit, tab = false) {
   const key = rowKey(h.path, h.line);
   const pane = document.querySelector<HTMLElement>(".diff-scroll");
-  if (!tab && pane?.querySelector(`tr[data-rk="${CSS.escape(key)}"]`)) {
+  if (!tab && pane && inDiff(h)) {
     backStack.push(pane.scrollTop);
     useUI.getState().setPeek(null);
     useUI.getState().focus([key], [h.path]);
@@ -218,6 +220,27 @@ export function PeekRow({ peek }: { peek: Peek }) {
               ) : (
                 <span className="spin">{ic(LoaderCircle, 14)}</span>
               )}
+            </div>
+          )}
+          {h && (
+            <div className="peek-f">
+              <span>
+                <kbd>↵</kbd> {inDiff(h) ? "go to it in the diff" : "open in a tab"}
+              </span>
+              <span>
+                <kbd>⌘</kbd>
+                <kbd>↵</kbd> open in a tab
+              </span>
+              {(hits?.length ?? 0) > 1 && (
+                <span>
+                  <kbd>↑</kbd>
+                  <kbd>↓</kbd> pick
+                </span>
+              )}
+              <span className="grow" />
+              <span>
+                <kbd>esc</kbd> close
+              </span>
             </div>
           )}
         </div>

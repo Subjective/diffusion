@@ -85,12 +85,16 @@ class ToolSpec:
     handler: Callable[[dict], Awaitable[str]]
 
 
-Mode = Literal["read-only", "ask", "auto-edit"]
-"""How much a chat may do. read-only: Diffusion's read tools only. ask: the session's own tools and settings, and
-anything those don't already allow is put to the reviewer. auto-edit: the same, with file edits allowed."""
+Mode = Literal["read-only", "default", "acceptEdits", "plan", "bypassPermissions"]
+"""How much a chat may do. read-only: Diffusion's read tools only (forks). The rest are the harness's own permission
+modes, run with the session's own tools and settings: default asks before anything those don't allow, acceptEdits
+also lets file edits through, plan only plans, bypassPermissions asks about nothing."""
 
-Approver = Callable[[str, str, dict], Awaitable[bool]]
-"""Ask the reviewer about a tool call: (tool name, one-line summary, input) -> allowed."""
+Decision = Literal["allow", "deny", "always"]
+"""The reviewer's answer to a tool call; always also allows its kind for the rest of the session."""
+
+Approver = Callable[[str, str, dict], Awaitable[Decision]]
+"""Ask the reviewer about a tool call: (tool name, one-line summary, input) -> decision."""
 
 
 @dataclass

@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
-from .agent import DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
+from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, GuideBlock, Question, run_turn
 from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
@@ -89,7 +89,7 @@ class TurnReq(BaseModel):
 
 class Approval(BaseModel):
     id: str
-    allow: bool
+    decision: Decision
 
 
 class ApprovalAsked:
@@ -159,7 +159,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     _prepared: dict[str, Prepared] = {}
     _latest_seen: dict[str, str | None] = {}
     chat_locks: dict[str, asyncio.Lock] = {}
-    approvals: dict[str, asyncio.Future[bool]] = {}  # tool calls waiting on the reviewer, by id
+    approvals: dict[str, asyncio.Future[Decision]] = {}  # tool calls waiting on the reviewer, by id
     app.state.approvals = approvals
     symbols: dict[Path, SymbolIndex] = {}
     trees: dict[tuple[Path, str], frozenset[str]] = {}
@@ -348,7 +348,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         f = approvals.get(req.id)
         if not f or f.done():
             raise HTTPException(404, "nothing is waiting on that")
-        f.set_result(req.allow)
+        f.set_result(req.decision)
         return {"ok": True}
 
     @app.post("/api/chats/{chat_id}/turn")
@@ -398,9 +398,9 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 side: asyncio.Queue = asyncio.Queue()
                 mine: list[str] = []
 
-                async def ask(tool: str, summary: str, tool_input: dict) -> bool:
+                async def ask(tool: str, summary: str, tool_input: dict) -> Decision:
                     aid = uuid.uuid4().hex[:12]
-                    f: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+                    f: asyncio.Future[Decision] = asyncio.get_running_loop().create_future()
                     approvals[aid] = f
                     mine.append(aid)
                     await side.put(ApprovalAsked(aid, tool, summary, tool_input))
@@ -478,7 +478,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 finally:
                     for aid in mine:  # the reviewer left: nothing waits forever
                         if (f := approvals.pop(aid, None)) and not f.done():
-                            f.set_result(False)
+                            f.set_result("deny")
                     chat["updated_at"] = time.time()
                     deps.store.save_chat(key, chat)
 

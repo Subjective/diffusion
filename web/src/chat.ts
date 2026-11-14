@@ -45,6 +45,8 @@ export interface Question {
   seconds?: number;
   /** The guide version this answer saved, when it was asked to change the guide. */
   guideVersion?: number;
+  /** Asked of the session somewhere else (its terminal), read from its transcript. */
+  fromSession?: boolean;
 }
 
 export type TraceItem = { think: string } | { tool: string; id?: string; failed?: boolean };
@@ -104,7 +106,7 @@ interface State {
   setMode(mode: ChatMode): void;
   /** Tool calls waiting on the reviewer in the running turn. */
   asks: Ask[];
-  answer(id: string, allow: boolean): Promise<void>;
+  answer(id: string, decision: Decision): Promise<void>;
   /** The diff should jump to this show: the model's first `show_code` of a turn, if the diff wasn't touched since asking. */
   autoShow: { q: string; i: number; n: number } | null;
 
@@ -125,13 +127,21 @@ interface State {
   sendStaged(extra?: string): void;
 }
 
-/** How much the guide session may do here. Forks are always read-only. */
-export type ChatMode = "read-only" | "ask" | "auto-edit";
-/** The modes an agent supports: Codex can't stop mid-run to ask, so it has no "ask". */
+/** How much the guide session may do: the harness's own permission modes. Forks are always read-only. */
+export type ChatMode = "default" | "acceptEdits" | "plan" | "bypassPermissions";
+/** The reviewer's answer to a tool call; "always" also allows its kind for the rest of the session. */
+export type Decision = "allow" | "deny" | "always";
+/** The modes an agent has. Codex can't stop mid-run to ask, so its modes are its sandboxes. */
 export const modesFor = (harness: string | null): ChatMode[] =>
-  harness === "codex" ? ["read-only", "auto-edit"] : harness === "claude-code" ? ["read-only", "ask", "auto-edit"] : [];
+  harness === "claude-code"
+    ? ["default", "acceptEdits", "plan", "bypassPermissions"]
+    : harness === "codex"
+      ? ["plan", "acceptEdits", "bypassPermissions"]
+      : [];
 
 /** A tool call the session wants to make that its settings don't already allow. */
+export const EDIT_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
+
 export interface Ask {
   id: string;
   tool: string;
@@ -310,22 +320,25 @@ export const useChat = create<State>((set, get) => {
     historyOpen: false,
     error: null,
     autoShow: null,
-    mode: storage.get<ChatMode>("rv-chat-mode", "ask"),
+    mode: storage.get<ChatMode>("rv-chat-mode", "default"),
     asks: [],
 
     setMode(mode) {
       storage.set("rv-chat-mode", mode);
       set({ mode });
     },
-    async answer(id, allow) {
+    async answer(id, decision) {
+      const ask = get().asks.find((a) => a.id === id);
       set((s) => ({ asks: s.asks.filter((a) => a.id !== id) }));
+      // "Allow edits this session" is the terminal's switch to accepting edits: show it in the mode too.
+      if (decision === "always" && ask && EDIT_TOOLS.includes(ask.tool)) get().setMode("acceptEdits");
       const chat = get().chat.id;
       if (!chat) return;
       try {
         await fetch(`/api/chats/${chat}/approve`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id, allow }),
+          body: JSON.stringify({ id, decision }),
         });
       } catch {
         // the turn ends on its own if it can't hear back
@@ -457,6 +470,7 @@ interface WireChat {
     tools: string[];
     shows?: (Show & { n: number })[];
     guide_version?: number;
+    source?: string;
     trace?: TraceItem[];
     seconds?: number;
     status: string;
@@ -495,6 +509,7 @@ export function fromWire(c: WireChat): Chat {
         tools: t.tools,
         shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
         guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
+        fromSession: t.source === "session",
         trace: t.trace ?? t.tools.map((tool) => ({ tool })),
         seconds: t.seconds,
       });

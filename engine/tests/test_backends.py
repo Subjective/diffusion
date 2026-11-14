@@ -221,26 +221,41 @@ async def test_claude_guide_chat_runs_as_the_session_and_asks_the_reviewer(monke
 
     async def approve(name, summary, inp):
         asked.append(summary)
-        return name == "Bash"
+        return {"Bash": "allow", "Edit": "always", "Grep": "always"}.get(name, "deny")
 
-    o = await _claude_options(monkeypatch, tmp_path, mode="ask", approve=approve)
+    o = await _claude_options(monkeypatch, tmp_path, mode="default", approve=approve)
     assert o.permission_mode == "default" and o.setting_sources == ["user", "project", "local"]
     assert o.system_prompt["preset"] == "claude_code" and o.system_prompt["append"].startswith("SYS")
     assert not o.disallowed_tools and not o.tools
     assert isinstance(await o.can_use_tool("Bash", {"command": "ls"}, None), PermissionResultAllow)
     assert isinstance(await o.can_use_tool("Write", {"file_path": "x"}, None), PermissionResultDeny)
     assert asked == ["Ran ls", "Write"]
-    o = await _claude_options(monkeypatch, tmp_path, mode="auto-edit", approve=approve)
-    assert o.permission_mode == "acceptEdits"
+    # "for this session": edits switch the session to accepting edits; anything else allows that call
+    edit = await o.can_use_tool("Edit", {"file_path": "x"}, None)
+    assert [(u.type, u.mode, u.destination) for u in edit.updated_permissions] == [
+        ("setMode", "acceptEdits", "session")
+    ]
+    grep = await o.can_use_tool("Grep", {"pattern": "x"}, None)
+    assert (
+        grep.updated_permissions[0].type == "addRules"
+        and grep.updated_permissions[0].rules[0].tool_name == "Grep"
+    )
+    for mode in ("acceptEdits", "plan", "bypassPermissions"):
+        assert (
+            await _claude_options(monkeypatch, tmp_path, mode=mode, approve=approve)
+        ).permission_mode == mode
 
 
-def test_codex_writes_only_in_auto_edit(tmp_path):
+def test_codex_modes_are_its_sandboxes(tmp_path):
     def sandbox(mode):
         args = build_args(AgentRequest(system_prompt="", prompt="", model="", cwd=tmp_path, mode=mode))
         return args[args.index("--sandbox") + 1]
 
-    assert [sandbox(m) for m in ("read-only", "ask", "auto-edit")] == [
+    modes = ("read-only", "plan", "default", "acceptEdits", "bypassPermissions")
+    assert [sandbox(m) for m in modes] == [
+        "read-only",
         "read-only",
         "read-only",
         "workspace-write",
+        "danger-full-access",
     ]

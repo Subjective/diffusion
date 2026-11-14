@@ -15,13 +15,16 @@ from collections.abc import AsyncIterator
 
 from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent, ran
 
+# Codex can't stop mid-run to ask, so its modes are its sandboxes.
+CODEX_SANDBOX = {"acceptEdits": "workspace-write", "bypassPermissions": "danger-full-access"}
+
 
 def build_args(req: AgentRequest) -> list[str]:
     args = [
         "exec",
         "--experimental-json",
         "--sandbox",
-        "workspace-write" if req.mode == "auto-edit" else "read-only",
+        CODEX_SANDBOX.get(req.mode, "read-only"),
         "--cd",
         str(req.cwd),
         "--skip-git-repo-check",

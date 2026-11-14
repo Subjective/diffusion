@@ -386,31 +386,56 @@ test("chat opens on the guide's session; new chats fork it; history keeps the tw
   useApp.setState({ guide: g });
 });
 
-test("the guide session runs in a mode like the harness, and asks before what its settings don't allow", async () => {
+test("the guide session runs in the harness's permission modes and asks in the conversation; forks only read", async () => {
   await mount();
   const g = useApp.getState().guide!;
   useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "claude-code", session: "s1" } } });
   const { useChat } = await import("../chat");
   await act(async () => useChat.getState().openGuide());
-  const mode = () => document.querySelector<HTMLElement>(".composer .mode")!;
-  expect(mode().textContent).toBe("Ask");
+  const mode = () => document.querySelector<HTMLElement>(".composer button.mode")!;
+  expect(mode().textContent).toBe("Ask before edits");
   fireEvent.click(mode());
-  expect(mode().textContent).toBe("Auto-edit");
+  const items = [...document.querySelectorAll(".mode-menu .mode-item")].map((i) => i.textContent);
+  expect(items).toEqual(["Ask before edits", "Accept edits", "Plan", "Bypass permissions", "Read-onlyforks"]);
+  fireEvent.click(screen.getByText("Plan"));
+  expect(mode().textContent).toBe("Plan");
+  expect(document.querySelector(".mode-menu")).toBeNull();
   fireEvent.click(mode());
-  expect(mode().textContent).toBe("Read-only");
-  fireEvent.click(mode());
-  expect(mode().textContent).toBe("Ask");
+  fireEvent.click(screen.getByRole("menuitemradio", { name: /Ask before edits/ }));
   type("risky cleanup");
-  await waitFor(() => expect(document.querySelector(".ask-card")).toBeTruthy());
-  expect(turnBodies.at(-1)!.mode).toBe("ask");
+  await waitFor(() => expect(document.querySelector(".thread .ask-card")).toBeTruthy());
+  expect(turnBodies.at(-1)!.mode).toBe("default");
   expect(document.querySelector(".ask-d")!.textContent).toBe("rm -rf build");
-  fireEvent.click(screen.getByText("Allow"));
+  fireEvent.keyDown(window, { key: "Enter" }); // ↵ allows
   expect(document.querySelector(".ask-card")).toBeNull();
-  await waitFor(() => expect(approveBodies).toEqual([{ id: "a1", allow: true }]));
+  await waitFor(() => expect(approveBodies).toEqual([{ id: "a1", decision: "allow" }]));
   await act(async () => release!());
   // a fork can only read
   fireEvent.click(screen.getByTitle("New chat"));
   expect(document.querySelector(".composer .mode")!.textContent).toBe("Read-only");
   expect(document.querySelector("button.mode")).toBeNull();
   useApp.setState({ guide: g });
+});
+
+test("an edit to approve shows its diff, and allowing edits for the session switches the mode", async () => {
+  const { useChat } = await import("../chat");
+  useChat.setState({
+    mode: "default",
+    asks: [
+      {
+        id: "e1",
+        tool: "Edit",
+        summary: "Edit",
+        input: { file_path: "src/a.rs", old_string: "a\nb", new_string: "c" },
+      },
+    ],
+  });
+  const { AskCardForTest } = await import("../components/ChatPanel");
+  const { render } = await import("@testing-library/react");
+  const r = render(<AskCardForTest id="e1" />);
+  expect(r.container.querySelector(".ask-h code")!.textContent).toBe("src/a.rs");
+  expect([...r.container.querySelectorAll(".ask-diff span")].map((l) => l.className)).toEqual(["del", "del", "add"]);
+  fireEvent.click(r.getByText("Allow edits this session"));
+  expect(useChat.getState().mode).toBe("acceptEdits");
+  r.unmount();
 });

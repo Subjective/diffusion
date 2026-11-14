@@ -530,12 +530,13 @@ async def test_guide_chat_asks_the_reviewer_before_tools_its_settings_dont_allow
         seen.append(req.mode)
         ok = await req.approve("Bash", "Ran rm -rf build", {"command": "rm -rf build"})
         no = await req.approve("Edit", "Edit a.ts", {"file_path": "a.ts"})
+        ok, no = ok == "allow", no == "allow"
         yield TextEvent(f"{ok} {no}")
         yield DoneEvent(1, 0.0, False, "s1")
 
     runners["chat"] = runner
     cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
-    body = {"url": URL, "questions": [{"n": 1, "text": "clean up"}], "mode": "ask"}
+    body = {"url": URL, "questions": [{"n": 1, "text": "clean up"}], "mode": "default"}
     waiting = (
         client._transport.app.state.approvals
     )  # the SSE stream is buffered here, so answer from the side
@@ -545,7 +546,9 @@ async def test_guide_chat_asks_the_reviewer_before_tools_its_settings_dont_allow
             while not waiting:
                 await asyncio.sleep(0.01)
             (aid,) = list(waiting)
-            r = await client.post(f"/api/chats/{cid}/approve", json={"id": aid, "allow": allow})
+            r = await client.post(
+                f"/api/chats/{cid}/approve", json={"id": aid, "decision": "allow" if allow else "deny"}
+            )
             assert r.status_code == 200
             while aid in waiting:
                 await asyncio.sleep(0.01)
@@ -559,9 +562,9 @@ async def test_guide_chat_asks_the_reviewer_before_tools_its_settings_dont_allow
         ("Bash", "Ran rm -rf build", {"command": "rm -rf build"}),
         ("Edit", "Edit a.ts", {"file_path": "a.ts"}),
     ]
-    assert ("delta", {"n": 1, "text": "True False"}) in events and seen == ["ask"]
+    assert ("delta", {"n": 1, "text": "True False"}) in events and seen == ["default"]
     assert (
-        await client.post(f"/api/chats/{cid}/approve", json={"id": "nope", "allow": True})
+        await client.post(f"/api/chats/{cid}/approve", json={"id": "nope", "decision": "allow"})
     ).status_code == 404
 
 
@@ -578,6 +581,6 @@ async def test_forks_stay_read_only_whatever_mode_is_asked(setup):
 
     runners["chat"] = runner
     cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
-    body = {"url": URL, "questions": [{"n": 1, "text": "x"}], "mode": "auto-edit"}
+    body = {"url": URL, "questions": [{"n": 1, "text": "x"}], "mode": "bypassPermissions"}
     await client.post(f"/api/chats/{cid}/turn", json=body)
     assert seen == [("read-only", False)]

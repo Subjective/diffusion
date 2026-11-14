@@ -1,21 +1,24 @@
 import {
   ArrowUp,
+  Check,
+  ChevronDown,
   ChevronRight,
+  ChevronsUpDown,
   Clock,
   FileCode,
+  FilePen,
   FileText,
   FlaskConical,
   GitFork,
   Hand,
   History,
   Layers,
+  ListChecks,
   LocateFixed,
   Lock,
   MessageCircle,
-  PencilLine,
   Search,
   ShieldAlert,
-  ShieldQuestion,
   Sparkles,
   SquarePen,
   SquareTerminal,
@@ -23,12 +26,14 @@ import {
   Workflow,
   Wrench,
   X,
+  Zap,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type Anchor,
   type Ask,
   type ChatMode,
+  EDIT_TOOLS,
   guideSessionOf,
   modesFor,
   type Question,
@@ -84,6 +89,13 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
 
   const turns = groupTurns(sent);
   const waiting = chat.questions.filter((q) => q.status === "waiting");
+  const asks = useChat((s) => s.asks);
+  // The conversation the session had in the terminal before this chat: folded to one line until opened.
+  let earlier = turns.findIndex((qs) => !qs.every((q) => q.fromSession));
+  if (earlier < 0) earlier = turns.length;
+  const [showEarlier, setShowEarlier] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fold again whenever another chat opens
+  useEffect(() => setShowEarlier(false), [chat.key]);
 
   // The model's first show_code of a turn jumps the diff (chat.ts decides whether the reviewer was busy there).
   const autoShow = useChat((s) => s.autoShow);
@@ -145,8 +157,25 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
         ) : (
           <InlineCodeContext.Provider value={Cite}>
             <div className="thread">
-              {turns.map((qs, i) => (
-                <Turn key={i} qs={qs} link={link} />
+              {earlier > 0 && (
+                <button
+                  type="button"
+                  className={`earlier${showEarlier ? " open" : ""}`}
+                  aria-expanded={showEarlier}
+                  onClick={() => setShowEarlier(!showEarlier)}
+                >
+                  {ic(SquareTerminal, 14)}
+                  <span>
+                    {earlier} {earlier === 1 ? "turn" : "turns"} in the terminal
+                    {" · wrote the guide"}
+                  </span>
+                  <span className="grow" />
+                  {ic(ChevronDown, 14)}
+                </button>
+              )}
+              {turns.map((qs, i) => (i < earlier && !showEarlier ? null : <Turn key={i} qs={qs} link={link} />))}
+              {asks.map((a, i) => (
+                <AskCard key={a.id} a={a} first={i === 0} />
               ))}
               {waiting.length > 0 && <Waiting qs={waiting} link={link} />}
             </div>
@@ -575,28 +604,34 @@ function Waiting({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
   );
 }
 
-const MODE_UI: Record<ChatMode, { icon: typeof Lock; label: string; title: string }> = {
-  "read-only": { icon: Lock, label: "Read-only", title: "Read-only: reads the repo, changes nothing" },
-  ask: {
-    icon: Hand,
-    label: "Ask",
-    title: "Ask: the session's own tools and settings; asks before anything they don't allow",
-  },
-  "auto-edit": {
-    icon: PencilLine,
-    label: "Auto-edit",
-    title: "Auto-edit: edits files without asking; asks before commands",
-  },
+const MODE_UI: Record<ChatMode, { icon: typeof Lock; label: string; hint: string }> = {
+  default: { icon: Hand, label: "Ask before edits", hint: "Asks before anything the session's settings don't allow" },
+  acceptEdits: { icon: FilePen, label: "Accept edits", hint: "Edits files without asking; asks before commands" },
+  plan: { icon: ListChecks, label: "Plan", hint: "Reads and plans; changes nothing" },
+  bypassPermissions: { icon: Zap, label: "Bypass permissions", hint: "Runs everything without asking" },
 };
 
-/** The guide session's mode, mirroring the harness: click to cycle. Forks are read-only. */
-function ModeButton() {
+/** The guide session's permission mode, as in the harness. New chats fork the session and can only read. */
+function ModeMenu() {
   const { chat, mode, setMode } = useChat();
   const guideHarness = useApp((s) => s.guide?.meta?.harness ?? null);
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
   const modes = chat.kind === "guide" ? modesFor(chat.harness ?? guideHarness) : [];
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    addEventListener("mousedown", away);
+    addEventListener("keydown", esc);
+    return () => {
+      removeEventListener("mousedown", away);
+      removeEventListener("keydown", esc);
+    };
+  }, [open]);
   if (!modes.length) {
     return (
-      <span className="mode ro" title="New chats fork the session and can only read">
+      <span className="mode ro" title="New chats fork the guide session and can only read">
         {ic(Lock, 13)}
         <span>Read-only</span>
       </span>
@@ -605,51 +640,143 @@ function ModeButton() {
   const cur = modes.includes(mode) ? mode : modes[0];
   const ui = MODE_UI[cur];
   return (
-    <button
-      type="button"
-      className={`mode m-${cur}`}
-      title={`${ui.title} · click to change`}
-      onClick={() => setMode(modes[(modes.indexOf(cur) + 1) % modes.length])}
-    >
-      {ic(ui.icon, 13)}
-      <span>{ui.label}</span>
-    </button>
+    <div className="mode-box" ref={box}>
+      {open && (
+        <div className="mode-menu" role="menu">
+          {modes.map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="menuitemradio"
+              aria-checked={m === cur}
+              className={`mode-item${m === cur ? " on" : ""}`}
+              title={MODE_UI[m].hint}
+              onClick={() => {
+                setMode(m);
+                setOpen(false);
+              }}
+            >
+              {ic(MODE_UI[m].icon, 14)}
+              <span>{MODE_UI[m].label}</span>
+              <span className="grow" />
+              {m === cur && ic(Check, 14)}
+            </button>
+          ))}
+          <div className="mode-sep" />
+          <div className="mode-item off" title="New chats fork the session and can only read">
+            {ic(Lock, 14)}
+            <span>Read-only</span>
+            <span className="grow" />
+            <span className="mode-note">forks</span>
+          </div>
+        </div>
+      )}
+      <button
+        type="button"
+        className={`mode m-${cur}`}
+        title={ui.hint}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {ic(ui.icon, 13)}
+        <span>{ui.label}</span>
+        {ic(ChevronsUpDown, 12)}
+      </button>
+    </div>
   );
 }
 
-/** A tool call the session wants to make that its settings don't allow: the reviewer decides, as in the terminal. */
-function AskCard({ a }: { a: Ask }) {
+/** An edit as -/+ lines: Edit's old and new text, each of MultiEdit's, or a new file's contents. */
+function editLines(a: Ask): { t: "add" | "del"; s: string }[] {
+  const lines = (v: unknown) => (typeof v === "string" && v ? v.split("\n") : []);
+  const pair = (e: Record<string, unknown>) => [
+    ...lines(e.old_string).map((s) => ({ t: "del" as const, s })),
+    ...lines(e.new_string).map((s) => ({ t: "add" as const, s })),
+  ];
+  if (a.tool === "Write") return lines(a.input.content).map((s) => ({ t: "add" as const, s }));
+  if (a.tool === "MultiEdit" && Array.isArray(a.input.edits))
+    return (a.input.edits as Record<string, unknown>[]).flatMap(pair);
+  return pair(a.input);
+}
+
+/** A tool call the session's settings don't allow, put to the reviewer in the conversation, as the terminal does.
+ * ↵ allows, Esc denies (the first card, while the composer is empty). */
+function AskCard({ a, first }: { a: Ask; first: boolean }) {
   const answer = useChat((s) => s.answer);
-  const detail =
-    typeof a.input.command === "string"
-      ? a.input.command
-      : typeof a.input.file_path === "string"
-        ? a.input.file_path
-        : JSON.stringify(a.input, null, 2);
+  const edit = EDIT_TOOLS.includes(a.tool);
+  const path = typeof a.input.file_path === "string" ? a.input.file_path : null;
+  const diff = edit ? editLines(a) : [];
+  const adds = diff.filter((l) => l.t === "add").length;
+  const dels = diff.length - adds;
+  useEffect(() => {
+    if (!first) return;
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLTextAreaElement && e.target.value.trim();
+      if (typing || e.isComposing) return;
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        void answer(a.id, "allow");
+      } else if (e.key === "Escape") void answer(a.id, "deny");
+    };
+    addEventListener("keydown", onKey, true);
+    return () => removeEventListener("keydown", onKey, true);
+  }, [first, a.id, answer]);
   return (
     <div className="ask-card" role="alertdialog" aria-label={`Allow ${a.summary}?`}>
       <div className="ask-h">
-        {ic(ShieldQuestion, 14)}
-        <span>
-          Allow <b>{a.tool}</b>?
+        {ic(edit ? FilePen : a.tool === "Bash" ? SquareTerminal : Wrench, 14)}
+        <span className="verb">
+          {edit ? (a.tool === "Write" ? "Write" : "Edit") : a.tool === "Bash" ? "Run" : a.tool}
         </span>
+        {edit && path && <code>{path}</code>}
+        <span className="grow" />
+        {edit && diff.length > 0 && (
+          <span className="cnt">
+            <span className="a">+{adds}</span> <span className="d">−{dels}</span>
+          </span>
+        )}
       </div>
-      <pre className="ask-d">{detail}</pre>
+      {edit && diff.length > 0 ? (
+        <pre className="ask-diff">
+          {diff.slice(0, 200).map((l, i) => (
+            <span key={i} className={l.t}>
+              {l.t === "add" ? "+ " : "− "}
+              {l.s}
+              {"\n"}
+            </span>
+          ))}
+        </pre>
+      ) : (
+        <pre className="ask-d">
+          {typeof a.input.command === "string" ? a.input.command : (path ?? JSON.stringify(a.input, null, 2))}
+        </pre>
+      )}
       <div className="ask-b">
-        <button type="button" className="ask-act" onClick={() => void answer(a.id, false)}>
+        <button type="button" className="ask-act ghost" title="Deny (Esc)" onClick={() => void answer(a.id, "deny")}>
           Deny
         </button>
-        <button type="button" className="ask-act primary" onClick={() => void answer(a.id, true)}>
-          Allow
+        <span className="grow" />
+        <button type="button" className="ask-act" onClick={() => void answer(a.id, "always")}>
+          {edit ? "Allow edits this session" : "Allow this session"}
+        </button>
+        <button type="button" className="ask-act primary" title="Allow (↵)" onClick={() => void answer(a.id, "allow")}>
+          Allow <span className="k">↵</span>
         </button>
       </div>
     </div>
   );
 }
 
+/** For tests: the card for a waiting ask, by id. */
+export function AskCardForTest({ id }: { id: string }) {
+  const a = useChat((s) => s.asks.find((x) => x.id === id));
+  return a ? <AskCard a={a} first /> : null;
+}
+
 function Composer({ link }: { link: ChatLinkProps }) {
   const { chat, unstage, clearStaged, ask, sendStaged } = useChat();
-  const asks = useChat((s) => s.asks);
+
   const [text, setText] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
   const staged = chat.questions.filter((q) => q.status === "staged");
@@ -664,9 +791,6 @@ function Composer({ link }: { link: ChatLinkProps }) {
 
   return (
     <div className="composer-wrap">
-      {asks.map((a) => (
-        <AskCard key={a.id} a={a} />
-      ))}
       {staged.length > 0 && (
         <div className="tray">
           <div className="tray-h">
@@ -704,7 +828,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
           ))}
         </div>
       )}
-      <div className="composer">
+      <div className="composer stack">
         <textarea
           ref={ta}
           rows={1}
@@ -730,17 +854,20 @@ function Composer({ link }: { link: ChatLinkProps }) {
             }
           }}
         />
-        <ModeButton />
-        <button
-          type="button"
-          id="chatSend"
-          className="icon-btn solid"
-          title={staged.length ? `Send ${staged.length}` : "Send (↵)"}
-          onClick={send}
-        >
-          {ic(ArrowUp, 16)}
-          {staged.length > 0 && <span className="send-n">{staged.length}</span>}
-        </button>
+        <div className="c-row">
+          <ModeMenu />
+          <span className="grow" />
+          <button
+            type="button"
+            id="chatSend"
+            className="icon-btn solid"
+            title={staged.length ? `Send ${staged.length}` : "Send (↵)"}
+            onClick={send}
+          >
+            {ic(ArrowUp, 16)}
+            {staged.length > 0 && <span className="send-n">{staged.length}</span>}
+          </button>
+        </div>
       </div>
     </div>
   );

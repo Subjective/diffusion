@@ -34,6 +34,7 @@ DENY_TOOLS = [
     "Bash", "Write", "Edit", "MultiEdit", "NotebookEdit",
     "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite",
 ]  # fmt: skip
+EDIT_TOOLS = ("Edit", "MultiEdit", "Write", "NotebookEdit")
 MCP_SERVER = "diffusion"
 PATH_ARGS = ("file_path", "path")
 
@@ -85,6 +86,20 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
             create_sdk_mcp_server,
             tool,
         )
+        from claude_agent_sdk.types import PermissionRuleValue, PermissionUpdate
+
+        def always(name: str, tool_input: dict) -> PermissionUpdate:
+            """'Allow for this session': edits switch the session to accepting edits, as the terminal's option
+            does; anything else allows that exact call (a command, say) from now on."""
+            if name in EDIT_TOOLS:
+                return PermissionUpdate(type="setMode", mode="acceptEdits", destination="session")
+            rule = str(tool_input.get("command") or "") if name == "Bash" else None
+            return PermissionUpdate(
+                type="addRules",
+                rules=[PermissionRuleValue(tool_name=name, rule_content=rule or None)],
+                behavior="allow",
+                destination="session",
+            )
 
         def wrap(spec: ToolSpec):
             async def handler(args: dict) -> dict:
@@ -127,9 +142,16 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
             # The session as it runs in the terminal: Claude Code's own prompt, tools, settings, CLAUDE.md and
             # permission rules. What those don't already allow is put to the reviewer.
             async def can_use(name: str, tool_input: dict, _ctx: Any):
-                if req.approve and await req.approve(name, summarize_tool(name, tool_input), tool_input):
-                    return PermissionResultAllow()
-                return PermissionResultDeny(message="The reviewer declined this.")
+                said = (
+                    await req.approve(name, summarize_tool(name, tool_input), tool_input)
+                    if req.approve
+                    else "deny"
+                )
+                if said == "deny":
+                    return PermissionResultDeny(message="The reviewer declined this.")
+                if said == "always":
+                    return PermissionResultAllow(updated_permissions=[always(name, tool_input)])
+                return PermissionResultAllow()
 
             opts = ClaudeAgentOptions(
                 **common,
@@ -140,7 +162,7 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                     "snapshot": False,  # carry the chat's instructions on resume, not just the first request
                 },
                 allowed_tools=[mcp_name(t.name) for t in req.tools],
-                permission_mode="acceptEdits" if req.mode == "auto-edit" else "default",
+                permission_mode="default" if req.mode == "read-only" else req.mode,
                 can_use_tool=can_use,
                 setting_sources=["user", "project", "local"],
             )
