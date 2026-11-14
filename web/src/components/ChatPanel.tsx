@@ -46,6 +46,7 @@ import {
 import { autosize } from "../lib/autosize";
 import { type CodeLoc, expandCites, parseCites, parsePath, type Resolved, repoPath, resolveLoc } from "../lib/cite";
 import { useHunkIndex } from "../lib/linking";
+import { listStep } from "../lib/listKeys";
 import { InlineCodeContext, Markdown } from "../lib/md";
 import { CHAT_W, startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
@@ -1126,9 +1127,10 @@ function Composer({ link }: { link: ChatLinkProps }) {
           onKeyDown={(e) => {
             if (menu.open && !e.nativeEvent.isComposing) {
               const n = menu.picks.length;
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              const step = listStep(e);
+              if (step) {
                 e.preventDefault();
-                return menu.setActive((menu.active + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+                return menu.setActive((menu.active + step + n) % n);
               }
               if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
                 e.preventDefault();

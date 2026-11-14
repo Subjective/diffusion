@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type DefinitionMatch, fetchAround, fetchDefinition, fetchReferences, type ReferenceMatch } from "../api";
 import { backStack } from "../lib/definition";
 import { highlightLines, type LineTokens, langFor } from "../lib/highlight";
+import { listStep } from "../lib/listKeys";
 import { rowKey } from "../lib/refs";
 import { useApp } from "../store";
 import { type Peek, useUI } from "../ui";
@@ -128,9 +129,10 @@ export function PeekRow({ peek }: { peek: Peek }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") useUI.getState().setPeek(null);
       if (!hits?.length) return;
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const step = listStep(e);
+      if (step) {
         e.preventDefault();
-        setSel((s) => (s + (e.key === "ArrowDown" ? 1 : hits.length - 1)) % hits.length);
+        setSel((s) => (s + step + hits.length) % hits.length);
       }
       if (e.key === "Enter" && hits[sel]) {
         e.preventDefault();

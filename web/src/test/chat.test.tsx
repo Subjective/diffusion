@@ -499,6 +499,11 @@ test("@ in the composer picks a file from the diff", async () => {
   fireEvent.change(ta, { target: { value: "what about @sess", selectionStart: 16 } });
   await waitFor(() => expect(document.querySelector(".ta-menu")).toBeTruthy());
   expect(document.querySelector(".ta-item.on .ta-label")!.textContent).toBe("session.ts");
+  const items = document.querySelectorAll(".ta-item").length;
+  fireEvent.keyDown(ta, { key: "n", ctrlKey: true });
+  if (items > 1) expect(document.querySelectorAll(".ta-item")[1].classList.contains("on")).toBe(true);
+  fireEvent.keyDown(ta, { key: "p", ctrlKey: true });
+  expect(document.querySelector(".ta-item.on .ta-label")!.textContent).toBe("session.ts");
   fireEvent.keyDown(ta, { key: "Enter" });
   expect(ta.value).toBe("what about @src/auth/session.ts ");
   expect(document.querySelector(".ta-menu")).toBeNull();
