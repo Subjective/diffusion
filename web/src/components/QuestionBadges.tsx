@@ -1,12 +1,11 @@
-import { Clock, LoaderCircle, MessageCircle } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { questionRows } from "../App";
 import { useChat } from "../chat";
 import { useHunkIndex } from "../lib/linking";
 import { rowKey } from "../lib/refs";
-import { ic } from "./icons";
 
-/** Row-key → badge node for anchored questions in the active chat (queued → answering → answered). */
+/** Row-key → badge node for anchored questions in the active chat (staged → queued → answering → answered), on the
+ *  first line each covers: a diff row, an expanded context line, or a line in a file tab. */
 export function useQuestionBadges(
   hoverQ: string | null,
   onHoverQ: (id: string | null) => void,
@@ -29,15 +28,8 @@ export function useQuestionBadges(
         k,
         <span className="qbs" key={k}>
           {qs.map((q) => {
-            // A note waiting to be sent is just its number, as on its pill in the composer.
-            const icon =
-              q.status === "pending"
-                ? LoaderCircle
-                : q.status === "staged"
-                  ? null
-                  : q.status === "waiting" || q.status === "steering"
-                    ? Clock
-                    : MessageCircle;
+            // One numbered bubble wherever a note shows (here, its pill, its message); only its fill says where
+            // it's at: staged solid, queued outlined, answering pulsing, answered dark.
             return (
               <button
                 type="button"
@@ -51,7 +43,6 @@ export function useQuestionBadges(
                   revealQ(q.id);
                 }}
               >
-                {icon && ic(icon, 11)}
                 {q.n}
               </button>
             );

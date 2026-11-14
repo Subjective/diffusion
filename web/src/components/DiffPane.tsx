@@ -290,7 +290,9 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
         {rail && (
           <FileRail files={files} skip={skipFiles} fileSteps={fileSteps} current={tab ?? current} onPick={pickFile} />
         )}
-        {tab != null && <FileView key={tab} path={tab} dots={dots} onNav={onNavClick} onShowInDiff={pickFile} />}
+        {tab != null && (
+          <FileView key={tab} path={tab} dots={dots} extras={extras} onNav={onNavClick} onShowInDiff={pickFile} />
+        )}
         {/* Kept mounted behind a file tab, so the diff keeps its place. */}
         <div className="diffwrap" hidden={tab != null}>
           <div className="diff-scroll" ref={scroller} onClickCapture={onNavClick}>

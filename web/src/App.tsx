@@ -28,9 +28,13 @@ export function questionRows(q: Question, idx: HunkIndex): { keys: string[]; fil
   if (!a) return { keys: [], files: [] };
   if (a.refs?.length) return refsTarget(a.refs, idx);
   if (a.pfrom == null || a.pto == null) return { keys: [], files: [a.file] };
-  const keys: string[] = [];
+  // The diff's rows in the range, and every line in it: notes on expanded context or in a file tab are on lines
+  // the hunks don't have.
+  const pos = new Set<number>();
   for (const rows of idx.rows.values())
-    for (const r of rows) if (r.file === a.file && r.pos >= a.pfrom && r.pos <= a.pto) keys.push(rowKey(r.file, r.pos));
+    for (const r of rows) if (r.file === a.file && r.pos >= a.pfrom && r.pos <= a.pto) pos.add(r.pos);
+  for (let n = Math.ceil(a.pfrom); n <= a.pto; n++) pos.add(n);
+  const keys = [...pos].sort((x, y) => x - y).map((n) => rowKey(a.file, n));
   return { keys, files: [a.file] };
 }
 

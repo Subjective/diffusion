@@ -1654,28 +1654,42 @@ tr.qd.sel td.mark {
   gap: 4px;
 }
 .qb {
+  min-width: 18px;
   height: 18px;
-  padding: 0 6px 0 4px;
+  padding: 0 5px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
   font: 600 10px / 1 var(--sans);
   background: var(--solid);
   color: var(--solid-fg);
   border: 1px solid transparent;
 }
 .qb.s-staged {
-  padding: 0 6px;
   background: var(--hl-bar);
   color: #fff;
 }
-.qb.s-pending {
-  background: var(--chip);
-  color: var(--muted);
+.qb.s-waiting,
+.qb.s-steering {
+  background: var(--surface);
+  border-color: var(--hl-bar);
+  color: var(--hl-bar);
 }
-.qb.s-pending .ic {
-  animation: spin 0.8s linear infinite;
+.qb.s-pending {
+  background: var(--hl-bar);
+  color: #fff;
+  animation: qb-pulse 0.9s ease-in-out infinite alternate;
+}
+.qb.s-error {
+  background: var(--surface);
+  border-color: var(--del-fg);
+  color: var(--del-fg);
+}
+@keyframes qb-pulse {
+  to {
+    opacity: 0.45;
+  }
 }
 .qb.hover {
   outline: 2px solid var(--hl-bar);

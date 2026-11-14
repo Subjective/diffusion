@@ -1,5 +1,5 @@
 import { FileCode, GitCompare, LoaderCircle, Pin, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { highlightLines, type LineTokens, langFor } from "../lib/highlight";
 import { rowKey } from "../lib/refs";
 import { loadFile } from "../lib/useFileLines";
@@ -68,11 +68,14 @@ interface Marks {
 export function FileView({
   path,
   dots,
+  extras,
   onNav,
   onShowInDiff,
 }: {
   path: string;
   dots: Map<string, Dot[]>;
+  /** Note badges, by row key (a file tab's lines are the new side's). */
+  extras?: Map<string, ReactNode>;
   onNav: (e: React.MouseEvent) => void;
   onShowInDiff: (path: string) => void;
 }) {
@@ -190,6 +193,7 @@ export function FileView({
                         text={text}
                         tokens={tokens[i]}
                         dots={dots.get(rowKey(path, n))}
+                        extra={extras?.get(rowKey(path, n))}
                         file={path}
                         pos={n}
                         cut={marks.cuts.has(n)}
