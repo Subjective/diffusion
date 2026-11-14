@@ -60,7 +60,9 @@ def test_harness_envelopes_keep_the_persons_words_and_drop_the_rest(tmp_path):
     ])  # fmt: skip
     turns = read_claude(p)
     assert [t["questions"][0]["text"] for t in turns] == ["No, not <that>.", "plain"]
-    assert turns[0]["answers"]["0"] == "Got it." and turns[0]["trace"] == []
+    # the work done for the notification stays with the turn before it; the reply to the harness doesn't
+    assert turns[0]["answers"]["0"] == "Got it."
+    assert turns[0]["trace"] == [{"tool": "ReadNotifications", "id": "n1"}]
 
 
 def test_reads_a_codex_session_as_turns(tmp_path):

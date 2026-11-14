@@ -46,7 +46,7 @@ _HUMAN = re.compile(r"<message\b[^>]*\bfrom=\"human\"[^>]*>(.*?)</message>", re.
 
 def _user_text(text: str) -> str | bool:
     """A prompt as the person typed it; False for one to leave out (CLI echoes), True for one a harness sent on its
-    own (notifications, other agents' messages), whose answer is left out with it."""
+    own (notifications, other agents' messages), whose reply is left out but whose work is kept."""
     text = _REMINDER.sub("", text).strip()
     if not text or text.startswith(_INJECTED):
         return False
@@ -80,10 +80,12 @@ class _Builder:
 
     @property
     def cur(self) -> dict | None:
-        return self.turns[-1] if self.turns and not self.muted else None
+        return self.turns[-1] if self.turns else None
 
     def say(self, text: str) -> None:
-        if (t := self.cur) is not None and text.strip():
+        # What the agent did for a harness's own message stays with the person's last turn; only its words to
+        # the harness are left out.
+        if (t := self.cur) is not None and text.strip() and not self.muted:
             a = t["answers"]["0"]
             t["answers"]["0"] = f"{a}\n\n{text.strip()}" if a else text.strip()
 
