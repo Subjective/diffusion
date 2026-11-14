@@ -519,10 +519,11 @@ def _sessions(chat: dict, meta: dict, harness: str) -> list[tuple[str | None, bo
     if chat.get("kind") == "guide":
         if not (meta.get("session") and harness in FORKABLE):
             raise RuntimeError("The guide's session can't be continued here; start a new chat instead.")
-        # Keep going where this chat left off, unless the guide has since been written by another session.
+        # Keep going where this chat left off, unless the guide has since been written by another session. It runs
+        # where the session ran, so its edits land in the reviewer's checkout, not Diffusion's cached one.
         if chat.get("session_id") and chat.get("from_session") == meta["session"]:
-            return [(chat["session_id"], False, _dir(chat.get("cwd")))]
-        return [(meta["session"], False, guide_cwd)]
+            return [(chat["session_id"], False, _dir(chat.get("cwd")) or _dir(meta.get("cwd")))]
+        return [(meta["session"], False, _dir(meta.get("cwd")))]
     if chat.get("session_id"):
         return [(chat["session_id"], False, _dir(chat.get("cwd")))]
     out: list[tuple[str | None, bool, Path | None]] = []

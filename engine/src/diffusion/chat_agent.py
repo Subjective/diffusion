@@ -37,6 +37,24 @@ from .hunks import DiffIndex
 from .pipeline import Prepared
 
 SYSTEM_PROMPT = files("diffusion.prompts").joinpath("chat.md").read_text()
+
+_NATIVE = (
+    "## Your tools here\n"
+    "This is your own session, continued in Diffusion's review panel: you have your usual tools, settings and "
+    "permissions on your usual working directory. When the reviewer asks you to change code, run something, or fix "
+    "what you found, do it as you would in the terminal; anything your settings don't already allow is put to the "
+    "reviewer to approve in the chat. "
+)
+# What the chat may do, said plainly: the model otherwise guesses from what it remembers of earlier turns.
+MODE_NOTE: dict[str, str] = {
+    "read-only": "## Your tools here\nThis chat can only read the repository (checked out at the PR head): you "
+    "can't change files or run commands. If asked for a change, say so and give the exact edit instead.",
+    "default": _NATIVE + "This mode asks before edits and commands.",
+    "acceptEdits": _NATIVE + "This mode makes file edits without asking and asks before commands.",
+    "auto": _NATIVE + "This mode acts without asking; a safety check blocks risky actions.",
+    "plan": "## Your tools here\nThis is your own session, continued in Diffusion's review panel, in plan mode: "
+    "read and plan, and present the plan for the reviewer to approve before changing anything.",
+}
 MAX_ANCHOR_LINES = 80
 MAX_SHOWS_PER_TURN = 6
 MAX_HUNKS_PER_CALL = 12
@@ -362,7 +380,7 @@ async def run_turn(
     shown: list[dict] = []
     tools = [hunk_tool(prep.index), show_code_tool(prep.index, shown)]
     req = AgentRequest(
-        system_prompt=SYSTEM_PROMPT + "\n\n" + seed_context(prep, guide),
+        system_prompt=SYSTEM_PROMPT + "\n\n" + MODE_NOTE[mode] + "\n\n" + seed_context(prep, guide),
         prompt=format_turn(questions, prep.index),
         model=model,
         cwd=cwd or prep.checkout.worktree,
