@@ -1353,6 +1353,18 @@ tr.ln:hover .ask-btn {
   vertical-align: -2px;
   animation: blink 1s steps(2) infinite;
 }
+.streaming .md > :last-child:not(ul, ol, pre)::after,
+.streaming .md > :is(ul, ol):last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  vertical-align: -2px;
+  animation: blink 1s steps(2) infinite;
+}
 @keyframes blink {
   50% {
     opacity: 0;
@@ -1421,7 +1433,7 @@ tr.ln:hover .ask-btn {
   gap: 6px;
   margin-left: -8px;
 }
-.composer .mode.m-bypassPermissions {
+.composer .mode.m-auto {
   color: var(--del-fg);
 }
 .mode-box {
@@ -1548,6 +1560,15 @@ tr.ln:hover .ask-btn {
   font: 12px / 18px var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.ask-plan {
+  margin: 8px -12px;
+  padding: 2px 12px;
+  max-height: 320px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
 }
 .ask-b {
   display: flex;

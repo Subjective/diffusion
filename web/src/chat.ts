@@ -128,16 +128,13 @@ interface State {
 }
 
 /** How much the guide session may do: the harness's own permission modes. Forks are always read-only. */
-export type ChatMode = "default" | "acceptEdits" | "plan" | "bypassPermissions";
+export type ChatMode = "default" | "acceptEdits" | "plan" | "auto";
 /** The reviewer's answer to a tool call; "always" also allows its kind for the rest of the session. */
 export type Decision = "allow" | "deny" | "always";
-/** The modes an agent has. Codex can't stop mid-run to ask, so its modes are its sandboxes. */
+/** The modes an agent has, in the order its own Shift+Tab cycles them. Codex can't stop mid-run to ask, so its
+ * modes are its sandboxes: Plan reads, Auto writes in the workspace. */
 export const modesFor = (harness: string | null): ChatMode[] =>
-  harness === "claude-code"
-    ? ["default", "acceptEdits", "plan", "bypassPermissions"]
-    : harness === "codex"
-      ? ["plan", "acceptEdits", "bypassPermissions"]
-      : [];
+  harness === "claude-code" ? ["default", "acceptEdits", "plan", "auto"] : harness === "codex" ? ["plan", "auto"] : [];
 
 /** A tool call the session wants to make that its settings don't already allow. */
 export const EDIT_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
@@ -320,7 +317,9 @@ export const useChat = create<State>((set, get) => {
     historyOpen: false,
     error: null,
     autoShow: null,
-    mode: storage.get<ChatMode>("rv-chat-mode", "default"),
+    mode: ((m) => (modesFor("claude-code").includes(m) ? m : "default"))(
+      storage.get<ChatMode>("rv-chat-mode", "default"),
+    ),
     asks: [],
 
     setMode(mode) {
@@ -332,6 +331,9 @@ export const useChat = create<State>((set, get) => {
       set((s) => ({ asks: s.asks.filter((a) => a.id !== id) }));
       // "Allow edits this session" is the terminal's switch to accepting edits: show it in the mode too.
       if (decision === "always" && ask && EDIT_TOOLS.includes(ask.tool)) get().setMode("acceptEdits");
+      // Approving a plan leaves plan mode, as the terminal does.
+      if (decision !== "deny" && ask?.tool === "ExitPlanMode")
+        get().setMode(decision === "always" ? "acceptEdits" : "default");
       const chat = get().chat.id;
       if (!chat) return;
       try {

@@ -149,6 +149,15 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                 )
                 if said == "deny":
                     return PermissionResultDeny(message="The reviewer declined this.")
+                if name == "ExitPlanMode":
+                    # Approving the plan leaves plan mode, as in the terminal: to asking before edits, or (approve
+                    # and auto-accept) to accepting them.
+                    mode = "acceptEdits" if said == "always" else "default"
+                    return PermissionResultAllow(
+                        updated_permissions=[
+                            PermissionUpdate(type="setMode", mode=mode, destination="session")
+                        ]
+                    )
                 if said == "always":
                     return PermissionResultAllow(updated_permissions=[always(name, tool_input)])
                 return PermissionResultAllow()

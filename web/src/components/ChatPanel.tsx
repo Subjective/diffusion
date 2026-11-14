@@ -168,7 +168,6 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
                   {ic(SquareTerminal, 14)}
                   <span>
                     {earlier} {earlier === 1 ? "turn" : "turns"} in the terminal
-                    {" · wrote the guide"}
                   </span>
                   <span className="grow" />
                   {ic(ChevronDown, 14)}
@@ -456,8 +455,14 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
                 </div>
               )}
               <div className="ans-t">
-                {q.answer ? <Markdown text={expandCites(q.answer)} /> : null}
-                {q.status === "pending" && <span className="cursor" />}
+                {q.answer ? (
+                  // While streaming, the cursor sits at the end of the last line, so nothing moves when it goes.
+                  <div className={q.status === "pending" ? "streaming" : undefined}>
+                    <Markdown text={expandCites(q.answer)} />
+                  </div>
+                ) : (
+                  q.status === "pending" && <span className="cursor" />
+                )}
                 {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
               </div>
               {q.shows.length > 0 && <Shows shows={q.shows} />}
@@ -606,10 +611,10 @@ function Waiting({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
 }
 
 const MODE_UI: Record<ChatMode, { icon: typeof Lock; label: string; hint: string }> = {
-  default: { icon: Hand, label: "Ask before edits", hint: "Asks before anything the session's settings don't allow" },
+  default: { icon: Hand, label: "Manual", hint: "Asks before anything the session's settings don't allow" },
   acceptEdits: { icon: FilePen, label: "Accept edits", hint: "Edits files without asking; asks before commands" },
-  plan: { icon: ListChecks, label: "Plan", hint: "Reads and plans; changes nothing" },
-  bypassPermissions: { icon: Zap, label: "Bypass permissions", hint: "Runs everything without asking" },
+  plan: { icon: ListChecks, label: "Plan", hint: "Reads and plans; changes nothing until you approve" },
+  auto: { icon: Zap, label: "Auto", hint: "Acts without asking; a safety check blocks risky actions" },
 };
 
 /** The guide session's permission mode, as in the harness. New chats fork the session and can only read. */
@@ -699,6 +704,7 @@ function editLines(a: Ask): { t: "add" | "del"; s: string }[] {
 function AskCard({ a, first }: { a: Ask; first: boolean }) {
   const answer = useChat((s) => s.answer);
   const edit = EDIT_TOOLS.includes(a.tool);
+  const plan = a.tool === "ExitPlanMode" && typeof a.input.plan === "string" ? a.input.plan : null;
   const path = typeof a.input.file_path === "string" ? a.input.file_path : null;
   const diff = edit ? editLines(a) : [];
   const adds = diff.filter((l) => l.t === "add").length;
@@ -719,9 +725,17 @@ function AskCard({ a, first }: { a: Ask; first: boolean }) {
   return (
     <div className="ask-card" role="alertdialog" aria-label={`Allow ${a.summary}?`}>
       <div className="ask-h">
-        {ic(edit ? FilePen : a.tool === "Bash" ? SquareTerminal : Wrench, 14)}
+        {ic(plan !== null ? ListChecks : edit ? FilePen : a.tool === "Bash" ? SquareTerminal : Wrench, 14)}
         <span className="verb">
-          {edit ? (a.tool === "Write" ? "Write" : "Edit") : a.tool === "Bash" ? "Run" : a.tool}
+          {plan !== null
+            ? "Ready to code?"
+            : edit
+              ? a.tool === "Write"
+                ? "Write"
+                : "Edit"
+              : a.tool === "Bash"
+                ? "Run"
+                : a.tool}
         </span>
         {edit && path && <code>{path}</code>}
         <span className="grow" />
@@ -731,7 +745,11 @@ function AskCard({ a, first }: { a: Ask; first: boolean }) {
           </span>
         )}
       </div>
-      {edit && diff.length > 0 ? (
+      {plan !== null ? (
+        <div className="ask-plan">
+          <Markdown text={plan} />
+        </div>
+      ) : edit && diff.length > 0 ? (
         <pre className="ask-diff">
           {diff.slice(0, 200).map((l, i) => (
             <span key={i} className={l.t}>
@@ -748,14 +766,14 @@ function AskCard({ a, first }: { a: Ask; first: boolean }) {
       )}
       <div className="ask-b">
         <button type="button" className="ask-act ghost" title="Deny (Esc)" onClick={() => void answer(a.id, "deny")}>
-          Deny
+          {plan !== null ? "Keep planning" : "Deny"}
         </button>
         <span className="grow" />
         <button type="button" className="ask-act" onClick={() => void answer(a.id, "always")}>
-          {edit ? "Allow edits this session" : "Allow this session"}
+          {plan !== null ? "Approve, accept edits" : edit ? "Allow edits this session" : "Allow this session"}
         </button>
         <button type="button" className="ask-act primary" title="Allow (↵)" onClick={() => void answer(a.id, "allow")}>
-          Allow <span className="k">↵</span>
+          {plan !== null ? "Approve" : "Allow"} <span className="k">↵</span>
         </button>
       </div>
     </div>

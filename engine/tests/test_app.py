@@ -599,6 +599,6 @@ async def test_forks_stay_read_only_whatever_mode_is_asked(setup):
 
     runners["chat"] = runner
     cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
-    body = {"url": URL, "questions": [{"n": 1, "text": "x"}], "mode": "bypassPermissions"}
+    body = {"url": URL, "questions": [{"n": 1, "text": "x"}], "mode": "auto"}
     await client.post(f"/api/chats/{cid}/turn", json=body)
     assert seen == [("read-only", False)]

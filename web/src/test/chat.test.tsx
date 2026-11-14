@@ -212,10 +212,10 @@ test("drag bubble across lines → popup → queue two → badges → send → l
   fireEvent.mouseUp(window, { clientX: 300, clientY: 160 });
   await waitFor(() => expect(document.querySelector(".ask-pop")).toBeTruthy());
 
-  // queue it (Shift+Enter)
+  // queue it (Enter; ⌘Enter would ask now)
   const input = document.querySelector<HTMLTextAreaElement>(".ask-in textarea")!;
   fireEvent.change(input, { target: { value: "Why clear the timer?" } });
-  fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+  fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(document.querySelector(".tray")).toBeTruthy());
   expect(document.querySelectorAll(".q-row")).toHaveLength(1);
   expect(document.querySelector(".qb.s-staged")).toBeTruthy();
@@ -393,15 +393,15 @@ test("the guide session runs in the harness's permission modes and asks in the c
   const { useChat } = await import("../chat");
   await act(async () => useChat.getState().openGuide());
   const mode = () => document.querySelector<HTMLElement>(".composer button.mode")!;
-  expect(mode().textContent).toBe("Ask before edits");
+  expect(mode().textContent).toBe("Manual");
   fireEvent.click(mode());
   const items = [...document.querySelectorAll(".mode-menu .mode-item")].map((i) => i.textContent);
-  expect(items).toEqual(["Ask before edits", "Accept edits", "Plan", "Bypass permissions"]);
+  expect(items).toEqual(["Manual", "Accept edits", "Plan", "Auto"]);
   fireEvent.click(screen.getByText("Plan"));
   expect(mode().textContent).toBe("Plan");
   expect(document.querySelector(".mode-menu")).toBeNull();
   fireEvent.click(mode());
-  fireEvent.click(screen.getByRole("menuitemradio", { name: /Ask before edits/ }));
+  fireEvent.click(screen.getByRole("menuitemradio", { name: /Manual/ }));
   type("risky cleanup");
   await waitFor(() => expect(document.querySelector(".thread .ask-card")).toBeTruthy());
   expect(turnBodies.at(-1)!.mode).toBe("default");
@@ -438,4 +438,15 @@ test("an edit to approve shows its diff, and allowing edits for the session swit
   fireEvent.click(r.getByText("Allow edits this session"));
   expect(useChat.getState().mode).toBe("acceptEdits");
   r.unmount();
+
+  // a plan reads as the plan; approving it leaves plan mode
+  useChat.getState().setMode("plan");
+  useChat.setState({
+    asks: [{ id: "p1", tool: "ExitPlanMode", summary: "ExitPlanMode", input: { plan: "## Plan\n\n1. Do it" } }],
+  });
+  const p = render(<AskCardForTest id="p1" />);
+  expect(p.container.querySelector(".ask-plan h2")!.textContent).toBe("Plan");
+  fireEvent.click(p.getByText("Approve"));
+  expect(useChat.getState().mode).toBe("default");
+  p.unmount();
 });

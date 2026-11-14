@@ -15,8 +15,9 @@ from collections.abc import AsyncIterator
 
 from ..agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent, ran
 
-# Codex can't stop mid-run to ask, so its modes are its sandboxes.
-CODEX_SANDBOX = {"acceptEdits": "workspace-write", "bypassPermissions": "danger-full-access"}
+# Codex can't stop mid-run to ask, so its modes are its sandboxes: Plan reads, Auto (Codex's own name for it) writes
+# in the workspace.
+CODEX_SANDBOX = {"acceptEdits": "workspace-write", "auto": "workspace-write"}
 
 
 def build_args(req: AgentRequest) -> list[str]:

@@ -221,7 +221,9 @@ async def test_claude_guide_chat_runs_as_the_session_and_asks_the_reviewer(monke
 
     async def approve(name, summary, inp):
         asked.append(summary)
-        return {"Bash": "allow", "Edit": "always", "Grep": "always"}.get(name, "deny")
+        return {"Bash": "allow", "Edit": "always", "Grep": "always", "ExitPlanMode": "allow"}.get(
+            name, "deny"
+        )
 
     o = await _claude_options(monkeypatch, tmp_path, mode="default", approve=approve)
     assert o.permission_mode == "default" and o.setting_sources == ["user", "project", "local"]
@@ -235,12 +237,15 @@ async def test_claude_guide_chat_runs_as_the_session_and_asks_the_reviewer(monke
     assert [(u.type, u.mode, u.destination) for u in edit.updated_permissions] == [
         ("setMode", "acceptEdits", "session")
     ]
+    # approving a plan leaves plan mode, as the terminal does
+    plan = await o.can_use_tool("ExitPlanMode", {"plan": "p"}, None)
+    assert [(u.type, u.mode) for u in plan.updated_permissions] == [("setMode", "default")]
     grep = await o.can_use_tool("Grep", {"pattern": "x"}, None)
     assert (
         grep.updated_permissions[0].type == "addRules"
         and grep.updated_permissions[0].rules[0].tool_name == "Grep"
     )
-    for mode in ("acceptEdits", "plan", "bypassPermissions"):
+    for mode in ("acceptEdits", "plan", "auto"):
         assert (
             await _claude_options(monkeypatch, tmp_path, mode=mode, approve=approve)
         ).permission_mode == mode
@@ -251,11 +256,11 @@ def test_codex_modes_are_its_sandboxes(tmp_path):
         args = build_args(AgentRequest(system_prompt="", prompt="", model="", cwd=tmp_path, mode=mode))
         return args[args.index("--sandbox") + 1]
 
-    modes = ("read-only", "plan", "default", "acceptEdits", "bypassPermissions")
+    modes = ("read-only", "plan", "default", "acceptEdits", "auto")
     assert [sandbox(m) for m in modes] == [
         "read-only",
         "read-only",
         "read-only",
         "workspace-write",
-        "danger-full-access",
+        "workspace-write",
     ]

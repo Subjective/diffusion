@@ -88,17 +88,17 @@ export function AskPopup({
             autosize(e.target, 5);
           }}
           onKeyDown={(e) => {
-            // ↵ asks, ⌘↵ queues, ⇧↵ is a new line.
+            // ↵ queues, ⌘↵ asks now, ⇧↵ is a new line.
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              submit(e.metaKey || e.ctrlKey);
+              submit(!(e.metaKey || e.ctrlKey));
             }
           }}
         />
-        <button type="button" className="icon-btn" title="Queue (⌘↵)" onClick={() => submit(true)}>
+        <button type="button" className="icon-btn" title="Queue (↵)" onClick={() => submit(true)}>
           {ic(ListPlus, 17)}
         </button>
-        <button type="button" className="icon-btn solid" title="Ask now (↵)" onClick={() => submit(false)}>
+        <button type="button" className="icon-btn solid" title="Ask now (⌘↵)" onClick={() => submit(false)}>
           {ic(ArrowUp, 16)}
         </button>
       </div>
