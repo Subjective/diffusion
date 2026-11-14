@@ -1,6 +1,8 @@
 import { ChevronDown, ChevronRight, FileDiff as FileDiffIcon, FolderTree, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchTree } from "../api";
+import { startResize } from "../lib/panes";
+import { storage } from "../lib/storage";
 import { useApp } from "../store";
 import type { FileDiff as FD } from "../types";
 import { useUI } from "../ui";
@@ -51,6 +53,8 @@ export function buildTree(paths: string[]): Dir {
   return tidy(root);
 }
 
+export const RAIL_W = 240;
+const clampRail = (w: number) => Math.round(Math.max(160, Math.min(w, 560)));
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 const tree = new Map<string, Promise<string[]>>();
 
@@ -65,6 +69,7 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
   const nav = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
+  const [width, setWidth] = useState(() => clampRail(storage.get("rv-rail-w", RAIL_W)));
   const [all, setAll] = useState<string[] | null>(null);
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
   const byPath = useMemo(() => new Map(files.map((f) => [f.path, f])), [files]);
@@ -200,51 +205,65 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
   walk(root, 0);
 
   return (
-    <nav className="rail" ref={nav} aria-label="Files">
-      <div className="rail-h">
-        <label className="rail-q">
-          {ic(Search, 13)}
-          <input
-            ref={input}
-            value={q}
-            placeholder="Filter"
-            spellCheck={false}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") q ? setQ("") : e.currentTarget.blur();
-              if (e.key === "Enter") {
-                const first = nav.current?.querySelector<HTMLElement>(".rail-f");
-                first?.click();
-              }
-            }}
-          />
-          {q && (
-            <button type="button" className="clr" title="Clear" onClick={() => setQ("")}>
-              {ic(X, 12)}
+    <div className="rail-wrap" style={{ width }}>
+      <nav className="rail" ref={nav} aria-label="Files">
+        <div className="rail-h">
+          <label className="rail-q">
+            {ic(Search, 13)}
+            <input
+              ref={input}
+              value={q}
+              placeholder="Filter"
+              spellCheck={false}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") q ? setQ("") : e.currentTarget.blur();
+                if (e.key === "Enter") {
+                  const first = nav.current?.querySelector<HTMLElement>(".rail-f");
+                  first?.click();
+                }
+              }}
+            />
+            {q && (
+              <button type="button" className="clr" title="Clear" onClick={() => setQ("")}>
+                {ic(X, 12)}
+              </button>
+            )}
+          </label>
+          <div className="seg">
+            <button
+              type="button"
+              className={`icon-btn sm${mode === "diff" ? " on" : ""}`}
+              title="Changed files"
+              onClick={() => useUI.getState().setRailMode("diff")}
+            >
+              {ic(FileDiffIcon, 14)}
             </button>
-          )}
-        </label>
-        <div className="seg">
-          <button
-            type="button"
-            className={`icon-btn sm${mode === "diff" ? " on" : ""}`}
-            title="Changed files"
-            onClick={() => useUI.getState().setRailMode("diff")}
-          >
-            {ic(FileDiffIcon, 14)}
-          </button>
-          <button
-            type="button"
-            className={`icon-btn sm${mode === "all" ? " on" : ""}`}
-            title="All files"
-            onClick={() => useUI.getState().setRailMode("all")}
-          >
-            {ic(FolderTree, 14)}
-          </button>
+            <button
+              type="button"
+              className={`icon-btn sm${mode === "all" ? " on" : ""}`}
+              title="All files"
+              onClick={() => useUI.getState().setRailMode("all")}
+            >
+              {ic(FolderTree, 14)}
+            </button>
+          </div>
         </div>
-      </div>
-      {rows.length ? rows : <div className="rail-none">{needle ? "No matches" : ""}</div>}
-    </nav>
+        {rows.length ? rows : <div className="rail-none">{needle ? "No matches" : ""}</div>}
+      </nav>
+      <div
+        className="resizer right"
+        title="Drag to resize · double-click to reset"
+        onDoubleClick={() => {
+          setWidth(RAIL_W);
+          storage.set("rv-rail-w", RAIL_W);
+        }}
+        onMouseDown={(e) => {
+          const left = e.currentTarget.parentElement?.getBoundingClientRect().left ?? 0;
+          startResize(e, (x) => clampRail(x - left), setWidth, "rv-rail-w");
+        }}
+      />
+    </div>
   );
 }
 
