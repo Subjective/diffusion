@@ -330,8 +330,8 @@ test("comments sit under their last line, highlight it, and can be hidden, resol
   fireEvent.click(cmts()[1].querySelector('button[title="Ask in chat"]')!);
   const pop = document.querySelector(".ask-pop")!;
   expect(pop.querySelector(".ask-ctx")!.textContent).toContain("Teardown on logout");
-  expect(pop.querySelector("input")!.getAttribute("placeholder")).toBe("Ask about this comment");
-  fireEvent.keyDown(pop.querySelector("input")!, { key: "Enter", shiftKey: true }); // queue it
+  expect(pop.querySelector("textarea")!.getAttribute("placeholder")).toBe("Ask about this comment");
+  fireEvent.keyDown(pop.querySelector("textarea")!, { key: "Enter", metaKey: true }); // queue it
   const q = useChat.getState().chat.questions.at(-1)!;
   expect([q.text, q.anchor?.comment, q.anchor?.start, q.anchor?.end]).toEqual([
     "Tell me more about this comment.",

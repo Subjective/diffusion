@@ -213,9 +213,9 @@ test("drag bubble across lines → popup → queue two → badges → send → l
   await waitFor(() => expect(document.querySelector(".ask-pop")).toBeTruthy());
 
   // queue it (Shift+Enter)
-  const input = document.querySelector<HTMLInputElement>(".ask-in input")!;
+  const input = document.querySelector<HTMLTextAreaElement>(".ask-in textarea")!;
   fireEvent.change(input, { target: { value: "Why clear the timer?" } });
-  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(input, { key: "Enter", metaKey: true });
   await waitFor(() => expect(document.querySelector(".tray")).toBeTruthy());
   expect(document.querySelectorAll(".q-row")).toHaveLength(1);
   expect(document.querySelector(".qb.s-staged")).toBeTruthy();

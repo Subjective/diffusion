@@ -1192,21 +1192,23 @@ tr.ln:hover .ask-btn {
 }
 .ask-in {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 6px;
 }
-.ask-in input {
+.ask-in textarea {
   flex: 1;
-  height: 36px;
+  min-height: 36px;
+  resize: none;
+  overflow-y: hidden;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0 14px;
+  border-radius: 18px;
+  padding: 7px 14px;
   outline: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px var(--sans);
+  font: 14px / 20px var(--sans);
 }
-.ask-in input:focus {
+.ask-in textarea:focus {
   border-color: var(--subtle);
 }
 
@@ -1380,7 +1382,7 @@ tr.ln:hover .ask-btn {
   color: var(--text);
   font: 14px / 22px var(--sans);
   padding: 5px 0;
-  max-height: 140px;
+  overflow-y: hidden; /* autosize turns scrolling on past 8 lines */
 }
 
 /* Composer mode: how much the guide session may do (forks are read-only) */

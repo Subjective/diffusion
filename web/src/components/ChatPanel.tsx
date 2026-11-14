@@ -40,6 +40,7 @@ import {
   type Show,
   useChat,
 } from "../chat";
+import { autosize } from "../lib/autosize";
 import { type CodeLoc, expandCites, parseCites, type Resolved, resolveLoc } from "../lib/cite";
 import { useHunkIndex } from "../lib/linking";
 import { InlineCodeContext, Markdown } from "../lib/md";
@@ -779,7 +780,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
     else if (text.trim()) ask(text.trim());
     else return;
     setText("");
-    if (ta.current) ta.current.style.height = "";
+    requestAnimationFrame(() => autosize(ta.current, 8));
   };
 
   return (
@@ -837,8 +838,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
           }
           onChange={(e) => {
             setText(e.target.value);
-            e.target.style.height = "";
-            e.target.style.height = `${e.target.scrollHeight}px`;
+            autosize(e.target, 8);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

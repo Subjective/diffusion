@@ -1,6 +1,7 @@
 import { ArrowUp, FileCode, ListPlus, MessageCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Anchor } from "../chat";
+import { autosize } from "../lib/autosize";
 import { rangeText } from "../lib/selection";
 import { ic } from "./icons";
 
@@ -22,12 +23,13 @@ export function AskPopup({
   onStage: (text: string, a: Anchor) => void;
 }) {
   const [text, setText] = useState("");
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (state) {
       setText("");
       input.current?.focus();
+      requestAnimationFrame(() => autosize(input.current, 5));
     }
   }, [state]);
 
@@ -75,20 +77,25 @@ export function AskPopup({
         </button>
       </div>
       <div className="ask-in">
-        <input
+        <textarea
           ref={input}
+          rows={1}
           value={text}
           placeholder={a.comment ? "Ask about this comment" : "Ask about these lines"}
           autoComplete="off"
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            autosize(e.target, 5);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            // ↵ asks, ⌘↵ queues, ⇧↵ is a new line.
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              submit(e.shiftKey);
+              submit(e.metaKey || e.ctrlKey);
             }
           }}
         />
-        <button type="button" className="icon-btn" title="Queue (⇧↵)" onClick={() => submit(true)}>
+        <button type="button" className="icon-btn" title="Queue (⌘↵)" onClick={() => submit(true)}>
           {ic(ListPlus, 17)}
         </button>
         <button type="button" className="icon-btn solid" title="Ask now (↵)" onClick={() => submit(false)}>
