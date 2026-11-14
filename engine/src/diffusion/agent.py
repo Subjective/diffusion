@@ -19,6 +19,14 @@ from typing import Protocol
 class ToolEvent:
     name: str
     summary: str
+    id: str | None = None
+
+
+@dataclass
+class ToolFailedEvent:
+    """A tool call that came back as an error (the tool doesn't exist here, was denied, or failed)."""
+
+    id: str
 
 
 @dataclass
@@ -42,7 +50,7 @@ class DoneEvent:
     result: str | None = None
 
 
-Event = ToolEvent | TextEvent | ThinkingEvent | DoneEvent
+Event = ToolEvent | ToolFailedEvent | TextEvent | ThinkingEvent | DoneEvent
 
 
 def ran(command: str) -> str:

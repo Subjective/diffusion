@@ -20,7 +20,17 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from .agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent, ToolSpec
+from .agent import (
+    AgentRequest,
+    DoneEvent,
+    Event,
+    Runner,
+    TextEvent,
+    ThinkingEvent,
+    ToolEvent,
+    ToolFailedEvent,
+    ToolSpec,
+)
 from .hunks import DiffIndex
 from .pipeline import Prepared
 
@@ -343,7 +353,7 @@ async def run_turn(
     cwd: Path | None = None,
     block: GuideBlock | None = None,
     max_turns: int = 24,
-) -> AsyncIterator[ChatDelta | ChatFocus | ToolEvent | ThinkingEvent | DoneEvent]:
+) -> AsyncIterator[ChatDelta | ChatFocus | ToolEvent | ToolFailedEvent | ThinkingEvent | DoneEvent]:
     """``block`` collects an updated guide the answer ends with (``block.found``)."""
     shown: list[dict] = []
     tools = [hunk_tool(prep.index), show_code_tool(prep.index, shown)]
@@ -381,14 +391,14 @@ async def run_turn(
         if isinstance(ev, TextEvent):
             for n, t in split.feed(block.feed(ev.text)):
                 yield ChatDelta(n, t)
-        elif isinstance(ev, ThinkingEvent):
+        elif isinstance(ev, ThinkingEvent | ToolFailedEvent):
             yield ev
         elif isinstance(ev, ToolEvent):
             # Text before a tool call is narration ("Let me check…"); reset so it doesn't glue to the answer.
             for n, t in split.break_line():
                 yield ChatDelta(n, t)
             if ev.name.endswith("get_hunk"):
-                ev = ToolEvent(ev.name, hunk_summary(ev.summary, prep.index))
+                ev = ToolEvent(ev.name, hunk_summary(ev.summary, prep.index), ev.id)
             yield ev
         elif isinstance(ev, DoneEvent):
             for n, t in split.feed(block.flush()) + split.flush():

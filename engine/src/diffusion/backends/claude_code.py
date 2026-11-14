@@ -20,6 +20,7 @@ from ..agent import (
     TextEvent,
     ThinkingEvent,
     ToolEvent,
+    ToolFailedEvent,
     ToolSpec,
     summarize_tool,
     within,
@@ -76,7 +77,9 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
             StreamEvent,
             TextBlock,
             ThinkingBlock,
+            ToolResultBlock,
             ToolUseBlock,
+            UserMessage,
             create_sdk_mcp_server,
             tool,
         )
@@ -139,11 +142,15 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                 elif isinstance(m, AssistantMessage):
                     for b in m.content:
                         if isinstance(b, ToolUseBlock):
-                            yield ToolEvent(b.name, summarize_tool(b.name, b.input))
+                            yield ToolEvent(b.name, summarize_tool(b.name, b.input), b.id)
                         elif isinstance(b, TextBlock) and not req.include_partial:
                             yield TextEvent(b.text)
                         elif isinstance(b, ThinkingBlock) and b.thinking and not req.include_partial:
                             yield ThinkingEvent(b.thinking + "\n")
+                elif isinstance(m, UserMessage) and isinstance(m.content, list):
+                    for b in m.content:
+                        if isinstance(b, ToolResultBlock) and b.is_error:
+                            yield ToolFailedEvent(b.tool_use_id)
                 elif isinstance(m, ResultMessage):
                     yield DoneEvent(m.num_turns, m.total_cost_usd, m.is_error, m.session_id, m.result)
 

@@ -757,6 +757,13 @@ tr.cmt-row[data-tone="bug"] .cmt-tone {
   background: none;
   padding: 0;
 }
+.trace-tool.failed :is(code, .arg) {
+  text-decoration: line-through;
+}
+.trace-tool .fail {
+  flex-shrink: 0;
+  color: var(--del-fg, var(--subtle));
+}
 .trace-think {
   color: var(--subtle);
   font-size: 12.5px;

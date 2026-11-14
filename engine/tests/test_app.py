@@ -389,6 +389,29 @@ async def test_thinking_streams_and_is_kept_with_the_turn(setup):
     assert t["trace"] == [{"think": "Look at the timer."}, {"tool": "Read session.ts"}] and t["seconds"] >= 0
 
 
+async def test_failed_tool_calls_are_marked_in_the_trace(setup):
+    client, runners, deps, _ = setup
+    from diffusion.agent import TextEvent, ToolFailedEvent
+
+    async def runner(req):
+        yield ToolEvent("mcp__x__post_message", "post_message", "tu_1")
+        yield ToolFailedEvent("tu_1")
+        yield ToolEvent("Read", "Read session.ts", "tu_2")
+        yield TextEvent("ans")
+        yield DoneEvent(1, 0, False, "s")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 0, "text": "x"}]}
+    evs = parse_sse((await client.post(f"/api/chats/{cid}/turn", json=body)).text)
+    assert ("tool_failed", {"id": "tu_1"}) in evs
+    t = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()["turns"][0]
+    assert t["trace"] == [
+        {"tool": "post_message", "id": "tu_1", "failed": True},
+        {"tool": "Read session.ts", "id": "tu_2"},
+    ]
+
+
 async def test_overlapping_turns_serialize_and_both_persist(setup):
     client, runners, deps, _ = setup
     from diffusion.agent import TextEvent

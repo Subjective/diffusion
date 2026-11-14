@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
-from .agent import DoneEvent, Runner, ThinkingEvent, ToolEvent, make_runner
+from .agent import DoneEvent, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
 from .chat_agent import ChatDelta, ChatFocus, GuideBlock, Question, run_turn
 from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
@@ -343,8 +343,15 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                 elif isinstance(ev, ToolEvent):
                                     said = True
                                     record["tools"].append(ev.summary)
-                                    record["trace"].append({"tool": ev.summary})
-                                    yield "tool", {"name": ev.name, "summary": ev.summary}
+                                    record["trace"].append(
+                                        {"tool": ev.summary, **({"id": ev.id} if ev.id else {})}
+                                    )
+                                    yield "tool", {"name": ev.name, "summary": ev.summary, "id": ev.id}
+                                elif isinstance(ev, ToolFailedEvent):
+                                    for t in record["trace"]:
+                                        if t.get("id") == ev.id:
+                                            t["failed"] = True
+                                    yield "tool_failed", {"id": ev.id}
                                 elif isinstance(ev, DoneEvent):
                                     if ev.is_error:
                                         raise RuntimeError(ev.result or "agent error")

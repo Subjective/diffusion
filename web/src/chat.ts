@@ -46,7 +46,7 @@ export interface Question {
   guideVersion?: number;
 }
 
-export type TraceItem = { think: string } | { tool: string };
+export type TraceItem = { think: string } | { tool: string; id?: string; failed?: boolean };
 
 /** Add a tool call, or a piece of streamed reasoning (joined to the reasoning just before it). */
 export function extendTrace(trace: TraceItem[] = [], item: TraceItem): TraceItem[] {
@@ -236,10 +236,14 @@ export const useChat = create<State>((set, get) => {
               q.status === "pending"
                 ? {
                     tools: [...q.tools, d.summary as string],
-                    trace: extendTrace(q.trace, { tool: d.summary as string }),
+                    trace: extendTrace(q.trace, { tool: d.summary as string, ...(d.id ? { id: String(d.id) } : {}) }),
                   }
                 : {},
             );
+          } else if (event === "tool_failed") {
+            patch(get().chat, ids, (q) => ({
+              trace: q.trace?.map((t) => ("tool" in t && t.id === d.id ? { ...t, failed: true } : t)),
+            }));
           } else if (event === "thinking") {
             patch(get().chat, ids, (q) => ({ trace: extendTrace(q.trace, { think: d.text as string }) }));
           } else if (event === "done") {

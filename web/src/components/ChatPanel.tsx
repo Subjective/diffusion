@@ -437,12 +437,12 @@ const TOOL_ICONS: Partial<Record<string, typeof Wrench>> = {
 };
 
 /** One tool call as a quiet line, the way chat apps show them: an icon, a verb, and what it acted on. */
-function ToolRow({ summary }: { summary: string }) {
+function ToolRow({ summary, failed }: { summary: string; failed?: boolean }) {
   const sp = summary.indexOf(" ");
   const verb = sp < 0 ? summary : summary.slice(0, sp);
   const Icon = TOOL_ICONS[verb];
   return (
-    <li className="trace-tool" title={summary}>
+    <li className={`trace-tool${failed ? " failed" : ""}`} title={failed ? `${summary} · failed` : summary}>
       {ic(Icon ?? Wrench, 12)}
       {Icon ? (
         <>
@@ -452,6 +452,7 @@ function ToolRow({ summary }: { summary: string }) {
       ) : (
         <span className="arg">{summary}</span>
       )}
+      {failed && <span className="fail">Failed</span>}
     </li>
   );
 }
@@ -493,7 +494,7 @@ function Trace({ q, pending }: { q: Question; pending: boolean }) {
                 <Markdown text={t.think} />
               </li>
             ) : (
-              <ToolRow key={i} summary={t.tool} />
+              <ToolRow key={i} summary={t.tool} failed={t.failed} />
             ),
           )}
         </ol>

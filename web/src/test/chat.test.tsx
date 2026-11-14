@@ -84,10 +84,13 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     // "think…" questions: the agent reasons first, and the turn reports how long it took
     const think = body.questions.some((q: { text: string }) => q.text.startsWith("think"));
     if (think) deltas.unshift(sse([["thinking", { text: "Check **who** calls it." }]]));
+    // "fail…" questions: the tool call comes back as an error
+    if (body.questions.some((q: { text: string }) => q.text.startsWith("fail")))
+      deltas.unshift(sse([["tool_failed", { id: "t1" }]]));
     return new Response(
       streamBody(
         [
-          sse([["tool", { name: "Grep", summary: "Grep x" }]]),
+          sse([["tool", { name: "Grep", summary: "Grep x", id: "t1" }]]),
           ...deltas,
           sse([["done", think ? { seconds: 12 } : {}]]),
         ],
@@ -327,6 +330,19 @@ test("a turn's reasoning and tools fold into one line that opens to a timeline",
   expect(items.map((li) => li.className)).toEqual(["trace-tool", "trace-think"]);
   expect(items[0].querySelector("code")!.textContent).toBe("x"); // a tool call: verb, then what it acted on
   expect(items[1].textContent).toBe("Check who calls it.");
+});
+
+test("a tool call that failed is marked in the timeline", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  type("fail at grepping");
+  await waitFor(() => expect(document.querySelector(".trace-live")).toBeTruthy());
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelector(".trace-live")).toBeNull());
+  fireEvent.click(document.querySelector(".trace-h")!);
+  const row = document.querySelector(".trace-tool")!;
+  expect(row.classList.contains("failed")).toBe(true);
+  expect(row.querySelector(".fail")!.textContent).toBe("Failed");
 });
 
 test("reasoning headlines: first bold phrase, else first sentence", async () => {
