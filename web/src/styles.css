@@ -2121,12 +2121,6 @@ body.resizing * {
 .tab.preview .nm {
   font-style: italic;
 }
-.tab .chg {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--add-fg);
-}
 .tab .x {
   display: inline-grid;
   margin-right: -3px;

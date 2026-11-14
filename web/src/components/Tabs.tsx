@@ -15,7 +15,6 @@ export function TabBar() {
   const tabs = useUI((s) => s.tabs);
   const tab = useUI((s) => s.tab);
   const files = useApp((s) => s.files);
-  const changed = useMemo(() => new Set(files.map((f) => f.path)), [files]);
   const { showTab, closeTab, pinTab } = useUI.getState();
   return (
     <div className="tabs" role="tablist">
@@ -48,7 +47,6 @@ export function TabBar() {
           >
             {ic(FileCode, 14)}
             <span className="nm">{base(t.path)}</span>
-            {changed.has(t.path) && <span className="chg" title="Changed in this PR" />}
           </button>
           <button type="button" className="x" title="Close" onClick={() => closeTab(t.path)}>
             {ic(X, 12)}
