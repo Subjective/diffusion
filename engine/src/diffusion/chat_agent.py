@@ -22,8 +22,10 @@ from pydantic import BaseModel, Field
 
 from .agent import (
     AgentRequest,
+    Approver,
     DoneEvent,
     Event,
+    Mode,
     Runner,
     TextEvent,
     ThinkingEvent,
@@ -353,6 +355,8 @@ async def run_turn(
     cwd: Path | None = None,
     block: GuideBlock | None = None,
     max_turns: int = 24,
+    mode: Mode = "read-only",
+    approve: Approver | None = None,
 ) -> AsyncIterator[ChatDelta | ChatFocus | ToolEvent | ToolFailedEvent | ThinkingEvent | DoneEvent]:
     """``block`` collects an updated guide the answer ends with (``block.found``)."""
     shown: list[dict] = []
@@ -368,6 +372,8 @@ async def run_turn(
         fork=fork,
         adopt=adopt,
         include_partial=True,
+        mode=mode,
+        approve=approve,
     )
     block = block if block is not None else GuideBlock()
     split = SectionSplitter([q.n for q in questions])

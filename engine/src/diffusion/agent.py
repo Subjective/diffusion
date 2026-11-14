@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 # ---------- events surfaced to callers (CLI progress, SSE) ----------
 
@@ -85,6 +85,14 @@ class ToolSpec:
     handler: Callable[[dict], Awaitable[str]]
 
 
+Mode = Literal["read-only", "ask", "auto-edit"]
+"""How much a chat may do. read-only: Diffusion's read tools only. ask: the session's own tools and settings, and
+anything those don't already allow is put to the reviewer. auto-edit: the same, with file edits allowed."""
+
+Approver = Callable[[str, str, dict], Awaitable[bool]]
+"""Ask the reviewer about a tool call: (tool name, one-line summary, input) -> allowed."""
+
+
 @dataclass
 class AgentRequest:
     system_prompt: str
@@ -97,6 +105,13 @@ class AgentRequest:
     fork: bool = False  # branch the resumed session instead of adding to it
     adopt: bool = False  # add to someone else's session (the guide's), which hasn't seen our system prompt
     include_partial: bool = False
+    mode: Mode = "read-only"
+    approve: Approver | None = None
+
+    @property
+    def native(self) -> bool:
+        """Run as the session itself would: its own tools, settings and instructions."""
+        return self.mode != "read-only"
 
 
 class Runner(Protocol):

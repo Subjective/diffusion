@@ -175,3 +175,72 @@ def test_claude_code_prompt_maps_plain_tool_names():
     assert tool_names_note([]) == ""
     note = tool_names_note([ToolSpec("show_code", "", {}, h)])
     assert "`show_code` is `mcp__diffusion__show_code`" in note
+
+
+async def _claude_options(monkeypatch, tmp_path, **kw):
+    import claude_agent_sdk
+
+    from diffusion.backends.claude_code import claude_code_runner
+
+    seen = {}
+
+    class Fake:
+        def __init__(self, options):
+            seen["opts"] = options
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def query(self, prompt):
+            pass
+
+        async def receive_response(self):
+            return
+            yield
+
+    monkeypatch.setattr(claude_agent_sdk, "ClaudeSDKClient", Fake)
+    req = AgentRequest(system_prompt="SYS", prompt="hi", model="", cwd=tmp_path, **kw)
+    async for _ in claude_code_runner()(req):
+        pass
+    return seen["opts"]
+
+
+async def test_claude_read_only_chat_ignores_the_users_setup(monkeypatch, tmp_path):
+    o = await _claude_options(monkeypatch, tmp_path)
+    assert o.permission_mode == "dontAsk" and o.setting_sources == [] and "Bash" in o.disallowed_tools
+    assert o.can_use_tool is None
+
+
+async def test_claude_guide_chat_runs_as_the_session_and_asks_the_reviewer(monkeypatch, tmp_path):
+    from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+
+    asked = []
+
+    async def approve(name, summary, inp):
+        asked.append(summary)
+        return name == "Bash"
+
+    o = await _claude_options(monkeypatch, tmp_path, mode="ask", approve=approve)
+    assert o.permission_mode == "default" and o.setting_sources == ["user", "project", "local"]
+    assert o.system_prompt["preset"] == "claude_code" and o.system_prompt["append"].startswith("SYS")
+    assert not o.disallowed_tools and not o.tools
+    assert isinstance(await o.can_use_tool("Bash", {"command": "ls"}, None), PermissionResultAllow)
+    assert isinstance(await o.can_use_tool("Write", {"file_path": "x"}, None), PermissionResultDeny)
+    assert asked == ["Ran ls", "Write"]
+    o = await _claude_options(monkeypatch, tmp_path, mode="auto-edit", approve=approve)
+    assert o.permission_mode == "acceptEdits"
+
+
+def test_codex_writes_only_in_auto_edit(tmp_path):
+    def sandbox(mode):
+        args = build_args(AgentRequest(system_prompt="", prompt="", model="", cwd=tmp_path, mode=mode))
+        return args[args.index("--sandbox") + 1]
+
+    assert [sandbox(m) for m in ("read-only", "ask", "auto-edit")] == [
+        "read-only",
+        "read-only",
+        "workspace-write",
+    ]

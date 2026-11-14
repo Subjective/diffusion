@@ -515,3 +515,69 @@ async def test_guide_chat_history_is_the_sessions_transcript(setup, tmp_path, mo
         "from the terminal",
     ]
     assert got["turns"][1]["answers"] == {"1": "ok"}  # Diffusion's own record of its turn
+
+
+async def test_guide_chat_asks_the_reviewer_before_tools_its_settings_dont_allow(setup):
+    client, runners, deps, prep = setup
+    import asyncio
+
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    seen = []
+
+    async def runner(req):
+        seen.append(req.mode)
+        ok = await req.approve("Bash", "Ran rm -rf build", {"command": "rm -rf build"})
+        no = await req.approve("Edit", "Edit a.ts", {"file_path": "a.ts"})
+        yield TextEvent(f"{ok} {no}")
+        yield DoneEvent(1, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "clean up"}], "mode": "ask"}
+    waiting = (
+        client._transport.app.state.approvals
+    )  # the SSE stream is buffered here, so answer from the side
+
+    async def reviewer():
+        for allow in (True, False):
+            while not waiting:
+                await asyncio.sleep(0.01)
+            (aid,) = list(waiting)
+            r = await client.post(f"/api/chats/{cid}/approve", json={"id": aid, "allow": allow})
+            assert r.status_code == 200
+            while aid in waiting:
+                await asyncio.sleep(0.01)
+
+    r, _ = await asyncio.wait_for(
+        asyncio.gather(client.post(f"/api/chats/{cid}/turn", json=body), reviewer()), timeout=10
+    )
+    events = parse_sse(r.text)
+    asked = [d for e, d in events if e == "approval"]
+    assert [(a["tool"], a["summary"], a["input"]) for a in asked] == [
+        ("Bash", "Ran rm -rf build", {"command": "rm -rf build"}),
+        ("Edit", "Edit a.ts", {"file_path": "a.ts"}),
+    ]
+    assert ("delta", {"n": 1, "text": "True False"}) in events and seen == ["ask"]
+    assert (
+        await client.post(f"/api/chats/{cid}/approve", json={"id": "nope", "allow": True})
+    ).status_code == 404
+
+
+async def test_forks_stay_read_only_whatever_mode_is_asked(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    seen = []
+
+    async def runner(req):
+        seen.append((req.mode, req.native))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "x"}], "mode": "auto-edit"}
+    await client.post(f"/api/chats/{cid}/turn", json=body)
+    assert seen == [("read-only", False)]

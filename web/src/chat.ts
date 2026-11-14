@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import type { CodeLoc } from "./lib/cite";
 import { errorText, postSSE } from "./lib/sse";
+import { storage } from "./lib/storage";
 import { useApp } from "./store";
 import type { Ref } from "./types";
 import { diffActivity } from "./ui";
@@ -99,6 +100,11 @@ interface State {
   history: ChatSummary[];
   historyOpen: boolean;
   error: string | null;
+  mode: ChatMode;
+  setMode(mode: ChatMode): void;
+  /** Tool calls waiting on the reviewer in the running turn. */
+  asks: Ask[];
+  answer(id: string, allow: boolean): Promise<void>;
   /** The diff should jump to this show: the model's first `show_code` of a turn, if the diff wasn't touched since asking. */
   autoShow: { q: string; i: number; n: number } | null;
 
@@ -117,6 +123,20 @@ interface State {
   clearStaged(): void;
   ask(text: string, anchor?: Anchor | null): void;
   sendStaged(extra?: string): void;
+}
+
+/** How much the guide session may do here. Forks are always read-only. */
+export type ChatMode = "read-only" | "ask" | "auto-edit";
+/** The modes an agent supports: Codex can't stop mid-run to ask, so it has no "ask". */
+export const modesFor = (harness: string | null): ChatMode[] =>
+  harness === "codex" ? ["read-only", "auto-edit"] : harness === "claude-code" ? ["read-only", "ask", "auto-edit"] : [];
+
+/** A tool call the session wants to make that its settings don't already allow. */
+export interface Ask {
+  id: string;
+  tool: string;
+  summary: string;
+  input: Record<string, unknown>;
 }
 
 let chatSeq = 0;
@@ -203,7 +223,12 @@ export const useChat = create<State>((set, get) => {
       const id = await ensureChat();
       await postSSE(
         `/api/chats/${id}/turn`,
-        { url: get().pr, questions: wire, version: useApp.getState().guide?.version ?? null },
+        {
+          url: get().pr,
+          questions: wire,
+          version: useApp.getState().guide?.version ?? null,
+          mode: chatRef.kind === "guide" ? get().mode : "read-only",
+        },
         ({ event, data }) => {
           const d = data as Record<string, unknown>;
           if (event === "delta") {
@@ -242,6 +267,8 @@ export const useChat = create<State>((set, get) => {
                   }
                 : {},
             );
+          } else if (event === "approval") {
+            set((s) => ({ asks: [...s.asks, d as unknown as Ask] }));
           } else if (event === "tool_failed") {
             patch(get().chat, ids, (q) => ({
               trace: q.trace?.map((t) => ("tool" in t && t.id === d.id ? { ...t, failed: true } : t)),
@@ -266,6 +293,7 @@ export const useChat = create<State>((set, get) => {
       }
     } finally {
       ctrls.delete(ctrl);
+      set({ asks: [] });
       if (get().chat.key === chatRef.key) {
         set((s) => ({ chat: { ...s.chat, busy: false } }));
         const waiting = get().chat.questions.filter((q) => q.status === "waiting");
@@ -282,6 +310,27 @@ export const useChat = create<State>((set, get) => {
     historyOpen: false,
     error: null,
     autoShow: null,
+    mode: storage.get<ChatMode>("rv-chat-mode", "ask"),
+    asks: [],
+
+    setMode(mode) {
+      storage.set("rv-chat-mode", mode);
+      set({ mode });
+    },
+    async answer(id, allow) {
+      set((s) => ({ asks: s.asks.filter((a) => a.id !== id) }));
+      const chat = get().chat.id;
+      if (!chat) return;
+      try {
+        await fetch(`/api/chats/${chat}/approve`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, allow }),
+        });
+      } catch {
+        // the turn ends on its own if it can't hear back
+      }
+    },
 
     reset(pr) {
       if (pr === get().pr) return;

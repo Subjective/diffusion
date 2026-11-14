@@ -19,7 +19,7 @@ type Turn = {
 };
 const chats = new Map<string, { id: string; turns: Turn[]; updated_at: number }>();
 let release: (() => void) | null = null;
-const turnBodies: { questions: { n: number; text: string }[]; version?: number | null }[] = [];
+const turnBodies: { questions: { n: number; text: string }[]; version?: number | null; mode?: string }[] = [];
 const sse = (events: [string, unknown][]) =>
   events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join("");
 
@@ -35,9 +35,14 @@ function streamBody(chunks: string[], gate?: Promise<void>) {
   });
 }
 
+const approveBodies: unknown[] = [];
 globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(String(input), "http://x");
   const path = url.pathname;
+  if (path.endsWith("/approve")) {
+    approveBodies.push(JSON.parse(String(init!.body)));
+    return new Response("{}");
+  }
   if (path === "/api/chats" && init?.method === "POST") {
     const id = `c${chats.size + 1}`;
     chats.set(id, { id, turns: [], updated_at: Date.now() / 1000 });
@@ -84,13 +89,18 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     // "think…" questions: the agent reasons first, and the turn reports how long it took
     const think = body.questions.some((q: { text: string }) => q.text.startsWith("think"));
     if (think) deltas.unshift(sse([["thinking", { text: "Check **who** calls it." }]]));
+    // "risky…" questions: the session asks before a command its settings don't allow (before the answer lands)
+    const risky = body.questions.some((q: { text: string }) => q.text.startsWith("risky"));
+    const asking = risky
+      ? sse([["approval", { id: "a1", tool: "Bash", summary: "Ran rm -rf build", input: { command: "rm -rf build" } }]])
+      : "";
     // "fail…" questions: the tool call comes back as an error
     if (body.questions.some((q: { text: string }) => q.text.startsWith("fail")))
       deltas.unshift(sse([["tool_failed", { id: "t1" }]]));
     return new Response(
       streamBody(
         [
-          sse([["tool", { name: "Grep", summary: "Grep x", id: "t1" }]]),
+          sse([["tool", { name: "Grep", summary: "Grep x", id: "t1" }]]) + asking,
           ...deltas,
           sse([["done", think ? { seconds: 12 } : {}]]),
         ],
@@ -373,5 +383,34 @@ test("chat opens on the guide's session; new chats fork it; history keeps the tw
   fireEvent.click(screen.getByTitle("History"));
   expect(document.querySelector(".chat-title")!.textContent).toBe("History");
   await waitFor(() => expect(document.querySelector(".h-item.guide .h-t")!.textContent).toBe("Guide session"));
+  useApp.setState({ guide: g });
+});
+
+test("the guide session runs in a mode like the harness, and asks before what its settings don't allow", async () => {
+  await mount();
+  const g = useApp.getState().guide!;
+  useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "claude-code", session: "s1" } } });
+  const { useChat } = await import("../chat");
+  await act(async () => useChat.getState().openGuide());
+  const mode = () => document.querySelector<HTMLElement>(".composer .mode")!;
+  expect(mode().textContent).toBe("Ask");
+  fireEvent.click(mode());
+  expect(mode().textContent).toBe("Auto-edit");
+  fireEvent.click(mode());
+  expect(mode().textContent).toBe("Read-only");
+  fireEvent.click(mode());
+  expect(mode().textContent).toBe("Ask");
+  type("risky cleanup");
+  await waitFor(() => expect(document.querySelector(".ask-card")).toBeTruthy());
+  expect(turnBodies.at(-1)!.mode).toBe("ask");
+  expect(document.querySelector(".ask-d")!.textContent).toBe("rm -rf build");
+  fireEvent.click(screen.getByText("Allow"));
+  expect(document.querySelector(".ask-card")).toBeNull();
+  await waitFor(() => expect(approveBodies).toEqual([{ id: "a1", allow: true }]));
+  await act(async () => release!());
+  // a fork can only read
+  fireEvent.click(screen.getByTitle("New chat"));
+  expect(document.querySelector(".composer .mode")!.textContent).toBe("Read-only");
+  expect(document.querySelector("button.mode")).toBeNull();
   useApp.setState({ guide: g });
 });

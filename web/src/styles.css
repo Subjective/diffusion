@@ -1383,6 +1383,86 @@ tr.ln:hover .ask-btn {
   max-height: 140px;
 }
 
+/* Composer mode: how much the guide session may do (forks are read-only) */
+.composer .mode {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 15px;
+  background: none;
+  color: var(--muted);
+  font: 12px / 1 var(--sans);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.composer button.mode:hover {
+  background: var(--chip);
+  color: var(--text);
+}
+.composer .mode.ro {
+  cursor: default;
+}
+.composer .mode.m-auto-edit {
+  color: var(--add-fg, var(--text));
+}
+
+/* A tool call waiting on the reviewer */
+.ask-card {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.ask-h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+}
+.ask-d {
+  margin: 8px 0;
+  padding: 7px 9px;
+  max-height: 140px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--chip);
+  font: 12px / 18px var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ask-b {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.ask-act {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: none;
+  color: var(--text);
+  font: 500 12.5px / 1 var(--sans);
+  cursor: pointer;
+}
+.ask-act:hover {
+  background: var(--chip);
+}
+.ask-act.primary {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+.ask-act.primary:hover {
+  opacity: 0.88;
+}
+
 /* ---------- drag-to-range ---------- */
 .ask-btn {
   cursor: grab;

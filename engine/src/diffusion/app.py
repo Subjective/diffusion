@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
-from .agent import DoneEvent, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
+from .agent import DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, GuideBlock, Question, run_turn
 from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
@@ -83,6 +83,53 @@ class TurnReq(BaseModel):
     url: str
     questions: list[Question]
     version: int | None = None  # the guide version on screen
+    # The guide chat can run as the session itself (see agent.Mode); forks are always read-only.
+    mode: Mode = "read-only"
+
+
+class Approval(BaseModel):
+    id: str
+    allow: bool
+
+
+class ApprovalAsked:
+    """A tool call waiting on the reviewer, surfaced into a turn's event stream."""
+
+    def __init__(self, id: str, tool: str, summary: str, input: dict):
+        self.payload = {"id": id, "tool": tool, "summary": summary, "input": _clip(input)}
+
+
+def _clip(v, n: int = 4000):
+    if isinstance(v, str):
+        return v if len(v) <= n else v[:n] + "…"
+    if isinstance(v, dict):
+        return {k: _clip(x, n) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_clip(x, n) for x in v[:50]]
+    return v
+
+
+async def merged(events: AsyncIterator, side: asyncio.Queue) -> AsyncIterator:
+    """A turn's events, with anything put on ``side`` (approval requests) interleaved as it arrives."""
+    it = aiter(events)
+    nxt = asyncio.ensure_future(anext(it))
+    got = asyncio.ensure_future(side.get())
+    try:
+        while True:
+            done, _ = await asyncio.wait({nxt, got}, return_when=asyncio.FIRST_COMPLETED)
+            if got in done:
+                yield got.result()
+                got = asyncio.ensure_future(side.get())
+            if nxt in done:
+                try:
+                    ev = nxt.result()
+                except StopAsyncIteration:
+                    return
+                yield ev
+                nxt = asyncio.ensure_future(anext(it))
+    finally:
+        for f in (nxt, got):
+            f.cancel()
 
 
 def chat_summary(c: dict) -> dict:
@@ -112,6 +159,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     _prepared: dict[str, Prepared] = {}
     _latest_seen: dict[str, str | None] = {}
     chat_locks: dict[str, asyncio.Lock] = {}
+    approvals: dict[str, asyncio.Future[bool]] = {}  # tool calls waiting on the reviewer, by id
+    app.state.approvals = approvals
     symbols: dict[Path, SymbolIndex] = {}
     trees: dict[tuple[Path, str], frozenset[str]] = {}
     symbol_locks: dict[Path, asyncio.Lock] = {}
@@ -294,6 +343,14 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         turns = merge(found, chat.get("turns") or [], lambda text: text.rstrip().endswith(reminder))
         return {**chat, "harness": harness, "turns": turns}
 
+    @app.post("/api/chats/{chat_id}/approve")
+    async def approve(chat_id: str, req: Approval) -> dict:
+        f = approvals.get(req.id)
+        if not f or f.done():
+            raise HTTPException(404, "nothing is waiting on that")
+        f.set_result(req.allow)
+        return {"ok": True}
+
     @app.post("/api/chats/{chat_id}/turn")
     async def turn(chat_id: str, req: TurnReq) -> StreamingResponse:
         deps = d()
@@ -337,17 +394,34 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 harness = chat.get("harness") or meta.get("harness") or installed_harness(dict(os.environ))
                 chat["harness"] = harness = harness or "claude-code"  # the SDK bundles Claude Code
                 block = GuideBlock()
+                mode: Mode = req.mode if chat.get("kind") == "guide" else "read-only"
+                side: asyncio.Queue = asyncio.Queue()
+                mine: list[str] = []
+
+                async def ask(tool: str, summary: str, tool_input: dict) -> bool:
+                    aid = uuid.uuid4().hex[:12]
+                    f: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+                    approvals[aid] = f
+                    mine.append(aid)
+                    await side.put(ApprovalAsked(aid, tool, summary, tool_input))
+                    try:
+                        return await f
+                    finally:
+                        approvals.pop(aid, None)
+
                 try:
                     for resume, fork, cwd in _sessions(chat, meta, harness):
                         said = False
                         # The guide's own session, joined for the first time, hasn't seen the chat's instructions.
                         adopt = bool(resume) and not fork and resume != chat.get("session_id")
                         try:
-                            async for ev in run_turn(
+                            async for ev in merged(run_turn(
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
-                                resume, fork=fork, adopt=adopt, cwd=cwd, block=block,
-                            ):  # fmt: skip
-                                if isinstance(ev, ChatDelta):
+                                resume, fork=fork, adopt=adopt, cwd=cwd, block=block, mode=mode, approve=ask,
+                            ), side):  # fmt: skip
+                                if isinstance(ev, ApprovalAsked):
+                                    yield "approval", ev.payload
+                                elif isinstance(ev, ChatDelta):
                                     said = True
                                     record["answers"][str(ev.n)] += ev.text
                                     yield "delta", {"n": ev.n, "text": ev.text}
@@ -402,6 +476,9 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     record["error"] = str(e) or type(e).__name__
                     yield "error", {"message": record["error"]}
                 finally:
+                    for aid in mine:  # the reviewer left: nothing waits forever
+                        if (f := approvals.pop(aid, None)) and not f.done():
+                            f.set_result(False)
                     chat["updated_at"] = time.time()
                     deps.store.save_chat(key, chat)
 

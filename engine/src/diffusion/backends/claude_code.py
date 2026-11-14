@@ -73,6 +73,8 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
             ClaudeAgentOptions,
             ClaudeSDKClient,
             HookMatcher,
+            PermissionResultAllow,
+            PermissionResultDeny,
             ResultMessage,
             StreamEvent,
             TextBlock,
@@ -110,25 +112,50 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
         if req.tools:
             mcp[MCP_SERVER] = create_sdk_mcp_server(MCP_SERVER, tools=[wrap(t) for t in req.tools])
         allowed = READ_TOOLS + [mcp_name(t.name) for t in req.tools]
-        opts = ClaudeAgentOptions(
+        common: dict[str, Any] = dict(
             model=req.model or None,
-            system_prompt=req.system_prompt + tool_names_note(req.tools),
             cwd=str(req.cwd),
-            tools=allowed,
-            allowed_tools=allowed,
-            disallowed_tools=DENY_TOOLS,
-            permission_mode="dontAsk",
-            setting_sources=[],  # don't pick up the user's hooks, CLAUDE.md, or permissions
             mcp_servers=mcp,
-            hooks={"PreToolUse": [HookMatcher(matcher="Read|Grep|Glob", hooks=[guard])]},
             max_turns=req.max_turns,
             resume=req.resume,
             fork_session=req.fork,
             thinking={"type": "adaptive", "display": "summarized"},  # the model decides; we get readable text
             include_partial_messages=req.include_partial,
-            env={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "ENABLE_TOOL_SEARCH": "false"},
             cli_path=cli_path,
         )
+        if req.native:
+            # The session as it runs in the terminal: Claude Code's own prompt, tools, settings, CLAUDE.md and
+            # permission rules. What those don't already allow is put to the reviewer.
+            async def can_use(name: str, tool_input: dict, _ctx: Any):
+                if req.approve and await req.approve(name, summarize_tool(name, tool_input), tool_input):
+                    return PermissionResultAllow()
+                return PermissionResultDeny(message="The reviewer declined this.")
+
+            opts = ClaudeAgentOptions(
+                **common,
+                system_prompt={
+                    "type": "preset",
+                    "preset": "claude_code",
+                    "append": req.system_prompt + tool_names_note(req.tools),
+                    "snapshot": False,  # carry the chat's instructions on resume, not just the first request
+                },
+                allowed_tools=[mcp_name(t.name) for t in req.tools],
+                permission_mode="acceptEdits" if req.mode == "auto-edit" else "default",
+                can_use_tool=can_use,
+                setting_sources=["user", "project", "local"],
+            )
+        else:
+            opts = ClaudeAgentOptions(
+                **common,
+                system_prompt=req.system_prompt + tool_names_note(req.tools),
+                tools=allowed,
+                allowed_tools=allowed,
+                disallowed_tools=DENY_TOOLS,
+                permission_mode="dontAsk",
+                setting_sources=[],  # don't pick up the user's hooks, CLAUDE.md, or permissions
+                hooks={"PreToolUse": [HookMatcher(matcher="Read|Grep|Glob", hooks=[guard])]},
+                env={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "ENABLE_TOOL_SEARCH": "false"},
+            )
         async with ClaudeSDKClient(options=opts) as client:
             await client.query(req.prompt)
             async for m in client.receive_response():

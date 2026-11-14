@@ -21,7 +21,7 @@ def build_args(req: AgentRequest) -> list[str]:
         "exec",
         "--experimental-json",
         "--sandbox",
-        "read-only",
+        "workspace-write" if req.mode == "auto-edit" else "read-only",
         "--cd",
         str(req.cwd),
         "--skip-git-repo-check",

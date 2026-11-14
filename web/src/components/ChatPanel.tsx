@@ -6,12 +6,16 @@ import {
   FileText,
   FlaskConical,
   GitFork,
+  Hand,
   History,
   Layers,
   LocateFixed,
+  Lock,
   MessageCircle,
+  PencilLine,
   Search,
   ShieldAlert,
+  ShieldQuestion,
   Sparkles,
   SquarePen,
   SquareTerminal,
@@ -21,7 +25,16 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Anchor, guideSessionOf, type Question, type Show, useChat } from "../chat";
+import {
+  type Anchor,
+  type Ask,
+  type ChatMode,
+  guideSessionOf,
+  modesFor,
+  type Question,
+  type Show,
+  useChat,
+} from "../chat";
 import { type CodeLoc, expandCites, parseCites, type Resolved, resolveLoc } from "../lib/cite";
 import { useHunkIndex } from "../lib/linking";
 import { InlineCodeContext, Markdown } from "../lib/md";
@@ -562,8 +575,81 @@ function Waiting({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
   );
 }
 
+const MODE_UI: Record<ChatMode, { icon: typeof Lock; label: string; title: string }> = {
+  "read-only": { icon: Lock, label: "Read-only", title: "Read-only: reads the repo, changes nothing" },
+  ask: {
+    icon: Hand,
+    label: "Ask",
+    title: "Ask: the session's own tools and settings; asks before anything they don't allow",
+  },
+  "auto-edit": {
+    icon: PencilLine,
+    label: "Auto-edit",
+    title: "Auto-edit: edits files without asking; asks before commands",
+  },
+};
+
+/** The guide session's mode, mirroring the harness: click to cycle. Forks are read-only. */
+function ModeButton() {
+  const { chat, mode, setMode } = useChat();
+  const guideHarness = useApp((s) => s.guide?.meta?.harness ?? null);
+  const modes = chat.kind === "guide" ? modesFor(chat.harness ?? guideHarness) : [];
+  if (!modes.length) {
+    return (
+      <span className="mode ro" title="New chats fork the session and can only read">
+        {ic(Lock, 13)}
+        <span>Read-only</span>
+      </span>
+    );
+  }
+  const cur = modes.includes(mode) ? mode : modes[0];
+  const ui = MODE_UI[cur];
+  return (
+    <button
+      type="button"
+      className={`mode m-${cur}`}
+      title={`${ui.title} · click to change`}
+      onClick={() => setMode(modes[(modes.indexOf(cur) + 1) % modes.length])}
+    >
+      {ic(ui.icon, 13)}
+      <span>{ui.label}</span>
+    </button>
+  );
+}
+
+/** A tool call the session wants to make that its settings don't allow: the reviewer decides, as in the terminal. */
+function AskCard({ a }: { a: Ask }) {
+  const answer = useChat((s) => s.answer);
+  const detail =
+    typeof a.input.command === "string"
+      ? a.input.command
+      : typeof a.input.file_path === "string"
+        ? a.input.file_path
+        : JSON.stringify(a.input, null, 2);
+  return (
+    <div className="ask-card" role="alertdialog" aria-label={`Allow ${a.summary}?`}>
+      <div className="ask-h">
+        {ic(ShieldQuestion, 14)}
+        <span>
+          Allow <b>{a.tool}</b>?
+        </span>
+      </div>
+      <pre className="ask-d">{detail}</pre>
+      <div className="ask-b">
+        <button type="button" className="ask-act" onClick={() => void answer(a.id, false)}>
+          Deny
+        </button>
+        <button type="button" className="ask-act primary" onClick={() => void answer(a.id, true)}>
+          Allow
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Composer({ link }: { link: ChatLinkProps }) {
   const { chat, unstage, clearStaged, ask, sendStaged } = useChat();
+  const asks = useChat((s) => s.asks);
   const [text, setText] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
   const staged = chat.questions.filter((q) => q.status === "staged");
@@ -578,6 +664,9 @@ function Composer({ link }: { link: ChatLinkProps }) {
 
   return (
     <div className="composer-wrap">
+      {asks.map((a) => (
+        <AskCard key={a.id} a={a} />
+      ))}
       {staged.length > 0 && (
         <div className="tray">
           <div className="tray-h">
@@ -641,6 +730,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
             }
           }}
         />
+        <ModeButton />
         <button
           type="button"
           id="chatSend"
