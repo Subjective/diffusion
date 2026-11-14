@@ -244,6 +244,24 @@ async def test_guide_chat_continues_the_guide_session(setup):
     assert [(c["id"], c["kind"], c["harness"]) for c in listed] == [(cid, "guide", "codex")]
 
 
+async def test_guide_chat_is_stored_by_its_first_turn(setup):
+    # The UI shows the guide chat from GET without creating it, so asking in it must work straight away.
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="codex", session="th_1")
+
+    async def runner(req):
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "th_1")
+
+    runners["chat"] = runner
+    r = await client.post("/api/chats/guide/turn", json={"url": URL, "questions": [{"n": 1, "text": "hi"}]})
+    assert r.status_code == 200
+    assert parse_sse(r.text)[-1][0] == "done"
+    assert [c["id"] for c in (await client.get("/api/chats", params={"url": URL})).json()] == ["guide"]
+
+
 async def test_guide_chat_without_a_session_says_so(setup):
     client, runners, deps, prep = setup
     submit(deps, prep, guide_for(prep), harness="cursor", session="c1")

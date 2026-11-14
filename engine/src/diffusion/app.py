@@ -298,15 +298,13 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     async def list_chats(url: str) -> list[dict]:
         return [chat_summary(c) for c in d().store.list_chats(pr_key(url)) if c.get("turns")]
 
-    @app.post("/api/chats")
-    async def create_chat(req: ChatCreate) -> dict:
-        key = pr_key(req.url)
-        if req.kind == "guide" and (found := d().store.load_chat(key, GUIDE_CHAT)):
+    def new_chat(key: str, kind: str) -> dict:
+        if kind == "guide" and (found := d().store.load_chat(key, GUIDE_CHAT)):
             return found
         now = time.time()
         chat = {
-            "id": GUIDE_CHAT if req.kind == "guide" else uuid.uuid4().hex[:12],
-            "kind": req.kind,
+            "id": GUIDE_CHAT if kind == "guide" else uuid.uuid4().hex[:12],
+            "kind": kind,
             "created_at": now,
             "updated_at": now,
             "session_id": None,
@@ -314,6 +312,10 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         }
         d().store.save_chat(key, chat)
         return chat
+
+    @app.post("/api/chats")
+    async def create_chat(req: ChatCreate) -> dict:
+        return new_chat(pr_key(req.url), req.kind)
 
     @app.get("/api/chats/{chat_id}")
     async def get_chat(chat_id: str, url: str) -> dict:
@@ -355,7 +357,9 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     async def turn(chat_id: str, req: TurnReq) -> StreamingResponse:
         deps = d()
         key = pr_key(req.url)
-        chat = deps.store.load_chat(key, chat_id)
+        # The guide chat is shown before anything is asked in it (its history is the session's transcript), so
+        # its first turn is what stores it.
+        chat = new_chat(key, "guide") if chat_id == GUIDE_CHAT else deps.store.load_chat(key, chat_id)
         if not chat:
             raise HTTPException(404, "chat not found")
         if not req.questions:
