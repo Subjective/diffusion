@@ -197,7 +197,7 @@ async def _claude_options(monkeypatch, tmp_path, **kw):
         async def query(self, prompt):
             pass
 
-        async def receive_response(self):
+        async def receive_messages(self):
             return
             yield
 
@@ -249,6 +249,67 @@ async def test_claude_guide_chat_runs_as_the_session_and_asks_the_reviewer(monke
         assert (
             await _claude_options(monkeypatch, tmp_path, mode=mode, approve=approve)
         ).permission_mode == mode
+
+
+async def _steered_run(monkeypatch, tmp_path, late: bool):
+    """A turn steered after its first message: mid-turn (taken in before the result), or late (after it)."""
+    import asyncio
+
+    import claude_agent_sdk
+    from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock, UserMessage
+
+    from diffusion.agent import DoneEvent, SteeredEvent, TextEvent
+    from diffusion.backends.claude_code import claude_code_runner
+
+    def result(n):
+        return ResultMessage("success", 1, 1, False, n, "s1", total_cost_usd=0.1 * n, result=f"r{n}")
+
+    class Fake:
+        def __init__(self, options):
+            self.out: asyncio.Queue = asyncio.Queue()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def query(self, prompt):
+            if prompt == "hi":
+                await self.out.put(AssistantMessage([ToolUseBlock("t1", "Read", {"file_path": "a"})], "m"))
+            else:
+                if late:  # the turn ends before the session gets to it
+                    await self.out.put(AssistantMessage([TextBlock("done")], "m"))
+                    await self.out.put(result(1))
+                await self.out.put(UserMessage(prompt))
+                await self.out.put(AssistantMessage([TextBlock("steered answer")], "m"))
+                await self.out.put(result(2))
+
+        async def receive_messages(self):
+            while True:
+                yield await self.out.get()
+
+    monkeypatch.setattr(claude_agent_sdk, "ClaudeSDKClient", Fake)
+    steer: asyncio.Queue = asyncio.Queue()
+    req = AgentRequest(system_prompt="SYS", prompt="hi", model="", cwd=tmp_path, steer=steer)
+    seen, accepted = [], asyncio.get_running_loop().create_future()
+    async for ev in claude_code_runner()(req):
+        seen.append(ev)
+        if len(seen) == 1:
+            await steer.put(("also this", accepted))
+    assert accepted.result() is True
+    assert [e.text for e in seen if isinstance(e, SteeredEvent)] == ["also this"]
+    assert seen[-1] == DoneEvent((1 if late else 0) + 2, 0.2, False, "s1", "r2")
+    return [e.text for e in seen if isinstance(e, TextEvent)]
+
+
+async def test_claude_takes_a_steered_message_into_the_running_turn(monkeypatch, tmp_path):
+    assert await _steered_run(monkeypatch, tmp_path, late=False) == ["steered answer"]
+
+
+async def test_claude_answers_a_message_steered_too_late_before_ending(monkeypatch, tmp_path):
+    # the turn ended before the session took it in: it runs as one more turn, and the run waits for it
+    assert await _steered_run(monkeypatch, tmp_path, late=True) == ["done", "steered answer"]
 
 
 def test_codex_modes_are_its_sandboxes(tmp_path):

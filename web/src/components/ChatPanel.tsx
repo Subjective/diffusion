@@ -490,38 +490,41 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
           </div>
         ))}
       </div>
-      <div className="msg ai">
-        <div className="ai-body">
-          <Trace q={qs[0]} pending={pending} />
-          {qs.map((q) => (
-            <div
-              key={q.id}
-              className={`ans${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
-              data-ans={q.id}
-            >
-              {multi && (
-                <div className={`ans-h${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
-                  <Qn q={q} />
-                  {q.anchor ? anchorLabel(q.anchor) : q.text.slice(0, 28)}
-                </div>
-              )}
-              <div className="ans-t">
-                {q.answer ? (
-                  // While streaming, the cursor sits at the end of the last line, so nothing moves when it goes.
-                  <div className={q.status === "pending" ? "streaming" : undefined}>
-                    <Markdown text={expandCites(q.answer)} />
+      {/* A steered message the session hasn't taken in yet: just the message, for now */}
+      {!qs.every((q) => q.status === "steering") && (
+        <div className="msg ai">
+          <div className="ai-body">
+            <Trace q={qs[0]} pending={pending} />
+            {qs.map((q) => (
+              <div
+                key={q.id}
+                className={`ans${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
+                data-ans={q.id}
+              >
+                {multi && (
+                  <div className={`ans-h${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
+                    <Qn q={q} />
+                    {q.anchor ? anchorLabel(q.anchor) : q.text.slice(0, 28)}
                   </div>
-                ) : (
-                  q.status === "pending" && <span className="cursor" />
                 )}
-                {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
+                <div className="ans-t">
+                  {q.answer ? (
+                    // While streaming, the cursor sits at the end of the last line, so nothing moves when it goes.
+                    <div className={q.status === "pending" ? "streaming" : undefined}>
+                      <Markdown text={expandCites(q.answer)} />
+                    </div>
+                  ) : (
+                    q.status === "pending" && <span className="cursor" />
+                  )}
+                  {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
+                </div>
+                {q.shows.length > 0 && <Shows shows={q.shows} />}
+                {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
               </div>
-              {q.shows.length > 0 && <Shows shows={q.shows} />}
-              {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
@@ -856,7 +859,7 @@ function Queue({
   onEdit: (batch: string, text: string) => void;
   link: ChatLinkProps;
 }) {
-  const { unqueue, sendNow } = useChat();
+  const { unqueue, steer } = useChat();
   const [open, setOpen] = useState(true);
   const rows = batches(waiting);
   if (!open)
@@ -895,8 +898,8 @@ function Queue({
                     <button
                       type="button"
                       className="text-btn"
-                      title="Stop this answer and send this now"
-                      onClick={() => void sendNow(batch)}
+                      title="Send this into the answer now"
+                      onClick={() => void steer(batch)}
                     >
                       Steer
                     </button>

@@ -119,3 +119,24 @@ def test_a_slash_command_shows_as_typed():
     rec = "<command-message>code-review</command-message>\n<command-name>/code-review</command-name>\n<command-args>auth</command-args>"
     assert _user_text(rec) == "/code-review auth"
     assert _user_text("<command-name>/compact</command-name>") == "/compact"
+
+
+def test_merge_keeps_a_steered_message_in_the_turn_it_joined():
+    def t(text, trace=()):
+        return {"questions": [{"n": 1, "text": text}], "answers": {}, "trace": list(trace)}
+
+    # the transcript has the steered message as a prompt of its own
+    session = [
+        t(f"why?\n\n{SHOW_REMINDER}", [{"tool": "Read a"}]),
+        t(f"and b?\n\n{SHOW_REMINDER}"),
+        t("later"),
+    ]
+    mine = {
+        "questions": [{"n": 1, "text": "why?"}, {"n": -1, "text": "and b?", "steered": 1}],
+        "answers": {},
+        "steers": 1,
+        "trace": [{"tool": "Read a"}, {"steered": 1}, {"tool": "Read b"}],
+    }
+    out = merge(session, [mine], lambda text: text.endswith(SHOW_REMINDER))
+    assert [len(x["questions"]) for x in out] == [2, 1]
+    assert out[0]["trace"] == mine["trace"] and out[1]["questions"][0]["text"] == "later"

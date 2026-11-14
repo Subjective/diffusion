@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
-from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, GuideBlock, Question, run_turn
+from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
@@ -86,6 +86,14 @@ class TurnReq(BaseModel):
     version: int | None = None  # the guide version on screen
     # The guide chat can run as the session itself (see agent.Mode); forks are always read-only.
     mode: Mode = "read-only"
+
+
+class SteerReq(BaseModel):
+    questions: list[Question]
+
+
+# Harnesses whose running turn takes a message in mid-turn (the rest stop, then send).
+STEERABLE = {"claude-code"}
 
 
 class Approval(BaseModel):
@@ -171,6 +179,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     approvals: dict[str, asyncio.Future[Decision]] = {}  # tool calls waiting on the reviewer, by id
     app.state.approvals = approvals
     running: dict[str, asyncio.Queue] = {}  # a running turn's side queue, by chat: Stop goes there
+    steering: dict[str, asyncio.Queue] = {}  # a running turn's inbox for messages sent into it, by chat
     symbols: dict[Path, SymbolIndex] = {}
     trees: dict[tuple[Path, str], frozenset[str]] = {}
     symbol_locks: dict[Path, asyncio.Lock] = {}
@@ -380,6 +389,20 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             cmds = []
         return {"harness": harness, "commands": cmds}
 
+    @app.post("/api/chats/{chat_id}/steer")
+    async def steer(chat_id: str, req: SteerReq) -> dict:
+        """Send questions into the running turn; ok is False when there's none, or it can't take them (then the
+        client stops it and sends them as the next turn)."""
+        inbox = steering.get(chat_id)
+        if inbox is None or not req.questions:
+            return {"ok": False}
+        accepted: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        await inbox.put((req.questions, accepted))
+        try:
+            return {"ok": await asyncio.wait_for(accepted, 10)}
+        except TimeoutError:
+            return {"ok": False}
+
     @app.post("/api/chats/{chat_id}/stop")
     async def stop(chat_id: str) -> dict:
         side = running.get(chat_id)
@@ -457,6 +480,9 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                         approvals.pop(aid, None)
 
                 running[chat_id] = side
+                inbox: asyncio.Queue | None = asyncio.Queue() if harness in STEERABLE else None
+                if inbox:
+                    steering[chat_id] = inbox
                 try:
                     for resume, fork, cwd in _sessions(chat, meta, harness):
                         said = False
@@ -466,7 +492,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                             async for ev in (evs := merged(run_turn(
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
                                 resume, fork=fork, adopt=adopt, cwd=cwd, block=block, mode=mode, approve=ask,
-                                harness=harness if chat.get("kind") == "guide" else "",
+                                harness=harness if chat.get("kind") == "guide" else "", steer=inbox,
                             ), side)):  # fmt: skip
                                 if isinstance(ev, Stop):
                                     await evs.aclose()
@@ -474,6 +500,14 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                     break
                                 if isinstance(ev, ApprovalAsked):
                                     yield "approval", ev.payload
+                                elif isinstance(ev, ChatSteered):
+                                    said = True
+                                    k = record["steers"] = record.get("steers", 0) + 1
+                                    record["trace"].append({"steered": k})  # where its own work starts
+                                    for q in ev.questions:  # shown as a turn of their own
+                                        record["questions"].append({**q.model_dump(), "steered": k})
+                                        record["answers"][str(q.n)] = ""
+                                    yield "steered", {"ns": [q.n for q in ev.questions]}
                                 elif isinstance(ev, ChatDelta):
                                     said = True
                                     record["answers"][str(ev.n)] += ev.text
@@ -517,16 +551,16 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                         n, note = save_chat_guide(deps, prep, block.found, meta, chat)
                         if n:
                             record["guide_version"] = n
-                            yield "guide", {"n": req.questions[-1].n, "version": n}
+                            yield "guide", {"n": record["questions"][-1]["n"], "version": n}
                         else:
-                            record["answers"][str(req.questions[-1].n)] += note
-                            yield "delta", {"n": req.questions[-1].n, "text": note}
+                            record["answers"][str(record["questions"][-1]["n"])] += note
+                            yield "delta", {"n": record["questions"][-1]["n"], "text": note}
                     record["status"] = "done"
                     record["seconds"] = round(time.time() - record["at"], 1)
                     yield (
                         "done",
                         {
-                            "ns": [q.n for q in req.questions],
+                            "ns": [q["n"] for q in record["questions"]],
                             "seconds": record["seconds"],
                             **({"stopped": True} if record.get("stopped") else {}),
                         },
@@ -538,6 +572,11 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 finally:
                     if running.get(chat_id) is side:
                         del running[chat_id]
+                    if inbox and steering.get(chat_id) is inbox:
+                        del steering[chat_id]
+                    while inbox and not inbox.empty():  # sent as the turn ended: the client sends them next
+                        if not (f := inbox.get_nowait()[1]).done():
+                            f.set_result(False)
                     for aid in mine:  # the reviewer left: nothing waits forever
                         if (f := approvals.pop(aid, None)) and not f.done():
                             f.set_result("deny")

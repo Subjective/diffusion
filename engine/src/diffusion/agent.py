@@ -7,6 +7,7 @@ written by the agent Diffusion is launched from.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +43,13 @@ class ThinkingEvent:
 
 
 @dataclass
+class SteeredEvent:
+    """A message sent into the running turn (``AgentRequest.steer``) reached the model."""
+
+    text: str
+
+
+@dataclass
 class DoneEvent:
     turns: int
     cost_usd: float | None
@@ -50,7 +58,7 @@ class DoneEvent:
     result: str | None = None
 
 
-Event = ToolEvent | ToolFailedEvent | TextEvent | ThinkingEvent | DoneEvent
+Event = ToolEvent | ToolFailedEvent | TextEvent | ThinkingEvent | SteeredEvent | DoneEvent
 
 
 def ran(command: str) -> str:
@@ -112,6 +120,9 @@ class AgentRequest:
     include_partial: bool = False
     mode: Mode = "read-only"
     approve: Approver | None = None
+    # Messages to slip into the running turn, as (text, accepted): the runner sets accepted True once it has sent
+    # the text on, or False when the turn is already over. Only runners that can steer read it.
+    steer: asyncio.Queue[tuple[str, asyncio.Future[bool]]] | None = None
 
     @property
     def native(self) -> bool:

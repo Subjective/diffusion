@@ -660,3 +660,47 @@ async def test_a_command_in_the_guide_session_goes_as_typed(setup):
         await client.post("/api/chats/guide/turn", json={"url": URL, "questions": [{"n": 1, "text": text}]})
     assert prompts[0] == "/code-review auth"
     assert prompts[1] != "why?" and "why?" in prompts[1]  # a question keeps the chat's wrapping
+
+
+async def test_steer_sends_questions_into_the_running_turn(setup):
+    client, runners, deps, prep = setup
+    import asyncio
+
+    from diffusion.agent import SteeredEvent, TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    started = asyncio.Event()
+
+    async def runner(req):
+        yield TextEvent("first part")
+        started.set()
+        text, accepted = await req.steer.get()  # the runner takes it in at its next step
+        accepted.set_result(True)
+        assert text.startswith("also check the timer")
+        yield SteeredEvent(text)
+        yield TextEvent("steered part")
+        yield DoneEvent(2, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "long job"}]}
+
+    async def steerer():
+        await started.wait()
+        steer = {"questions": [{"n": 2, "text": "also check the timer"}]}
+        assert (await client.post(f"/api/chats/{cid}/steer", json=steer)).json() == {"ok": True}
+
+    r, _ = await asyncio.wait_for(
+        asyncio.gather(client.post(f"/api/chats/{cid}/turn", json=body), steerer()), timeout=10
+    )
+    events = parse_sse(r.text)
+    assert ("steered", {"ns": [2]}) in events
+    assert ("delta", {"n": 2, "text": "steered part"}) in events
+    assert events[-1][0] == "done" and events[-1][1]["ns"] == [1, 2]
+    turn = deps.store.load_chat(prep.meta.ref.key, "guide")["turns"][-1]
+    assert [q["text"] for q in turn["questions"]] == ["long job", "also check the timer"]
+    assert turn["answers"] == {"1": "first part", "2": "steered part"}
+    # nothing running: the client stops and sends instead
+    assert (
+        await client.post(f"/api/chats/{cid}/steer", json={"questions": [{"n": 3, "text": "x"}]})
+    ).json() == {"ok": False}

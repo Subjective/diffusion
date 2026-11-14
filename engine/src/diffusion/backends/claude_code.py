@@ -7,6 +7,7 @@ PreToolUse hook; our custom tools are served in-process over the SDK's MCP bridg
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,7 @@ from ..agent import (
     Event,
     Runner,
     SandboxError,
+    SteeredEvent,
     TextEvent,
     ThinkingEvent,
     ToolEvent,
@@ -64,6 +66,17 @@ def sandbox_decision(tool_name: str, tool_input: dict, root: Path) -> str | None
                 return str(e)
     if tool_name == "Glob" and str(tool_input.get("pattern", "")).startswith(("/", "~", "..")):
         return "glob patterns must be relative to the repository"
+    return None
+
+
+def user_text(content: Any) -> str | None:
+    """A user message's text, as it was sent (a string, or text blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [getattr(b, "text", None) for b in content]
+        if parts and all(isinstance(p, str) for p in parts):
+            return "".join(parts)  # type: ignore[arg-type]
     return None
 
 
@@ -137,6 +150,8 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
             thinking={"type": "adaptive", "display": "summarized"},  # the model decides; we get readable text
             include_partial_messages=req.include_partial,
             cli_path=cli_path,
+            # Echo the user messages the session takes in, so we see when a steered one reaches the model.
+            extra_args={"replay-user-messages": None},
         )
         if req.native:
             # The session as it runs in the terminal: Claude Code's own prompt, tools, settings, CLAUDE.md and
@@ -189,27 +204,65 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
             )
         async with ClaudeSDKClient(options=opts) as client:
             await client.query(req.prompt)
-            async for m in client.receive_response():
-                if isinstance(m, StreamEvent):
-                    ev = m.event
-                    delta = ev.get("delta", {})
-                    if ev.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
-                        yield TextEvent(delta["text"])
-                    elif ev.get("type") == "content_block_delta" and delta.get("type") == "thinking_delta":
-                        yield ThinkingEvent(delta["thinking"])
-                elif isinstance(m, AssistantMessage):
-                    for b in m.content:
-                        if isinstance(b, ToolUseBlock):
-                            yield ToolEvent(b.name, summarize_tool(b.name, b.input), b.id)
-                        elif isinstance(b, TextBlock) and not req.include_partial:
-                            yield TextEvent(b.text)
-                        elif isinstance(b, ThinkingBlock) and b.thinking and not req.include_partial:
-                            yield ThinkingEvent(b.thinking + "\n")
-                elif isinstance(m, UserMessage) and isinstance(m.content, list):
-                    for b in m.content:
-                        if isinstance(b, ToolResultBlock) and b.is_error:
-                            yield ToolFailedEvent(b.tool_use_id)
-                elif isinstance(m, ResultMessage):
-                    yield DoneEvent(m.num_turns, m.total_cost_usd, m.is_error, m.session_id, m.result)
+            # Steering: a message sent mid-turn goes into the running session, which takes it in at its next step
+            # (as the terminal does). If the turn ends first, the session runs it as one more turn, which we wait
+            # for too, so the run ends only once every steered message has been answered.
+            steered: list[str] = []  # sent on, not yet taken in
+            over = False
+
+            async def take_steers(inbox: asyncio.Queue[tuple[str, asyncio.Future[bool]]]) -> None:
+                while True:
+                    text, accepted = await inbox.get()
+                    if over:
+                        accepted.set_result(False)
+                        continue
+                    steered.append(text)
+                    await client.query(text)
+                    if not accepted.done():
+                        accepted.set_result(True)
+
+            pump = asyncio.create_task(take_steers(req.steer)) if req.steer else None
+            turns, last = 0, None
+            try:
+                async for m in client.receive_messages():
+                    if isinstance(m, StreamEvent):
+                        ev = m.event
+                        delta = ev.get("delta", {})
+                        if ev.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+                            yield TextEvent(delta["text"])
+                        elif (
+                            ev.get("type") == "content_block_delta" and delta.get("type") == "thinking_delta"
+                        ):
+                            yield ThinkingEvent(delta["thinking"])
+                    elif isinstance(m, AssistantMessage):
+                        for b in m.content:
+                            if isinstance(b, ToolUseBlock):
+                                yield ToolEvent(b.name, summarize_tool(b.name, b.input), b.id)
+                            elif isinstance(b, TextBlock) and not req.include_partial:
+                                yield TextEvent(b.text)
+                            elif isinstance(b, ThinkingBlock) and b.thinking and not req.include_partial:
+                                yield ThinkingEvent(b.thinking + "\n")
+                    elif isinstance(m, UserMessage):
+                        if isinstance(m.content, list):
+                            for b in m.content:
+                                if isinstance(b, ToolResultBlock) and b.is_error:
+                                    yield ToolFailedEvent(b.tool_use_id)
+                        if (text := user_text(m.content)) in steered:
+                            steered.remove(text)
+                            yield SteeredEvent(text)
+                    elif isinstance(m, ResultMessage):
+                        turns += m.num_turns
+                        last = m
+                        if m.is_error or not steered:
+                            over = True
+                            break
+            finally:
+                over = True
+                if pump:
+                    pump.cancel()
+                    while req.steer and not req.steer.empty():
+                        req.steer.get_nowait()[1].set_result(False)
+            if last:
+                yield DoneEvent(turns, last.total_cost_usd, last.is_error, last.session_id, last.result)
 
     return run

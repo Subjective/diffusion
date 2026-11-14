@@ -35,7 +35,7 @@ export function useQuestionBadges(
                 ? LoaderCircle
                 : q.status === "staged"
                   ? null
-                  : q.status === "waiting"
+                  : q.status === "waiting" || q.status === "steering"
                     ? Clock
                     : MessageCircle;
             return (

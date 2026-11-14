@@ -209,11 +209,18 @@ def merge(session: list[dict] | None, stored: list[dict], asked_here) -> list[di
         if not asked_here(text):
             out.append(t)
             continue
+        # Messages steered into a turn reach the transcript as prompts of their own: the turn they joined has them.
         i = next(
-            (i for i, s in enumerate(rest) if all(q["text"].strip() in text for q in s["questions"])), None
+            (
+                i
+                for i, s in enumerate(rest)
+                if all(q["text"].strip() in text for q in s["questions"] if not q.get("steered"))
+            ),
+            None,
         )
         if i is not None:
-            # Diffusion's record, with the transcript's account of what the agent did (it marks failed calls).
+            # Diffusion's record, with the transcript's account of what the agent did (it marks failed calls),
+            # unless something was steered into it: the transcript splits that turn, so keep the record's own.
             mine = rest.pop(i)
-            out.append({**mine, "trace": t["trace"]} if t["trace"] else mine)
+            out.append({**mine, "trace": t["trace"]} if t["trace"] and not mine.get("steers") else mine)
     return out + rest

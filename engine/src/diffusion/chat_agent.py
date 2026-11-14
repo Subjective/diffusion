@@ -11,12 +11,15 @@ change the guide, it ends its answer with the whole updated guide in a ``diffusi
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from contextlib import aclosing
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
+from typing import cast
 
 from pydantic import BaseModel, Field
 
@@ -27,6 +30,7 @@ from .agent import (
     Event,
     Mode,
     Runner,
+    SteeredEvent,
     TextEvent,
     ThinkingEvent,
     ToolEvent,
@@ -200,6 +204,13 @@ class SectionSplitter:
 class ChatDelta:
     n: int
     text: str
+
+
+@dataclass
+class ChatSteered:
+    """Questions sent into the running turn reached the model; what it writes from here answers them."""
+
+    questions: list[Question]
 
 
 @dataclass
@@ -377,8 +388,12 @@ async def run_turn(
     mode: Mode = "read-only",
     approve: Approver | None = None,
     harness: str = "",
-) -> AsyncIterator[ChatDelta | ChatFocus | ToolEvent | ToolFailedEvent | ThinkingEvent | DoneEvent]:
-    """``block`` collects an updated guide the answer ends with (``block.found``)."""
+    steer: asyncio.Queue[tuple[list[Question], asyncio.Future[bool]]] | None = None,
+) -> AsyncIterator[
+    ChatDelta | ChatFocus | ChatSteered | ToolEvent | ToolFailedEvent | ThinkingEvent | DoneEvent
+]:
+    """``block`` collects an updated guide the answer ends with (``block.found``). ``steer`` takes questions to
+    send into the running turn, for runners that can (see ``AgentRequest.steer``)."""
     shown: list[dict] = []
     tools = [hunk_tool(prep.index), show_code_tool(prep.index, shown)]
     req = AgentRequest(
@@ -396,9 +411,20 @@ async def run_turn(
         include_partial=True,
         mode=mode,
         approve=approve,
+        steer=asyncio.Queue() if steer else None,
     )
     block = block if block is not None else GuideBlock()
     split = SectionSplitter([q.n for q in questions])
+    sent: dict[str, list[Question]] = {}  # steered text -> its questions
+
+    async def forward(src: asyncio.Queue, dst: asyncio.Queue) -> None:
+        while True:
+            qs, accepted = await src.get()
+            text = format_turn(qs, prep.index)
+            sent[text] = qs
+            await dst.put((text, accepted))
+
+    relay = asyncio.create_task(forward(steer, req.steer)) if steer and req.steer else None
     drained = 0
 
     def focuses() -> list[ChatFocus]:
@@ -412,11 +438,39 @@ async def run_turn(
             out.append(ChatFocus(n, s["file"], s["start"], s["end"], s["side"], s["label"]))
         return out
 
+    try:
+        async with aclosing(cast(AsyncGenerator[Event], runner(req))) as events:
+            async for out in _events(events, split, block, focuses, prep, sent):
+                yield out
+    finally:
+        if relay:
+            relay.cancel()
+
+
+async def _events(
+    events: AsyncIterator[Event],
+    split: SectionSplitter,
+    block: GuideBlock,
+    focuses: Callable[[], list[ChatFocus]],
+    prep: Prepared,
+    sent: dict[str, list[Question]],
+) -> AsyncIterator[
+    ChatDelta | ChatFocus | ChatSteered | ToolEvent | ToolFailedEvent | ThinkingEvent | DoneEvent
+]:
+    """The runner's events, as the chat's: text routed to questions, guide blocks held back, steers marked."""
     ev: Event
-    async for ev in runner(req):
+    async for ev in events:
         for f in focuses():
             yield f
-        if isinstance(ev, TextEvent):
+        if isinstance(ev, SteeredEvent):
+            qs = sent.pop(ev.text, None)
+            if qs:
+                for n, t in split.flush():
+                    yield ChatDelta(n, t)
+                split.valid |= {q.n for q in qs}
+                split.cur = qs[0].n
+                yield ChatSteered(qs)
+        elif isinstance(ev, TextEvent):
             for n, t in split.feed(block.feed(ev.text)):
                 yield ChatDelta(n, t)
         elif isinstance(ev, ThinkingEvent | ToolFailedEvent):

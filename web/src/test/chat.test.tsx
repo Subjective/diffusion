@@ -23,13 +23,25 @@ const turnBodies: { questions: { n: number; text: string }[]; version?: number |
 const sse = (events: [string, unknown][]) =>
   events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join("");
 
+// Messages steered into the running turn (/steer): taken in after its own answer, before it ends.
+let steerOk = true;
+let steered: { n: number; text: string }[] = [];
+
 function streamBody(chunks: string[], gate?: Promise<void>) {
   const enc = new TextEncoder();
   return new ReadableStream({
     async start(c) {
       c.enqueue(enc.encode(chunks[0]));
       if (gate) await gate;
-      for (const ch of chunks.slice(1)) c.enqueue(enc.encode(ch));
+      const end = chunks.length - 1;
+      for (const ch of chunks.slice(1, end)) c.enqueue(enc.encode(ch));
+      if (steered.length) {
+        const qs = steered;
+        steered = [];
+        c.enqueue(enc.encode(sse([["steered", { ns: qs.map((q) => q.n) }]])));
+        for (const q of qs) c.enqueue(enc.encode(sse([["delta", { n: q.n, text: `steered ${q.text}` }]])));
+      }
+      if (end > 0) c.enqueue(enc.encode(chunks[end]));
       c.close();
     },
   });
@@ -39,6 +51,10 @@ const approveBodies: unknown[] = [];
 globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(String(input), "http://x");
   const path = url.pathname;
+  if (path.endsWith("/steer")) {
+    if (steerOk) steered.push(...JSON.parse(String(init!.body)).questions);
+    return new Response(JSON.stringify({ ok: steerOk }));
+  }
   if (path.endsWith("/approve")) {
     approveBodies.push(JSON.parse(String(init!.body)));
     return new Response("{}");
@@ -515,4 +531,40 @@ test("@ in the composer picks a file from the diff", async () => {
   expect(ta.value).toBe("what about @src/auth/session.ts ");
   expect(document.querySelector(".ta-menu")).toBeNull();
   expect(turnBodies.at(-1)?.questions[0]?.text).not.toBe("what about @sess");
+});
+
+test("Steer sends a queued message into the running answer, or else stops it and sends it next", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  turnBodies.length = 0;
+  type("first?");
+  await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
+  type("also this?");
+  fireEvent.click(screen.getByText("Steer"));
+  // in the thread at once, as a turn of its own; the queue is empty
+  await waitFor(() =>
+    expect([...document.querySelectorAll(".bubble")].map((b) => b.textContent)).toEqual(["first?", "also this?"]),
+  );
+  expect(document.querySelector(".queue")).toBeNull();
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(2));
+  const answers = [...document.querySelectorAll(".ans-t")].map((a) => a.textContent);
+  expect(answers).toEqual(["answer 0", "steered also this?"]);
+  expect(turnBodies).toHaveLength(1); // one turn answered both
+
+  // a harness that can't steer: stop, then it goes as the next turn
+  steerOk = false;
+  type("second?");
+  await waitFor(() => expect(turnBodies).toHaveLength(2));
+  type("instead?");
+  fireEvent.click(screen.getByText("Steer"));
+  await waitFor(() => {
+    const fetched = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    expect(fetched.some((u) => /\/stop$/.test(u))).toBe(true);
+  });
+  await act(async () => release!());
+  await waitFor(() => expect(turnBodies).toHaveLength(3));
+  expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["instead?"]);
+  await act(async () => release!());
+  steerOk = true;
 });
