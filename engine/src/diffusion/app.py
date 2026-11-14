@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from . import __version__
 from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, GuideBlock, Question, run_turn
+from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
 from .pipeline import Prepared, prepare, target_ref
@@ -351,8 +352,33 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             return {**chat, "harness": harness}
         found = await asyncio.to_thread(session_turns, harness, session)
         reminder = SHOW_REMINDER.strip()
-        turns = merge(found, chat.get("turns") or [], lambda text: text.rstrip().endswith(reminder))
+        # Diffusion's turns end with its reminder, except commands, which go as typed.
+        sent = {
+            q["text"].strip()
+            for t in chat.get("turns") or []
+            for q in t["questions"]
+            if q["text"].startswith("/")
+        }
+        turns = merge(
+            found,
+            chat.get("turns") or [],
+            lambda text: text.rstrip().endswith(reminder) or text.strip() in sent,
+        )
         return {**chat, "harness": harness, "turns": turns}
+
+    @app.get("/api/commands")
+    async def commands(url: str) -> dict:
+        """What the guide session can run from the / menu, as its harness has it."""
+        prep = await get_prepared(url)
+        meta = (d().store.load_guide(pr_key(url), prep.meta.head_sha) or {}).get("meta") or {}
+        harness = meta.get("harness")
+        if not harness or not meta.get("session"):
+            return {"harness": harness, "commands": []}
+        try:
+            cmds = await session_commands(harness, _dir(meta.get("cwd")), d().cfg.cli_path(harness))
+        except Exception:  # no CLI, or it wouldn't start: the menu is just empty
+            cmds = []
+        return {"harness": harness, "commands": cmds}
 
     @app.post("/api/chats/{chat_id}/stop")
     async def stop(chat_id: str) -> dict:
@@ -440,6 +466,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                             async for ev in (evs := merged(run_turn(
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
                                 resume, fork=fork, adopt=adopt, cwd=cwd, block=block, mode=mode, approve=ask,
+                                harness=harness if chat.get("kind") == "guide" else "",
                             ), side)):  # fmt: skip
                                 if isinstance(ev, Stop):
                                     await evs.aclose()

@@ -641,3 +641,22 @@ async def test_stop_ends_a_running_turn_and_closes_the_agent(setup):
     assert turn["status"] == "done" and turn["stopped"] is True
     # nothing running: stopping again is a no-op
     assert (await client.post(f"/api/chats/{cid}/stop")).json() == {"ok": False}
+
+
+async def test_a_command_in_the_guide_session_goes_as_typed(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    prompts = []
+
+    async def runner(req):
+        prompts.append(req.prompt)
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    for text in ("/code-review auth", "why?"):
+        await client.post("/api/chats/guide/turn", json={"url": URL, "questions": [{"n": 1, "text": text}]})
+    assert prompts[0] == "/code-review auth"
+    assert prompts[1] != "why?" and "why?" in prompts[1]  # a question keeps the chat's wrapping

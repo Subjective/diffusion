@@ -83,3 +83,16 @@ export async function fetchTargets(): Promise<Target[]> {
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }
+
+export interface Command {
+  name: string;
+  description: string;
+  hint: string;
+}
+
+/** What the guide session can run from the composer's / menu (Claude Code commands, Codex skills). */
+export async function fetchCommands(url: string): Promise<Command[]> {
+  const res = await fetch(`/api/commands?url=${encodeURIComponent(url)}`);
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()).commands ?? [];
+}

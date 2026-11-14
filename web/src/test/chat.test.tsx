@@ -492,3 +492,15 @@ test("an edit to approve shows its diff, and allowing edits for the session swit
   expect(useChat.getState().mode).toBe("default");
   p.unmount();
 });
+
+test("@ in the composer picks a file from the diff", async () => {
+  await mount();
+  const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  fireEvent.change(ta, { target: { value: "what about @sess", selectionStart: 16 } });
+  await waitFor(() => expect(document.querySelector(".ta-menu")).toBeTruthy());
+  expect(document.querySelector(".ta-item.on .ta-label")!.textContent).toBe("session.ts");
+  fireEvent.keyDown(ta, { key: "Enter" });
+  expect(ta.value).toBe("what about @src/auth/session.ts ");
+  expect(document.querySelector(".ta-menu")).toBeNull();
+  expect(turnBodies.at(-1)?.questions[0]?.text).not.toBe("what about @sess");
+});

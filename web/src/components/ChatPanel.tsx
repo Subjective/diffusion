@@ -31,6 +31,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Command, fetchCommands } from "../api";
 import {
   type Anchor,
   type Ask,
@@ -50,6 +51,7 @@ import { CHAT_W, startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
 import { cachedTree } from "../lib/tree";
+import { complete, rankCommands, rankFiles, type Trigger, trigger } from "../lib/typeahead";
 import { useApp } from "../store";
 import type { StepKind } from "../types";
 import { useUI } from "../ui";
@@ -912,12 +914,127 @@ function Queue({
   );
 }
 
+const commandLists = new Map<string, Promise<Command[]>>();
+/** The guide session's / commands, once per target. */
+function useCommands(on: boolean): Command[] {
+  const url = useApp((s) => s.pr?.url ?? s.url);
+  const [cmds, setCmds] = useState<Command[]>([]);
+  useEffect(() => {
+    if (!on || !url) return setCmds([]);
+    let live = true;
+    if (!commandLists.has(url))
+      commandLists.set(
+        url,
+        Promise.resolve()
+          .then(() => fetchCommands(url))
+          .catch(() => {
+            commandLists.delete(url);
+            return [];
+          }),
+      );
+    void commandLists.get(url)!.then((c) => live && setCmds(c));
+    return () => {
+      live = false;
+    };
+  }, [on, url]);
+  return cmds;
+}
+
+type Pick = { key: string; insert: string; label: string; detail: string };
+
+/** The @ file and / command menu for what's typed at the caret. */
+function useTypeahead(text: string, caret: number, guide: boolean) {
+  const known = useKnownFiles();
+  const files = useApp((s) => s.files);
+  const cmds = useCommands(guide);
+  const [closed, setClosed] = useState<number | null>(null);
+  const [active, setActive] = useState(0);
+  const t: Trigger | null = trigger(text, caret);
+  const kind = t?.kind;
+  const query = t?.query ?? "";
+  const picks = useMemo<Pick[]>(() => {
+    if (!kind) return [];
+    if (kind === "/")
+      return guide
+        ? rankCommands(cmds, query).map((c) => ({
+            key: c.name,
+            insert: `/${c.name}`,
+            label: `/${c.name}`,
+            detail: c.description,
+          }))
+        : [];
+    const changed = new Set(files.map((f) => f.path));
+    return rankFiles(known, query, changed).map((p) => {
+      const i = p.lastIndexOf("/");
+      return { key: p, insert: `@${p}`, label: p.slice(i + 1), detail: i > 0 ? p.slice(0, i) : "" };
+    });
+  }, [kind, query, guide, cmds, known, files]);
+  const open = !!t && picks.length > 0 && closed !== t.start;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new query starts at the top
+  useEffect(() => setActive(0), [kind, query]);
+  useEffect(() => {
+    if (!kind) setClosed(null);
+  }, [kind]);
+  return {
+    t,
+    picks,
+    open,
+    active: Math.min(active, picks.length - 1),
+    setActive,
+    close: () => setClosed(t?.start ?? null),
+  };
+}
+
+function TypeaheadMenu({
+  picks,
+  active,
+  onPick,
+  onHover,
+}: {
+  picks: Pick[];
+  active: number;
+  onPick: (p: Pick) => void;
+  onHover: (i: number) => void;
+}) {
+  return (
+    <div className="ta-menu" role="listbox">
+      {picks.map((p, i) => (
+        <button
+          type="button"
+          role="option"
+          aria-selected={i === active}
+          key={p.key}
+          className={`ta-item${i === active ? " on" : ""}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onMouseEnter={() => onHover(i)}
+          onClick={() => onPick(p)}
+        >
+          <span className="ta-label">{p.label}</span>
+          {p.detail && <span className="ta-detail">{p.detail}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Composer({ link }: { link: ChatLinkProps }) {
   const { chat, unstage, ask, sendStaged, stop, editQueued } = useChat();
 
   const [text, setText] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const [caret, setCaret] = useState(0);
   const ta = useRef<HTMLTextAreaElement>(null);
+  const menu = useTypeahead(text, caret, chat.kind === "guide");
+  const pick = (p: Pick) => {
+    if (!menu.t) return;
+    const [next, at] = complete(text, caret, menu.t, p.insert);
+    setText(next);
+    setCaret(at);
+    requestAnimationFrame(() => {
+      ta.current?.setSelectionRange(at, at);
+      autosize(ta.current, 12);
+    });
+  };
   const staged = chat.questions.filter((q) => q.status === "staged");
   const waiting = chat.questions.filter((q) => q.status === "waiting");
   // Queuing a line comment puts you here, so ↵ sends the batch (the popup that queued it has just closed).
@@ -964,6 +1081,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
     <div className="composer-wrap">
       {waiting.length > 0 && <Queue waiting={waiting} editing={editing} onEdit={startEdit} link={link} />}
       <div className="composer stack">
+        {menu.open && <TypeaheadMenu picks={menu.picks} active={menu.active} onPick={pick} onHover={menu.setActive} />}
         {editing && (
           <div className="notes">
             <span className="editing-chip">
@@ -1001,9 +1119,26 @@ function Composer({ link }: { link: ChatLinkProps }) {
           placeholder="Ask anything"
           onChange={(e) => {
             setText(e.target.value);
+            setCaret(e.target.selectionStart);
             autosize(e.target, 12);
           }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onKeyDown={(e) => {
+            if (menu.open && !e.nativeEvent.isComposing) {
+              const n = menu.picks.length;
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                return menu.setActive((menu.active + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+              }
+              if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                e.preventDefault();
+                return pick(menu.picks[menu.active]);
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                return menu.close();
+              }
+            }
             if (e.key === "Escape" && editing) {
               e.preventDefault();
               cancelEdit();

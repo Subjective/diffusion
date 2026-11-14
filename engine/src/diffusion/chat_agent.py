@@ -33,6 +33,7 @@ from .agent import (
     ToolFailedEvent,
     ToolSpec,
 )
+from .commands import raw_command
 from .hunks import DiffIndex
 from .pipeline import Prepared
 
@@ -375,13 +376,16 @@ async def run_turn(
     max_turns: int = 24,
     mode: Mode = "read-only",
     approve: Approver | None = None,
+    harness: str = "",
 ) -> AsyncIterator[ChatDelta | ChatFocus | ToolEvent | ToolFailedEvent | ThinkingEvent | DoneEvent]:
     """``block`` collects an updated guide the answer ends with (``block.found``)."""
     shown: list[dict] = []
     tools = [hunk_tool(prep.index), show_code_tool(prep.index, shown)]
     req = AgentRequest(
         system_prompt=SYSTEM_PROMPT + "\n\n" + MODE_NOTE[mode] + "\n\n" + seed_context(prep, guide),
-        prompt=format_turn(questions, prep.index),
+        # A command (`/code-review`, a Codex `$skill`) goes as typed, so the harness runs it rather than reading it.
+        prompt=(len(questions) == 1 and not questions[0].anchor and raw_command(harness, questions[0].text))
+        or format_turn(questions, prep.index),
         model=model,
         cwd=cwd or prep.checkout.worktree,
         tools=tools,

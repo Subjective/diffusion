@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 
 from .agent import summarize_tool
+from .commands import TERMINAL_ONLY
 
 _REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 # Text the CLI injects as a "user" message: slash-command echoes, local command output, interrupts, context.
@@ -41,6 +42,8 @@ def _turn(text: str) -> dict:
 
 
 _TAG = re.compile(r"^<([A-Za-z][\w-]*)[\s>]")
+_CMD = re.compile(r"<command-name>\s*(/?[^<\s]+)\s*</command-name>")
+_ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.S)
 _HUMAN = re.compile(r"<message\b[^>]*\bfrom=\"human\"[^>]*>(.*?)</message>", re.S)
 
 
@@ -48,6 +51,13 @@ def _user_text(text: str) -> str | bool:
     """A prompt as the person typed it; False for one to leave out (CLI echoes), True for one a harness sent on its
     own (notifications, other agents' messages), whose reply is left out but whose work is kept."""
     text = _REMINDER.sub("", text).strip()
+    if m := _CMD.search(text):
+        # A slash command the person ran, as Claude Code records it: show it as they typed it.
+        name = "/" + m.group(1).lstrip("/")
+        if name[1:] in TERMINAL_ONLY:
+            return False  # terminal housekeeping like /clear, not a question
+        args = a.group(1).strip() if (a := _ARGS.search(text)) else ""
+        return f"{name} {args}".strip()
     if not text or text.startswith(_INJECTED):
         return False
     if _TAG.match(text):

@@ -111,3 +111,11 @@ def test_merge_keeps_diffusions_own_record_of_its_turns():
     ]
     assert out[1]["shows"] == ["x"] and out[1]["trace"][0]["failed"]
     assert merge(None, stored, lambda _: False) == stored
+
+
+def test_a_slash_command_shows_as_typed():
+    from diffusion.transcripts import _user_text
+
+    rec = "<command-message>code-review</command-message>\n<command-name>/code-review</command-name>\n<command-args>auth</command-args>"
+    assert _user_text(rec) == "/code-review auth"
+    assert _user_text("<command-name>/compact</command-name>") == "/compact"
