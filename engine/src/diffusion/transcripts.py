@@ -81,12 +81,12 @@ class _Builder:
         self.turns: list[dict] = []
         self.muted = False
 
-    def ask(self, text: str | bool) -> None:
+    def ask(self, text: str | bool, uuid: str | None = None) -> None:
         if text is False:
             return
         self.muted = text is True
         if isinstance(text, str):
-            self.turns.append(_turn(text))
+            self.turns.append({**_turn(text), **({"uuid": uuid} if uuid else {})})
 
     @property
     def cur(self) -> dict | None:
@@ -120,16 +120,29 @@ class _Builder:
                     return
 
 
+def _active_branch(entries: list[dict]) -> list[dict]:
+    """The conversation as it now stands. Rewinding in Claude Code (editing an earlier message) branches the
+    transcript: the abandoned messages stay in the file. Follow the links back from the latest message (across
+    compactions) and keep only what's on that path."""
+    by_id = {e["uuid"]: e for e in entries if e.get("uuid")}
+    leaf = next((e for e in reversed(entries) if e.get("uuid") and not e.get("isSidechain")), None)
+    on: set[str] = set()
+    while leaf is not None and leaf["uuid"] not in on:
+        on.add(leaf["uuid"])
+        leaf = by_id.get(leaf.get("parentUuid") or leaf.get("logicalParentUuid") or "")
+    return [e for e in entries if not e.get("uuid") or e["uuid"] in on]
+
+
 def read_claude(path: Path) -> list[dict]:
     b = _Builder()
-    for e in _lines(path):
+    for e in _active_branch(list(_lines(path))):
         if e.get("isSidechain") or e.get("isMeta") or e.get("isCompactSummary"):
             continue
         msg = e.get("message") or {}
         content = msg.get("content")
         if e.get("type") == "user":
             if isinstance(content, str):
-                b.ask(_user_text(content))
+                b.ask(_user_text(content), e.get("uuid"))
                 continue
             texts = []
             for c in content or []:
@@ -138,7 +151,7 @@ def read_claude(path: Path) -> list[dict]:
                 elif c.get("type") == "text":
                     texts.append(c.get("text", ""))
             if texts:
-                b.ask(_user_text("\n".join(texts)))
+                b.ask(_user_text("\n".join(texts)), e.get("uuid"))
         elif e.get("type") == "assistant":
             for c in content if isinstance(content, list) else []:
                 kind = c.get("type")
@@ -149,6 +162,14 @@ def read_claude(path: Path) -> list[dict]:
                 elif kind == "tool_use":
                     b.tool(summarize_tool(c.get("name", "tool"), c.get("input") or {}), c.get("id"))
     return b.turns
+
+
+def rewind_point(path: Path, uuid: str) -> str | None:
+    """Where to resume a Claude Code session to edit its message ``uuid``: the entry just before it."""
+    for e in _lines(path):
+        if e.get("uuid") == uuid:
+            return e.get("parentUuid") or e.get("logicalParentUuid")
+    return None
 
 
 def read_codex(path: Path) -> list[dict]:
@@ -199,10 +220,11 @@ def session_turns(harness: str, session: str, home: Path | None = None) -> list[
 def merge(session: list[dict] | None, stored: list[dict], asked_here) -> list[dict]:
     """The transcript's turns, with each one Diffusion asked replaced by its own record (anchors, shown code, guide
     versions). ``asked_here(text)`` says whether a transcript prompt came from Diffusion. Stored turns the
-    transcript doesn't have yet (one still streaming) go last."""
+    transcript doesn't have yet (one still streaming) go last; ones it no longer has (rewound away) are dropped."""
     if session is None:
         return stored
-    rest = list(stored)
+    rest = list(enumerate(stored))
+    last = -1  # the latest stored turn the transcript has
     out: list[dict] = []
     for t in session:
         text = t["questions"][0]["text"]
@@ -213,14 +235,17 @@ def merge(session: list[dict] | None, stored: list[dict], asked_here) -> list[di
         i = next(
             (
                 i
-                for i, s in enumerate(rest)
-                if all(q["text"].strip() in text for q in s["questions"] if not q.get("steered"))
+                for i, (_, s) in enumerate(rest)
+                if (s.get("uuid") == t.get("uuid") if s.get("uuid") and t.get("uuid") else True)
+                and all(q["text"].strip() in text for q in s["questions"] if not q.get("steered"))
             ),
             None,
         )
         if i is not None:
             # Diffusion's record, with the transcript's account of what the agent did (it marks failed calls),
             # unless something was steered into it: the transcript splits that turn, so keep the record's own.
-            mine = rest.pop(i)
+            at, mine = rest.pop(i)
+            last = max(last, at)
+            mine = {**mine, "uuid": t.get("uuid") or mine.get("uuid")}
             out.append({**mine, "trace": t["trace"]} if t["trace"] and not mine.get("steers") else mine)
-    return out + rest
+    return out + [s for at, s in rest if at > last and not s.get("uuid")]

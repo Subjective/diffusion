@@ -704,3 +704,49 @@ async def test_steer_sends_questions_into_the_running_turn(setup):
     assert (
         await client.post(f"/api/chats/{cid}/steer", json={"questions": [{"n": 3, "text": "x"}]})
     ).json() == {"ok": False}
+
+
+async def test_editing_a_sent_message_rewinds_the_session_to_just_before_it(setup, monkeypatch, tmp_path):
+    client, runners, deps, prep = setup
+    import json as _json
+
+    import diffusion.app as app_mod
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    seen = []
+    ids = iter(["u1", "u2", "u3"])
+
+    async def runner(req):
+        seen.append((req.resume_at, req.restore_files))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s1", prompt_id=next(ids))
+
+    runners["chat"] = runner
+    for text in ("first?", "second?"):
+        r = await client.post(
+            "/api/chats/guide/turn", json={"url": URL, "questions": [{"n": 0, "text": text}]}
+        )
+    assert parse_sse(r.text)[-1][1]["uuid"] == "u2"
+    # the session's transcript: u2 follows the answer to u1 (a1)
+    transcript = tmp_path / "s1.jsonl"
+    transcript.write_text("\n".join(_json.dumps(e) for e in [
+        {"type": "user", "uuid": "u1", "parentUuid": None, "message": {"role": "user", "content": "first?"}},
+        {"type": "assistant", "uuid": "a1", "parentUuid": "u1", "message": {"role": "assistant", "content": []}},
+        {"type": "user", "uuid": "u2", "parentUuid": "a1", "message": {"role": "user", "content": "second?"}},
+    ]))  # fmt: skip
+    monkeypatch.setattr(app_mod, "find_transcript", lambda harness, session: transcript)
+    body = {
+        "url": URL,
+        "questions": [{"n": 0, "text": "second, better?"}],
+        "rewind": {"uuid": "u2", "code": True},
+    }
+    r = await client.post("/api/chats/guide/turn", json=body)
+    assert parse_sse(r.text)[-1][0] == "done"
+    assert seen[-1] == ("a1", "u2")  # resumed just before it, with the files put back as they were then
+    turns = deps.store.load_chat(prep.meta.ref.key, "guide")["turns"]
+    assert [t["questions"][0]["text"] for t in turns] == ["first?", "second, better?"]
+    # the first message can't be edited: there's nothing before it to go back to
+    body["rewind"] = {"uuid": "u1"}
+    r = await client.post("/api/chats/guide/turn", json=body)
+    assert parse_sse(r.text)[-1][0] == "error"

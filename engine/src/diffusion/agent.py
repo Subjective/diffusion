@@ -56,6 +56,7 @@ class DoneEvent:
     is_error: bool
     session_id: str | None
     result: str | None = None
+    prompt_id: str | None = None  # the session's id for the message that started the turn (to rewind to it later)
 
 
 Event = ToolEvent | ToolFailedEvent | TextEvent | ThinkingEvent | SteeredEvent | DoneEvent
@@ -123,6 +124,10 @@ class AgentRequest:
     # Messages to slip into the running turn, as (text, accepted): the runner sets accepted True once it has sent
     # the text on, or False when the turn is already over. Only runners that can steer read it.
     steer: asyncio.Queue[tuple[str, asyncio.Future[bool]]] | None = None
+    # Rewinding (editing an earlier message): resume the session only up to this message id, and first put the
+    # files back as they were at that user message (``restore_files``), as Claude Code's rewind does.
+    resume_at: str | None = None
+    restore_files: str | None = None
 
     @property
     def native(self) -> bool:

@@ -25,6 +25,7 @@ import {
   SquarePen,
   SquareTerminal,
   Trash2,
+  Undo2,
   Workflow,
   Wrench,
   X,
@@ -41,6 +42,7 @@ import {
   modesFor,
   type Question,
   type Show,
+  type TraceItem,
   useChat,
 } from "../chat";
 import { autosize } from "../lib/autosize";
@@ -180,7 +182,9 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
                   {ic(ChevronDown, 14)}
                 </button>
               )}
-              {turns.map((qs, i) => (i < earlier && !showEarlier ? null : <Turn key={i} qs={qs} link={link} />))}
+              {turns.map((qs, i) =>
+                i < earlier && !showEarlier ? null : <Turn key={i} qs={qs} link={link} first={i === 0} />,
+              )}
               {asks.map((a, i) => (
                 <AskCard key={a.id} a={a} first={i === 0} />
               ))}
@@ -465,8 +469,17 @@ function CtxCard({ a }: { a: Anchor }) {
 export const Qn = ({ q }: { q: Question }) =>
   q.n ? <span className={`qn${q.status === "staged" ? " staged" : ""}`}>{q.n}</span> : null;
 
-function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
+function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first: boolean }) {
   const multi = qs.length > 1 || qs.some((q) => q.n);
+  // A sent message can be edited where the session can rewind to before it (Claude Code), as in the terminal.
+  const editable = useChat(
+    (s) =>
+      !first &&
+      !!qs[0].uuid &&
+      !s.chat.busy &&
+      (s.chat.harness ?? useApp.getState().guide?.meta?.harness ?? "claude-code") === "claude-code",
+  );
+  const rewriting = useChat((s) => s.rewriting);
   const pending = qs.some((q) => q.status === "pending");
   const linked = (q: Question) =>
     q.anchor
@@ -483,7 +496,20 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
         {qs.map((q) => (
           <div key={q.id} className={`q-item${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
             {q.anchor && <CtxCard a={q.anchor} />}
-            <div className="bubble">
+            {editable && q === qs[0] && (
+              <button
+                type="button"
+                className="icon-btn sm edit-sent"
+                title="Edit"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  useChat.getState().setRewriting(q.id);
+                }}
+              >
+                {ic(Pencil, 13)}
+              </button>
+            )}
+            <div className={`bubble${rewriting === q.id ? " rewriting" : ""}`}>
               <Qn q={q} />
               {q.text}
             </div>
@@ -1023,12 +1049,34 @@ function TypeaheadMenu({
   );
 }
 
+/** A step that changed files (what Claude Code's rewind can put back). */
+const isEdit = (t: TraceItem) => "tool" in t && /^(Edit|MultiEdit|Write|NotebookEdit)\b/.test(t.tool);
+
 function Composer({ link }: { link: ChatLinkProps }) {
   const { chat, unstage, ask, sendStaged, stop, editQueued } = useChat();
 
   const [text, setText] = useState("");
   const editing = useChat((s) => s.editing);
   const setEditing = useChat((s) => s.setEditing);
+  // A sent message being edited: its text here; saving rewinds the session to before it.
+  const rewriting = useChat((s) => (s.rewriting ? s.chat.questions.find((q) => q.id === s.rewriting) : undefined));
+  const touchedFiles = useChat((s) => {
+    const q = s.rewriting && s.chat.questions.find((x) => x.id === s.rewriting);
+    return !!q && s.chat.questions.some((x) => x.turn! >= q.turn! && x.trace?.some(isEdit));
+  });
+  const [restoreCode, setRestoreCode] = useState(false);
+  const rewritingId = rewriting?.id;
+  useEffect(() => {
+    const q = rewritingId && useChat.getState().chat.questions.find((x) => x.id === rewritingId);
+    if (!q) return;
+    setEditing(null);
+    setRestoreCode(false);
+    setText(q.text);
+    requestAnimationFrame(() => {
+      autosize(ta.current, 12);
+      ta.current?.focus();
+    });
+  }, [rewritingId, setEditing]);
   const [caret, setCaret] = useState(0);
   const ta = useRef<HTMLTextAreaElement>(null);
   const menu = useTypeahead(text, caret, chat.kind === "guide");
@@ -1065,6 +1113,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
     requestAnimationFrame(() => autosize(ta.current, 12));
   };
   const startEdit = (batch: string, t: string) => {
+    useChat.getState().setRewriting(null);
     setEditing(batch);
     setText(t);
     requestAnimationFrame(() => {
@@ -1074,10 +1123,13 @@ function Composer({ link }: { link: ChatLinkProps }) {
   };
   const cancelEdit = () => {
     setEditing(null);
+    useChat.getState().setRewriting(null);
     reset();
   };
   const send = () => {
-    if (editing) {
+    if (rewriting) {
+      useChat.getState().editSent(rewriting.id, text, restoreCode);
+    } else if (editing) {
       editQueued(editing, text.trim());
       setEditing(null);
       setText("");
@@ -1092,7 +1144,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
       {waiting.length > 0 && <Queue waiting={waiting} editing={editing} onEdit={startEdit} link={link} />}
       <div className="composer stack">
         {menu.open && <TypeaheadMenu picks={menu.picks} active={menu.active} onPick={pick} onHover={menu.setActive} />}
-        {editing && (
+        {(editing || rewriting) && (
           <div className="notes">
             <span className="editing-chip">
               {ic(Pencil, 13)}
@@ -1101,9 +1153,21 @@ function Composer({ link }: { link: ChatLinkProps }) {
                 {ic(X, 12)}
               </button>
             </span>
+            {rewriting && touchedFiles && (
+              <button
+                type="button"
+                className={`restore-chip${restoreCode ? " on" : ""}`}
+                aria-pressed={restoreCode}
+                title="Also put the files back as they were before this message"
+                onClick={() => setRestoreCode(!restoreCode)}
+              >
+                {ic(Undo2, 13)}
+                Restore code
+              </button>
+            )}
           </div>
         )}
-        {!editing && staged.length > 0 && (
+        {!editing && !rewriting && staged.length > 0 && (
           <div className="notes">
             {staged.map((q) => (
               <div
@@ -1150,7 +1214,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
                 return menu.close();
               }
             }
-            if (e.key === "Escape" && editing) {
+            if (e.key === "Escape" && (editing || rewriting)) {
               e.preventDefault();
               cancelEdit();
             } else if (e.key === "Enter" && !e.shiftKey) {
@@ -1162,7 +1226,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
         <div className="c-row">
           <ModeMenu />
           <span className="grow" />
-          {editing ? (
+          {editing || rewriting ? (
             <button type="button" id="chatSend" className="icon-btn solid" title="Save" onClick={send}>
               {ic(Check, 16)}
             </button>

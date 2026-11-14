@@ -140,3 +140,23 @@ def test_merge_keeps_a_steered_message_in_the_turn_it_joined():
     out = merge(session, [mine], lambda text: text.endswith(SHOW_REMINDER))
     assert [len(x["questions"]) for x in out] == [2, 1]
     assert out[0]["trace"] == mine["trace"] and out[1]["questions"][0]["text"] == "later"
+
+
+def test_a_rewound_claude_session_shows_only_the_branch_it_continued(tmp_path):
+    def link(e, uuid, parent, **kw):
+        return {**e, "uuid": uuid, "parentUuid": parent, **kw}
+
+    p = tmp_path / "s.jsonl"
+    write(p, [
+        link(user("first"), "a", None),
+        link(assistant({"type": "text", "text": "one"}), "b", "a"),
+        link(user("second"), "c", "b"),  # rewound: edited into "second, edited"
+        link(assistant({"type": "text", "text": "two"}), "d", "c"),
+        link(user("second, edited"), "e", "b"),
+        link(assistant({"type": "text", "text": "two again"}), "f", "e"),
+        {"type": "system", "subtype": "compact_boundary", "uuid": "g", "parentUuid": None, "logicalParentUuid": "f"},
+        link(user("after compacting"), "h", "g"),
+    ])  # fmt: skip
+    turns = read_claude(p)
+    assert [t["questions"][0]["text"] for t in turns] == ["first", "second, edited", "after compacting"]
+    assert turns[1]["answers"]["0"] == "two again"

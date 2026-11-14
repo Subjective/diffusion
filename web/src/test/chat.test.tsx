@@ -19,7 +19,12 @@ type Turn = {
 };
 const chats = new Map<string, { id: string; turns: Turn[]; updated_at: number }>();
 let release: (() => void) | null = null;
-const turnBodies: { questions: { n: number; text: string }[]; version?: number | null; mode?: string }[] = [];
+const turnBodies: {
+  questions: { n: number; text: string }[];
+  version?: number | null;
+  mode?: string;
+  rewind?: { uuid: string; code: boolean };
+}[] = [];
 const sse = (events: [string, unknown][]) =>
   events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join("");
 
@@ -118,7 +123,7 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
         [
           sse([["tool", { name: "Grep", summary: "Grep x", id: "t1" }]]) + asking,
           ...deltas,
-          sse([["done", think ? { seconds: 12 } : {}]]),
+          sse([["done", { ...(think ? { seconds: 12 } : {}), uuid: `u${turnBodies.length}` }]]),
         ],
         gate,
       ),
@@ -567,4 +572,31 @@ test("Steer sends a queued message into the running answer, or else stops it and
   expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["instead?"]);
   await act(async () => release!());
   steerOk = true;
+});
+
+test("editing a sent message resends it in its place, rewinding the session to before it", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  turnBodies.length = 0;
+  type("first?");
+  await waitFor(() => expect(release).toBeTruthy());
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(1));
+  type("second?");
+  await waitFor(() => expect(turnBodies).toHaveLength(2));
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(2));
+  // the first message has nothing before it to go back to; the second can be edited
+  const edits = document.querySelectorAll<HTMLElement>(".edit-sent");
+  expect(edits).toHaveLength(1);
+  fireEvent.click(edits[0]);
+  const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  await waitFor(() => expect(ta.value).toBe("second?"));
+  expect(document.querySelector(".editing-chip")).toBeTruthy();
+  fireEvent.change(ta, { target: { value: "second, better?" } });
+  fireEvent.click(screen.getByTitle("Save"));
+  await waitFor(() => expect(turnBodies).toHaveLength(3));
+  expect(turnBodies[2].rewind).toEqual({ uuid: "u2", code: false });
+  expect([...document.querySelectorAll(".bubble")].map((b) => b.textContent)).toEqual(["first?", "second, better?"]);
+  await act(async () => release!());
 });

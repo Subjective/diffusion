@@ -46,6 +46,8 @@ export interface Question {
   seconds?: number;
   /** The guide version this answer saved, when it was asked to change the guide. */
   guideVersion?: number;
+  /** The session's id for the message that started this turn: editing it rewinds the session to just before. */
+  uuid?: string;
   /** Asked of the session somewhere else (its terminal), read from its transcript. */
   fromSession?: boolean;
   /** Queued: the message it was sent with (a typed message and the notes attached to it go out together). */
@@ -121,6 +123,12 @@ interface State {
   steer(batch: string): Promise<void>;
   /** The queued message being edited in the composer: the queue holds until the edit is saved or cancelled. */
   editing: string | null;
+  /** A sent message being edited in the composer (its question id). */
+  rewriting: string | null;
+  setRewriting(id: string | null): void;
+  /** Send an edited version of a sent message: the session rewinds to just before it (``code``: the files too),
+   *  and it and everything after it go. */
+  editSent(id: string, text: string, code: boolean): void;
   setEditing(batch: string | null): void;
   /** The diff should jump to this show: the model's first `show_code` of a turn, if the diff wasn't touched since asking. */
   autoShow: { q: string; i: number; n: number } | null;
@@ -217,7 +225,7 @@ export const useChat = create<State>((set, get) => {
     if (next) void send(chat.questions.filter((q) => q.status === "waiting" && q.batch === next));
   }
 
-  async function send(qs: Question[]) {
+  async function send(qs: Question[], rewind?: { uuid: string; code: boolean }) {
     if (!qs.length) return;
     const ids0 = new Set(qs.map((q) => q.id));
     if (get().chat.busy || get().editing) {
@@ -267,6 +275,7 @@ export const useChat = create<State>((set, get) => {
           questions: wire,
           version: useApp.getState().guide?.version ?? null,
           mode: chatRef.kind === "guide" ? get().mode : "read-only",
+          ...(rewind ? { rewind } : {}),
         },
         ({ event, data }) => {
           const d = data as Record<string, unknown>;
@@ -325,6 +334,7 @@ export const useChat = create<State>((set, get) => {
             const seconds = typeof d.seconds === "number" ? d.seconds : undefined;
             patch(get().chat, turnRef.cur, () => ({ status: "answered", seconds }));
             patch(get().chat, turnRef.all, (q) => (q.status === "steering" ? { status: "answered", seconds } : {}));
+            if (typeof d.uuid === "string") patch(get().chat, [ids[0]], () => ({ uuid: d.uuid as string }));
           } else if (event === "error") {
             patch(get().chat, turnRef.all, (q) => ({ status: "error", answer: q.answer || "" }));
             set({ error: String(d.message) });
@@ -364,6 +374,35 @@ export const useChat = create<State>((set, get) => {
     ),
     asks: [],
     editing: null,
+    rewriting: null,
+    setRewriting(id) {
+      set({ rewriting: id });
+    },
+    editSent(id, text, code) {
+      const { chat } = get();
+      const q = chat.questions.find((x) => x.id === id);
+      if (!q?.uuid || q.turn == null || chat.busy || !text.trim()) return;
+      set((s) => ({
+        rewriting: null,
+        chat: { ...s.chat, questions: s.chat.questions.filter((x) => x.turn == null || x.turn < q.turn!) },
+      }));
+      void send(
+        [
+          {
+            id: qid(),
+            n: q.n,
+            text: text.trim(),
+            anchor: q.anchor,
+            status: "pending",
+            answer: "",
+            tools: [],
+            turn: null,
+            shows: [],
+          },
+        ],
+        { uuid: q.uuid, code },
+      );
+    },
 
     setEditing(batch) {
       set({ editing: batch });
@@ -638,6 +677,7 @@ interface WireChat {
     shows?: (Show & { n: number })[];
     guide_version?: number;
     source?: string;
+    uuid?: string;
     trace?: (TraceItem | { steered: number })[];
     seconds?: number;
     status: string;
@@ -694,6 +734,7 @@ export function fromWire(c: WireChat): Chat {
         tools: t.tools,
         shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
         guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
+        uuid: q === t.questions[0] ? t.uuid : undefined,
         fromSession: t.source === "session",
         trace: traceFor(t.trace ?? t.tools.map((tool) => ({ tool })), q.steered),
         seconds: t.seconds,

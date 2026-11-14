@@ -28,7 +28,7 @@ from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
 from .symbols import NAME, SymbolIndex
-from .transcripts import merge, session_turns
+from .transcripts import find_transcript, merge, rewind_point, session_turns
 from .validate import DraftError, check
 
 PrepareFn = Callable[[Config, str], Prepared]
@@ -80,12 +80,19 @@ class ChatCreate(BaseModel):
 GUIDE_CHAT = "guide"  # the id of a target's one guide-session chat
 
 
+class Rewind(BaseModel):
+    uuid: str  # the session's id for the message being edited
+    code: bool = False  # also put the files back as they were before it
+
+
 class TurnReq(BaseModel):
     url: str
     questions: list[Question]
     version: int | None = None  # the guide version on screen
     # The guide chat can run as the session itself (see agent.Mode); forks are always read-only.
     mode: Mode = "read-only"
+    # Editing an earlier message: the turn replaces it, and everything after it, in the session.
+    rewind: Rewind | None = None
 
 
 class SteerReq(BaseModel):
@@ -446,6 +453,26 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 if chat is None:  # deleted while this turn waited for the lock
                     yield "error", {"message": "chat not found"}
                     return
+                meta = (guide or {}).get("meta") or {}
+                harness = chat.get("harness") or meta.get("harness") or installed_harness(dict(os.environ))
+                chat["harness"] = harness = harness or "claude-code"  # the SDK bundles Claude Code
+                resume_at = restore = None
+                if req.rewind:
+                    # Edit an earlier message, as Claude Code's rewind does: the session picks up from just before
+                    # it, and it and what followed drop out (of the session, and of this chat's own record).
+                    if harness != "claude-code":
+                        yield "error", {"message": "Editing a sent message needs a Claude Code session."}
+                        return
+                    resume = _sessions(chat, meta, harness)[0][0]
+                    path = find_transcript(harness, resume) if resume else None
+                    resume_at = rewind_point(path, req.rewind.uuid) if path else None
+                    if not resume_at:
+                        yield "error", {"message": "That message can't be edited (it's the first, or gone)."}
+                        return
+                    restore = req.rewind.uuid if req.rewind.code else None
+                    at = next((i for i, t in enumerate(chat["turns"]) if t.get("uuid") == req.rewind.uuid), None)
+                    if at is not None:
+                        del chat["turns"][at:]
                 record = {
                     "at": time.time(),
                     "head_sha": sha,
@@ -460,9 +487,6 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 chat["head_sha"] = sha
                 chat["updated_at"] = record["at"]
                 deps.store.save_chat(key, chat)
-                meta = (guide or {}).get("meta") or {}
-                harness = chat.get("harness") or meta.get("harness") or installed_harness(dict(os.environ))
-                chat["harness"] = harness = harness or "claude-code"  # the SDK bundles Claude Code
                 block = GuideBlock()
                 mode: Mode = req.mode if chat.get("kind") == "guide" else "read-only"
                 side: asyncio.Queue = asyncio.Queue()
@@ -493,6 +517,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
                                 resume, fork=fork, adopt=adopt, cwd=cwd, block=block, mode=mode, approve=ask,
                                 harness=harness if chat.get("kind") == "guide" else "", steer=inbox,
+                                resume_at=resume_at, restore_files=restore,
                             ), side)):  # fmt: skip
                                 if isinstance(ev, Stop):
                                     await evs.aclose()
@@ -539,6 +564,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                     if ev.is_error:
                                         raise RuntimeError(ev.result or "agent error")
                                     chat["session_id"] = ev.session_id or chat.get("session_id")
+                                    if ev.prompt_id:
+                                        record["uuid"] = ev.prompt_id
                                     chat["cwd"] = str(cwd) if cwd else None
                                     if chat.get("kind") == "guide":
                                         chat["from_session"] = meta.get("session")
@@ -563,6 +590,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                             "ns": [q["n"] for q in record["questions"]],
                             "seconds": record["seconds"],
                             **({"stopped": True} if record.get("stopped") else {}),
+                            **({"uuid": record["uuid"]} if record.get("uuid") else {}),
                         },
                     )
                 except Exception as e:  # surface to the client; keep partial answers

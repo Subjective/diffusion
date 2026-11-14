@@ -389,6 +389,8 @@ async def run_turn(
     approve: Approver | None = None,
     harness: str = "",
     steer: asyncio.Queue[tuple[list[Question], asyncio.Future[bool]]] | None = None,
+    resume_at: str | None = None,
+    restore_files: str | None = None,
 ) -> AsyncIterator[
     ChatDelta | ChatFocus | ChatSteered | ToolEvent | ToolFailedEvent | ThinkingEvent | DoneEvent
 ]:
@@ -412,6 +414,8 @@ async def run_turn(
         mode=mode,
         approve=approve,
         steer=asyncio.Queue() if steer else None,
+        resume_at=resume_at,
+        restore_files=restore_files,
     )
     block = block if block is not None else GuideBlock()
     split = SectionSplitter([q.n for q in questions])

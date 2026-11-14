@@ -147,6 +147,7 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
             max_turns=req.max_turns,
             resume=req.resume,
             fork_session=req.fork,
+            resume_session_at=req.resume_at,
             thinking={"type": "adaptive", "display": "summarized"},  # the model decides; we get readable text
             include_partial_messages=req.include_partial,
             cli_path=cli_path,
@@ -189,6 +190,7 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                 permission_mode="default" if req.mode == "read-only" else req.mode,
                 can_use_tool=can_use,
                 setting_sources=["user", "project", "local"],
+                enable_file_checkpointing=True,  # so an edited message can put the code back too
             )
         else:
             opts = ClaudeAgentOptions(
@@ -203,7 +205,13 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                 env={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "ENABLE_TOOL_SEARCH": "false"},
             )
         async with ClaudeSDKClient(options=opts) as client:
+            if req.restore_files:
+                try:
+                    await client.rewind_files(req.restore_files)
+                except Exception as e:
+                    raise RuntimeError(f"Couldn't put the code back: {e}") from e
             await client.query(req.prompt)
+            prompt_id: str | None = None
             # Steering: a message sent mid-turn goes into the running session, which takes it in at its next step
             # (as the terminal does). If the turn ends first, the session runs it as one more turn, which we wait
             # for too, so the run ends only once every steered message has been answered.
@@ -247,9 +255,12 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                             for b in m.content:
                                 if isinstance(b, ToolResultBlock) and b.is_error:
                                     yield ToolFailedEvent(b.tool_use_id)
-                        if (text := user_text(m.content)) in steered:
+                        text = user_text(m.content)
+                        if text in steered:
                             steered.remove(text)
                             yield SteeredEvent(text)
+                        elif text == req.prompt and prompt_id is None:
+                            prompt_id = m.uuid
                     elif isinstance(m, ResultMessage):
                         turns += m.num_turns
                         last = m
@@ -263,6 +274,8 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                     while req.steer and not req.steer.empty():
                         req.steer.get_nowait()[1].set_result(False)
             if last:
-                yield DoneEvent(turns, last.total_cost_usd, last.is_error, last.session_id, last.result)
+                yield DoneEvent(
+                    turns, last.total_cost_usd, last.is_error, last.session_id, last.result, prompt_id=prompt_id
+                )
 
     return run
