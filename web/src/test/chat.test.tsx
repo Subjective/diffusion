@@ -235,7 +235,7 @@ test("drag bubble across lines → popup → queue two → badges → send → l
   // it attaches to the next message as a pill in the composer: its number and lines, the note on hover
   await waitFor(() => expect(document.querySelector(".composer .note")).toBeTruthy());
   const note = document.querySelector<HTMLElement>(".composer .note")!;
-  expect(note.textContent).toBe("1session.ts:5–6");
+  expect(note.textContent).toBe("1Why clear the timer?"); // the pill shows the note; where it is shows on hover
   // the chat box takes focus, so ↵ sends it
   await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".composer textarea")));
   // on the line, the same numbered badge

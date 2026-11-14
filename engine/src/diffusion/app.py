@@ -93,7 +93,7 @@ class SteerReq(BaseModel):
 
 
 # Harnesses whose running turn takes a message in mid-turn (the rest stop, then send).
-STEERABLE = {"claude-code"}
+STEERABLE = {"claude-code", "codex"}
 
 
 class Approval(BaseModel):

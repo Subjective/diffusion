@@ -12,6 +12,8 @@ import re
 import time
 from pathlib import Path
 
+from .backends.codex_app import AppServerError, list_skills
+
 _CACHE: dict[tuple, tuple[float, list[dict]]] = {}
 TTL = 60.0
 
@@ -83,7 +85,13 @@ async def session_commands(harness: str, cwd: Path | None, cli_path: str | None)
     if harness == "claude-code":
         cmds = await claude_commands(cwd, cli_path)
     elif harness == "codex":
-        cmds = codex_skills(cwd)
+        try:  # as Codex itself finds them (plugins' and system skills too); else from their folders
+            cmds = [
+                {"name": k["name"], "description": k["description"], "hint": ""}
+                for k in await list_skills(cli_path or "codex", cwd)
+            ]
+        except (OSError, AppServerError):
+            cmds = codex_skills(cwd)
     else:
         cmds = []
     _CACHE[key] = (time.monotonic(), cmds)

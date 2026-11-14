@@ -1,8 +1,9 @@
 import { useLayoutEffect, useState } from "react";
 import { useChat } from "../chat";
+import { anchorLabel } from "./ChatPanel";
 
-/** Hovering a line note waiting to be sent (its badge on the line, or its pill) shows what it says, in the popup's
- *  style; clicking reopens it to edit. */
+/** Hovering a line note waiting to be sent (its badge on the line, or its pill) shows where it is and what it says,
+ *  in the popup's style; clicking reopens it to edit. */
 export function NotePeek({ id }: { id: string | null }) {
   const q = useChat((s) => (id ? s.chat.questions.find((x) => x.id === id && x.status === "staged") : undefined));
   const [at, setAt] = useState<{ x: number; y: number; above: boolean } | null>(null);
@@ -20,6 +21,7 @@ export function NotePeek({ id }: { id: string | null }) {
       style={{ left: at.x, ...(at.above ? { bottom: at.y } : { top: at.y }) }}
       role="tooltip"
     >
+      {q.anchor && <div className="peek-at">{anchorLabel(q.anchor)}</div>}
       {q.text}
     </div>
   );

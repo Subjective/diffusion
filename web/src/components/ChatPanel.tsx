@@ -1116,7 +1116,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
                 }}
               >
                 <Qn q={q} />
-                <span className="ref">{q.anchor ? anchorLabel(q.anchor) : ""}</span>
+                <span className="ref">{q.text}</span>
                 <RemoveBtn onClick={() => unstage(q.id)} />
               </div>
             ))}
