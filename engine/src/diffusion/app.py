@@ -8,9 +8,10 @@ import json
 import os
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -18,14 +19,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
-from .agent import DoneEvent, Runner, ThinkingEvent, ToolEvent, make_runner
-from .chat_agent import ChatDelta, ChatFocus, GuideBlock, Question, run_turn
+from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
+from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
+from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
 from .github import GitHubError
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
 from .symbols import NAME, SymbolIndex
+from .transcripts import find_transcript, merge, rewind_point, session_turns
 from .validate import DraftError, check
 
 PrepareFn = Callable[[Config, str], Prepared]
@@ -70,12 +73,87 @@ def sse_response(events: AsyncIterator[tuple[str, dict]]) -> StreamingResponse:
 
 class ChatCreate(BaseModel):
     url: str
+    # "fork": a read-only branch of the session that wrote the guide. "guide": that session itself, continued.
+    kind: Literal["fork", "guide"] = "fork"
+
+
+GUIDE_CHAT = "guide"  # the id of a target's one guide-session chat
+
+
+class Rewind(BaseModel):
+    uuid: str  # the session's id for the message being edited
+    code: bool = False  # also put the files back as they were before it
 
 
 class TurnReq(BaseModel):
     url: str
     questions: list[Question]
     version: int | None = None  # the guide version on screen
+    # The guide chat can run as the session itself (see agent.Mode); forks are always read-only.
+    mode: Mode = "read-only"
+    # Editing an earlier message: the turn replaces it, and everything after it, in the session.
+    rewind: Rewind | None = None
+
+
+class SteerReq(BaseModel):
+    questions: list[Question]
+
+
+# Harnesses whose running turn takes a message in mid-turn (the rest stop, then send).
+STEERABLE = {"claude-code", "codex"}
+
+
+class Approval(BaseModel):
+    id: str
+    decision: Decision
+
+
+class ApprovalAsked:
+    """A tool call waiting on the reviewer, surfaced into a turn's event stream."""
+
+    def __init__(self, id: str, tool: str, summary: str, input: dict):
+        self.payload = {"id": id, "tool": tool, "summary": summary, "input": _clip(input)}
+
+
+def _clip(v, n: int = 4000):
+    if isinstance(v, str):
+        return v if len(v) <= n else v[:n] + "…"
+    if isinstance(v, dict):
+        return {k: _clip(x, n) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_clip(x, n) for x in v[:50]]
+    return v
+
+
+async def merged(events: AsyncIterator, side: asyncio.Queue) -> AsyncGenerator:
+    """A turn's events, with anything put on ``side`` (approval requests) interleaved as it arrives."""
+    it = aiter(events)
+    nxt = asyncio.ensure_future(anext(it))
+    got = asyncio.ensure_future(side.get())
+    try:
+        while True:
+            done, _ = await asyncio.wait({nxt, got}, return_when=asyncio.FIRST_COMPLETED)
+            if got in done:
+                yield got.result()
+                got = asyncio.ensure_future(side.get())
+            if nxt in done:
+                try:
+                    ev = nxt.result()
+                except StopAsyncIteration:
+                    return
+                yield ev
+                nxt = asyncio.ensure_future(anext(it))
+    finally:
+        for f in (nxt, got):
+            f.cancel()
+        # Stopped early: close the agent too (its CLI ends with it), rather than leave it to the garbage collector.
+        if close := getattr(it, "aclose", None):
+            await asyncio.gather(nxt, return_exceptions=True)
+            await close()
+
+
+class Stop:
+    """Put on a running turn's side queue: the reviewer stopped it."""
 
 
 def chat_summary(c: dict) -> dict:
@@ -88,6 +166,8 @@ def chat_summary(c: dict) -> dict:
         "created_at": c["created_at"],
         "updated_at": c["updated_at"],
         "head_sha": c.get("head_sha"),
+        "kind": c.get("kind", "fork"),
+        "harness": c.get("harness"),
     }
 
 
@@ -103,7 +183,12 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     _prepared: dict[str, Prepared] = {}
     _latest_seen: dict[str, str | None] = {}
     chat_locks: dict[str, asyncio.Lock] = {}
+    approvals: dict[str, asyncio.Future[Decision]] = {}  # tool calls waiting on the reviewer, by id
+    app.state.approvals = approvals
+    running: dict[str, asyncio.Queue] = {}  # a running turn's side queue, by chat: Stop goes there
+    steering: dict[str, asyncio.Queue] = {}  # a running turn's inbox for messages sent into it, by chat
     symbols: dict[Path, SymbolIndex] = {}
+    trees: dict[tuple[Path, str], frozenset[str]] = {}
     symbol_locks: dict[Path, asyncio.Lock] = {}
 
     async def get_prepared(url: str, refresh: bool = False) -> Prepared:
@@ -159,12 +244,24 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             raise HTTPException(404, f"no version {v}")
         return g
 
+    async def tracked(prep: Prepared) -> frozenset[str]:
+        key = (prep.checkout.worktree, prep.meta.head_sha)
+        if key not in trees:
+            trees[key] = frozenset(await asyncio.to_thread(prep.checkout.files_at_head))
+        return trees[key]
+
+    @app.get("/api/tree")
+    async def tree(url: str) -> dict:
+        """Every file at the PR head, for the file navigator's all-files view."""
+        prep = await get_prepared(url)
+        return {"files": sorted(await tracked(prep))}
+
     @app.get("/api/file")
     async def file(url: str, path: str) -> dict:
-        """A changed file at the PR head, so the diff can show lines around and between hunks."""
+        """A file at the PR head: a changed one, to show lines around its hunks, or any other, to open in a tab."""
         prep = await get_prepared(url)
-        if path not in {f.path for f in prep.index.files}:
-            raise HTTPException(404, f"{path} isn't in this diff")
+        if path not in {f.path for f in prep.index.files} and path not in await tracked(prep):
+            raise HTTPException(404, f"{path} isn't in this repository")
         try:
             text = await asyncio.to_thread(prep.checkout.file_at_head, path)
         except UnicodeDecodeError as e:
@@ -227,31 +324,115 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     async def list_chats(url: str) -> list[dict]:
         return [chat_summary(c) for c in d().store.list_chats(pr_key(url)) if c.get("turns")]
 
-    @app.post("/api/chats")
-    async def create_chat(req: ChatCreate) -> dict:
+    def new_chat(key: str, kind: str) -> dict:
+        if kind == "guide" and (found := d().store.load_chat(key, GUIDE_CHAT)):
+            return found
         now = time.time()
         chat = {
-            "id": uuid.uuid4().hex[:12],
+            "id": GUIDE_CHAT if kind == "guide" else uuid.uuid4().hex[:12],
+            "kind": kind,
             "created_at": now,
             "updated_at": now,
             "session_id": None,
             "turns": [],
         }
-        d().store.save_chat(pr_key(req.url), chat)
+        d().store.save_chat(key, chat)
         return chat
+
+    @app.post("/api/chats")
+    async def create_chat(req: ChatCreate) -> dict:
+        return new_chat(pr_key(req.url), req.kind)
 
     @app.get("/api/chats/{chat_id}")
     async def get_chat(chat_id: str, url: str) -> dict:
-        chat = d().store.load_chat(pr_key(url), chat_id)
+        key = pr_key(url)
+        chat = d().store.load_chat(key, chat_id)
+        if chat_id == GUIDE_CHAT:
+            return await guide_chat(
+                url, chat or {"id": GUIDE_CHAT, "kind": "guide", "session_id": None, "turns": []}
+            )
         if not chat:
             raise HTTPException(404, "chat not found")
         return chat
+
+    async def guide_chat(url: str, chat: dict) -> dict:
+        """The guide chat as the session itself has it: the transcript is the history, so the conversation that
+        wrote the guide shows up, and so does anything said to that session in the terminal since."""
+        prep = await get_prepared(url)
+        guide = d().store.load_guide(pr_key(url), prep.meta.head_sha) or {}
+        meta = guide.get("meta") or {}
+        harness = chat.get("harness") or meta.get("harness")
+        session = chat.get("session_id") if chat.get("from_session") == meta.get("session") else None
+        session = session or meta.get("session")
+        if not (harness and session):
+            return {**chat, "harness": harness}
+        found = await asyncio.to_thread(session_turns, harness, session)
+        reminder = SHOW_REMINDER.strip()
+        # Diffusion's turns end with its reminder, except commands, which go as typed.
+        sent = {
+            q["text"].strip()
+            for t in chat.get("turns") or []
+            for q in t["questions"]
+            if q["text"].startswith("/")
+        }
+        turns = merge(
+            found,
+            chat.get("turns") or [],
+            lambda text: text.rstrip().endswith(reminder) or text.strip() in sent,
+        )
+        return {**chat, "harness": harness, "turns": turns}
+
+    @app.get("/api/commands")
+    async def commands(url: str) -> dict:
+        """What the guide session can run from the / menu, as its harness has it."""
+        prep = await get_prepared(url)
+        meta = (d().store.load_guide(pr_key(url), prep.meta.head_sha) or {}).get("meta") or {}
+        harness = meta.get("harness")
+        if not harness or not meta.get("session"):
+            return {"harness": harness, "commands": []}
+        try:
+            cmds = await session_commands(harness, _dir(meta.get("cwd")), d().cfg.cli_path(harness))
+        except Exception:  # no CLI, or it wouldn't start: the menu is just empty
+            cmds = []
+        return {"harness": harness, "commands": cmds}
+
+    @app.post("/api/chats/{chat_id}/steer")
+    async def steer(chat_id: str, req: SteerReq) -> dict:
+        """Send questions into the running turn; ok is False when there's none, or it can't take them (then the
+        client stops it and sends them as the next turn)."""
+        inbox = steering.get(chat_id)
+        if inbox is None or not req.questions:
+            return {"ok": False}
+        accepted: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        await inbox.put((req.questions, accepted))
+        try:
+            return {"ok": await asyncio.wait_for(accepted, 10)}
+        except TimeoutError:
+            return {"ok": False}
+
+    @app.post("/api/chats/{chat_id}/stop")
+    async def stop(chat_id: str) -> dict:
+        side = running.get(chat_id)
+        if side is None:
+            return {"ok": False}
+        await side.put(Stop())
+        return {"ok": True}
+
+    @app.post("/api/chats/{chat_id}/approve")
+    async def approve(chat_id: str, req: Approval) -> dict:
+        f = approvals.get(req.id)
+        if not f or f.done():
+            raise HTTPException(404, "nothing is waiting on that")
+        f.set_result(req.decision)
+        return {"ok": True}
 
     @app.post("/api/chats/{chat_id}/turn")
     async def turn(chat_id: str, req: TurnReq) -> StreamingResponse:
         deps = d()
         key = pr_key(req.url)
-        chat = deps.store.load_chat(key, chat_id)
+        # The guide chat is shown before anything is asked in it (its history is the session's transcript), so
+        # its first turn is what stores it.
+        chat = new_chat(key, "guide") if chat_id == GUIDE_CHAT else deps.store.load_chat(key, chat_id)
         if not chat:
             raise HTTPException(404, "chat not found")
         if not req.questions:
@@ -272,6 +453,28 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 if chat is None:  # deleted while this turn waited for the lock
                     yield "error", {"message": "chat not found"}
                     return
+                meta = (guide or {}).get("meta") or {}
+                harness = chat.get("harness") or meta.get("harness") or installed_harness(dict(os.environ))
+                chat["harness"] = harness = harness or "claude-code"  # the SDK bundles Claude Code
+                resume_at = restore = None
+                if req.rewind:
+                    # Edit an earlier message, as Claude Code's rewind does: the session picks up from just before
+                    # it, and it and what followed drop out (of the session, and of this chat's own record).
+                    if harness != "claude-code":
+                        yield "error", {"message": "Editing a sent message needs a Claude Code session."}
+                        return
+                    resume = _sessions(chat, meta, harness)[0][0]
+                    path = find_transcript(harness, resume) if resume else None
+                    resume_at = rewind_point(path, req.rewind.uuid) if path else None
+                    if not resume_at:
+                        yield "error", {"message": "That message can't be edited (it's the first, or gone)."}
+                        return
+                    restore = req.rewind.uuid if req.rewind.code else None
+                    at = next(
+                        (i for i, t in enumerate(chat["turns"]) if t.get("uuid") == req.rewind.uuid), None
+                    )
+                    if at is not None:
+                        del chat["turns"][at:]
                 record = {
                     "at": time.time(),
                     "head_sha": sha,
@@ -286,19 +489,53 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 chat["head_sha"] = sha
                 chat["updated_at"] = record["at"]
                 deps.store.save_chat(key, chat)
-                meta = (guide or {}).get("meta") or {}
-                harness = chat.get("harness") or meta.get("harness") or installed_harness(dict(os.environ))
-                chat["harness"] = harness = harness or "claude-code"  # the SDK bundles Claude Code
                 block = GuideBlock()
+                mode: Mode = req.mode if chat.get("kind") == "guide" else "read-only"
+                side: asyncio.Queue = asyncio.Queue()
+                mine: list[str] = []
+
+                async def ask(tool: str, summary: str, tool_input: dict) -> Decision:
+                    aid = uuid.uuid4().hex[:12]
+                    f: asyncio.Future[Decision] = asyncio.get_running_loop().create_future()
+                    approvals[aid] = f
+                    mine.append(aid)
+                    await side.put(ApprovalAsked(aid, tool, summary, tool_input))
+                    try:
+                        return await f
+                    finally:
+                        approvals.pop(aid, None)
+
+                running[chat_id] = side
+                inbox: asyncio.Queue | None = asyncio.Queue() if harness in STEERABLE else None
+                if inbox:
+                    steering[chat_id] = inbox
                 try:
                     for resume, fork, cwd in _sessions(chat, meta, harness):
                         said = False
+                        # The guide's own session, joined for the first time, hasn't seen the chat's instructions.
+                        adopt = bool(resume) and not fork and resume != chat.get("session_id")
                         try:
-                            async for ev in run_turn(
+                            async for ev in (evs := merged(run_turn(
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
-                                resume, fork=fork, cwd=cwd, block=block,
-                            ):  # fmt: skip
-                                if isinstance(ev, ChatDelta):
+                                resume, fork=fork, adopt=adopt, cwd=cwd, block=block, mode=mode, approve=ask,
+                                harness=harness if chat.get("kind") == "guide" else "", steer=inbox,
+                                resume_at=resume_at, restore_files=restore,
+                            ), side)):  # fmt: skip
+                                if isinstance(ev, Stop):
+                                    await evs.aclose()
+                                    record["stopped"] = True
+                                    break
+                                if isinstance(ev, ApprovalAsked):
+                                    yield "approval", ev.payload
+                                elif isinstance(ev, ChatSteered):
+                                    said = True
+                                    k = record["steers"] = record.get("steers", 0) + 1
+                                    record["trace"].append({"steered": k})  # where its own work starts
+                                    for q in ev.questions:  # shown as a turn of their own
+                                        record["questions"].append({**q.model_dump(), "steered": k})
+                                        record["answers"][str(q.n)] = ""
+                                    yield "steered", {"ns": [q.n for q in ev.questions]}
+                                elif isinstance(ev, ChatDelta):
                                     said = True
                                     record["answers"][str(ev.n)] += ev.text
                                     yield "delta", {"n": ev.n, "text": ev.text}
@@ -316,13 +553,24 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                 elif isinstance(ev, ToolEvent):
                                     said = True
                                     record["tools"].append(ev.summary)
-                                    record["trace"].append({"tool": ev.summary})
-                                    yield "tool", {"name": ev.name, "summary": ev.summary}
+                                    record["trace"].append(
+                                        {"tool": ev.summary, **({"id": ev.id} if ev.id else {})}
+                                    )
+                                    yield "tool", {"name": ev.name, "summary": ev.summary, "id": ev.id}
+                                elif isinstance(ev, ToolFailedEvent):
+                                    for t in record["trace"]:
+                                        if t.get("id") == ev.id:
+                                            t["failed"] = True
+                                    yield "tool_failed", {"id": ev.id}
                                 elif isinstance(ev, DoneEvent):
                                     if ev.is_error:
                                         raise RuntimeError(ev.result or "agent error")
                                     chat["session_id"] = ev.session_id or chat.get("session_id")
+                                    if ev.prompt_id:
+                                        record["uuid"] = ev.prompt_id
                                     chat["cwd"] = str(cwd) if cwd else None
+                                    if chat.get("kind") == "guide":
+                                        chat["from_session"] = meta.get("session")
                             break
                         except Exception:
                             if said or not fork:
@@ -332,18 +580,36 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                         n, note = save_chat_guide(deps, prep, block.found, meta, chat)
                         if n:
                             record["guide_version"] = n
-                            yield "guide", {"n": req.questions[-1].n, "version": n}
+                            yield "guide", {"n": record["questions"][-1]["n"], "version": n}
                         else:
-                            record["answers"][str(req.questions[-1].n)] += note
-                            yield "delta", {"n": req.questions[-1].n, "text": note}
+                            record["answers"][str(record["questions"][-1]["n"])] += note
+                            yield "delta", {"n": record["questions"][-1]["n"], "text": note}
                     record["status"] = "done"
                     record["seconds"] = round(time.time() - record["at"], 1)
-                    yield "done", {"ns": [q.n for q in req.questions], "seconds": record["seconds"]}
+                    yield (
+                        "done",
+                        {
+                            "ns": [q["n"] for q in record["questions"]],
+                            "seconds": record["seconds"],
+                            **({"stopped": True} if record.get("stopped") else {}),
+                            **({"uuid": record["uuid"]} if record.get("uuid") else {}),
+                        },
+                    )
                 except Exception as e:  # surface to the client; keep partial answers
                     record["status"] = "error"
                     record["error"] = str(e) or type(e).__name__
                     yield "error", {"message": record["error"]}
                 finally:
+                    if running.get(chat_id) is side:
+                        del running[chat_id]
+                    if inbox and steering.get(chat_id) is inbox:
+                        del steering[chat_id]
+                    while inbox and not inbox.empty():  # sent as the turn ended: the client sends them next
+                        if not (f := inbox.get_nowait()[1]).done():
+                            f.set_result(False)
+                    for aid in mine:  # the reviewer left: nothing waits forever
+                        if (f := approvals.pop(aid, None)) and not f.done():
+                            f.set_result("deny")
                     chat["updated_at"] = time.time()
                     deps.store.save_chat(key, chat)
 
@@ -373,13 +639,23 @@ def _web_dist() -> Path | None:
 
 
 def _sessions(chat: dict, meta: dict, harness: str) -> list[tuple[str | None, bool, Path | None]]:
-    """Sessions a turn can run in, in order: the chat's own; else a fork of the session that wrote the guide
-    (Claude Code finds a session by the directory it ran in), falling back to a fresh one."""
+    """Sessions a turn can run in, in order. A fork: its own session; else a fork of the session that wrote the
+    guide (Claude Code finds a session by the directory it ran in), falling back to a fresh one. The guide chat: the
+    session that wrote the guide, continued, and nothing else (a fresh session would quietly be a different chat)."""
+    guide_cwd = _dir(meta.get("cwd")) if harness == "claude-code" else None
+    if chat.get("kind") == "guide":
+        if not (meta.get("session") and harness in FORKABLE):
+            raise RuntimeError("The guide's session can't be continued here; start a new chat instead.")
+        # Keep going where this chat left off, unless the guide has since been written by another session. It runs
+        # where the session ran, so its edits land in the reviewer's checkout, not Diffusion's cached one.
+        if chat.get("session_id") and chat.get("from_session") == meta["session"]:
+            return [(chat["session_id"], False, _dir(chat.get("cwd")) or _dir(meta.get("cwd")))]
+        return [(meta["session"], False, _dir(meta.get("cwd")))]
     if chat.get("session_id"):
         return [(chat["session_id"], False, _dir(chat.get("cwd")))]
     out: list[tuple[str | None, bool, Path | None]] = []
     if meta.get("session") and harness in FORKABLE:
-        out.append((meta["session"], True, _dir(meta.get("cwd")) if harness == "claude-code" else None))
+        out.append((meta["session"], True, guide_cwd))
     return [*out, (None, False, None)]
 
 

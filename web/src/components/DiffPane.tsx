@@ -1,11 +1,11 @@
 import {
-  ArrowDownAZ,
   ArrowLeftToLine,
   ArrowRightToLine,
   ChevronsDownUp,
   EyeOff,
   FolderTree,
   MessageCircle,
+  PanelLeft,
   Route,
 } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
@@ -17,8 +17,9 @@ import type { FileDiff as FD, Guide, Ref } from "../types";
 import { diffActivity, markDiffActivity, useUI } from "../ui";
 import { type AskComment, commentRows } from "./Comments";
 import { type Dot, FileDiff, type Gutter } from "./FileDiff";
-import { FileRail, fileInView } from "./FileRail";
+import { FileRail, fileInView, treeOrder } from "./FileRail";
 import { ic } from "./icons";
+import { FileView, TabBar } from "./Tabs";
 
 /** Files in guide order: by first step that references them, then unreferenced, then skippable. */
 export function guideOrder(files: FD[], guide: Guide | null): FD[] {
@@ -58,12 +59,17 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
   const { hideComments, toggleHideComments, resolved } = useUI();
   const scroller = useRef<HTMLDivElement>(null);
   const [current, setCurrent] = useState<string | null>(null);
+  const tab = useUI((s) => s.tab);
 
   const idx = useMemo(() => indexFiles(files), [files]);
-  const skipFiles = useMemo(
-    () => new Set([...files.filter((f) => f.skip).map((f) => f.path), ...(guide?.skippable.map((s) => s.file) ?? [])]),
-    [files, guide],
-  );
+  // A file is skippable when all of it is (a lockfile), not when the guide skips one hunk of it (an import).
+  const skipFiles = useMemo(() => {
+    const skipped = new Set(guide?.skippable.flatMap((s) => s.hunks) ?? []);
+    const whole = (f: (typeof files)[number]) =>
+      guide?.skippable.some((s) => s.file === f.path && !s.hunks.length) ||
+      (f.hunks.length > 0 && f.hunks.every((h) => skipped.has(h.id)));
+    return new Set(files.filter((f) => f.skip || whole(f)).map((f) => f.path));
+  }, [files, guide]);
 
   const { dots, fileSteps } = useMemo(() => {
     const dots = new Map<string, Dot[]>();
@@ -87,10 +93,11 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
     return { dots, fileSteps };
   }, [guide, idx]);
 
-  const ordered = useMemo(
-    () => (order === "guide" ? guideOrder(files, guide) : [...files].sort((a, b) => a.path.localeCompare(b.path))),
-    [files, guide, order],
-  );
+  const ordered = useMemo(() => {
+    if (order === "guide") return guideOrder(files, guide);
+    const at = new Map(treeOrder(files.map((f) => f.path)).map((p, i) => [p, i]));
+    return [...files].sort((a, b) => at.get(a.path)! - at.get(b.path)!);
+  }, [files, guide, order]);
 
   useEffect(() => {
     if (!scrollTo) return;
@@ -192,6 +199,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
   }, [rail]);
 
   const pickFile = (path: string) => {
+    useUI.getState().showTab(null);
     useUI.getState().toggleCollapsed(path, false);
     requestAnimationFrame(() => {
       const p = scroller.current;
@@ -222,44 +230,53 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
     >
       <div className="toolbar">
         <button type="button" className={`icon-btn sm${rail ? " on" : ""}`} title="Files" onClick={toggleRail}>
-          {ic(FolderTree, 15)}
+          {ic(PanelLeft, 15)}
         </button>
+        <TabBar />
         <span className="grow" />
-        <button
-          type="button"
-          className="icon-btn sm on"
-          title={order === "guide" ? "Order: guide" : "Order: A–Z"}
-          onClick={() => setOrder(order === "guide" ? "alpha" : "guide")}
-        >
-          {ic(order === "guide" ? Route : ArrowDownAZ, 15)}
-        </button>
-        <button
-          type="button"
-          className={`icon-btn sm${hideSkip ? " on" : ""}`}
-          title="Hide skippable"
-          onClick={toggleHideSkip}
-        >
-          {ic(EyeOff, 15)}
-        </button>
-        {comments.length > 0 && (
-          <button
-            type="button"
-            className={`icon-btn sm cmt-tg${hideComments ? "" : " on"}`}
-            title={hideComments ? "Show comments" : "Hide comments"}
-            onClick={toggleHideComments}
-          >
-            {ic(MessageCircle, 15)}
-            {open > 0 && <span>{open}</span>}
-          </button>
+        {tab == null && (
+          <>
+            <button
+              type="button"
+              className="icon-btn sm"
+              title={
+                order === "guide"
+                  ? "In the guide's order · click for the file tree's order"
+                  : "In the file tree's order · click for the guide's order"
+              }
+              onClick={() => setOrder(order === "guide" ? "alpha" : "guide")}
+            >
+              {ic(order === "guide" ? Route : FolderTree, 15)}
+            </button>
+            <button
+              type="button"
+              className={`icon-btn sm${hideSkip ? " on" : ""}`}
+              title="Hide skippable"
+              onClick={toggleHideSkip}
+            >
+              {ic(EyeOff, 15)}
+            </button>
+            {comments.length > 0 && (
+              <button
+                type="button"
+                className={`icon-btn sm cmt-tg${hideComments ? "" : " on"}`}
+                title={hideComments ? "Show comments" : "Hide comments"}
+                onClick={toggleHideComments}
+              >
+                {ic(MessageCircle, 15)}
+                {open > 0 && <span>{open}</span>}
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-btn sm"
+              title={allCollapsed ? "Expand all" : "Collapse all"}
+              onClick={() => collapseAll(!allCollapsed, [...skipFiles])}
+            >
+              {ic(ChevronsDownUp, 15)}
+            </button>
+          </>
         )}
-        <button
-          type="button"
-          className="icon-btn sm"
-          title={allCollapsed ? "Expand all" : "Collapse all"}
-          onClick={() => collapseAll(!allCollapsed, [...skipFiles])}
-        >
-          {ic(ChevronsDownUp, 15)}
-        </button>
         <button
           type="button"
           className="icon-btn sm"
@@ -270,8 +287,12 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
         </button>
       </div>
       <div className="diff-body">
-        {rail && <FileRail files={files} skip={skipFiles} fileSteps={fileSteps} current={current} onPick={pickFile} />}
-        <div className="diffwrap">
+        {rail && (
+          <FileRail files={files} skip={skipFiles} fileSteps={fileSteps} current={tab ?? current} onPick={pickFile} />
+        )}
+        {tab != null && <FileView key={tab} path={tab} dots={dots} onNav={onNavClick} onShowInDiff={pickFile} />}
+        {/* Kept mounted behind a file tab, so the diff keeps its place. */}
+        <div className="diffwrap" hidden={tab != null}>
           <div className="diff-scroll" ref={scroller} onClickCapture={onNavClick}>
             <div className={`files${hideSkip ? " hide-skip" : ""}`}>
               {ordered.map((f) => (

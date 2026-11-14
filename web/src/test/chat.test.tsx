@@ -19,9 +19,18 @@ type Turn = {
 };
 const chats = new Map<string, { id: string; turns: Turn[]; updated_at: number }>();
 let release: (() => void) | null = null;
-const turnBodies: { questions: { n: number; text: string }[]; version?: number | null }[] = [];
+const turnBodies: {
+  questions: { n: number; text: string }[];
+  version?: number | null;
+  mode?: string;
+  rewind?: { uuid: string; code: boolean };
+}[] = [];
 const sse = (events: [string, unknown][]) =>
   events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join("");
+
+// Messages steered into the running turn (/steer): taken in after its own answer, before it ends.
+let steerOk = true;
+let steered: { n: number; text: string }[] = [];
 
 function streamBody(chunks: string[], gate?: Promise<void>) {
   const enc = new TextEncoder();
@@ -29,15 +38,32 @@ function streamBody(chunks: string[], gate?: Promise<void>) {
     async start(c) {
       c.enqueue(enc.encode(chunks[0]));
       if (gate) await gate;
-      for (const ch of chunks.slice(1)) c.enqueue(enc.encode(ch));
+      const end = chunks.length - 1;
+      for (const ch of chunks.slice(1, end)) c.enqueue(enc.encode(ch));
+      if (steered.length) {
+        const qs = steered;
+        steered = [];
+        c.enqueue(enc.encode(sse([["steered", { ns: qs.map((q) => q.n) }]])));
+        for (const q of qs) c.enqueue(enc.encode(sse([["delta", { n: q.n, text: `steered ${q.text}` }]])));
+      }
+      if (end > 0) c.enqueue(enc.encode(chunks[end]));
       c.close();
     },
   });
 }
 
+const approveBodies: unknown[] = [];
 globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(String(input), "http://x");
   const path = url.pathname;
+  if (path.endsWith("/steer")) {
+    if (steerOk) steered.push(...JSON.parse(String(init!.body)).questions);
+    return new Response(JSON.stringify({ ok: steerOk }));
+  }
+  if (path.endsWith("/approve")) {
+    approveBodies.push(JSON.parse(String(init!.body)));
+    return new Response("{}");
+  }
   if (path === "/api/chats" && init?.method === "POST") {
     const id = `c${chats.size + 1}`;
     chats.set(id, { id, turns: [], updated_at: Date.now() / 1000 });
@@ -84,12 +110,20 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     // "think…" questions: the agent reasons first, and the turn reports how long it took
     const think = body.questions.some((q: { text: string }) => q.text.startsWith("think"));
     if (think) deltas.unshift(sse([["thinking", { text: "Check **who** calls it." }]]));
+    // "risky…" questions: the session asks before a command its settings don't allow (before the answer lands)
+    const risky = body.questions.some((q: { text: string }) => q.text.startsWith("risky"));
+    const asking = risky
+      ? sse([["approval", { id: "a1", tool: "Bash", summary: "Ran rm -rf build", input: { command: "rm -rf build" } }]])
+      : "";
+    // "fail…" questions: the tool call comes back as an error
+    if (body.questions.some((q: { text: string }) => q.text.startsWith("fail")))
+      deltas.unshift(sse([["tool_failed", { id: "t1" }]]));
     return new Response(
       streamBody(
         [
-          sse([["tool", { name: "Grep", summary: "Grep x" }]]),
+          sse([["tool", { name: "Grep", summary: "Grep x", id: "t1" }]]) + asking,
           ...deltas,
-          sse([["done", think ? { seconds: 12 } : {}]]),
+          sse([["done", { ...(think ? { seconds: 12 } : {}), uuid: `u${turnBodies.length}` }]]),
         ],
         gate,
       ),
@@ -199,25 +233,45 @@ test("drag bubble across lines → popup → queue two → badges → send → l
   fireEvent.mouseUp(window, { clientX: 300, clientY: 160 });
   await waitFor(() => expect(document.querySelector(".ask-pop")).toBeTruthy());
 
-  // queue it (Shift+Enter)
-  const input = document.querySelector<HTMLInputElement>(".ask-in input")!;
+  // queue it (Enter; ⌘Enter would ask now)
+  const input = document.querySelector<HTMLTextAreaElement>(".ask-in textarea")!;
   fireEvent.change(input, { target: { value: "Why clear the timer?" } });
-  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
-  await waitFor(() => expect(document.querySelector(".tray")).toBeTruthy());
-  expect(document.querySelectorAll(".q-row")).toHaveLength(1);
-  expect(document.querySelector(".qb.s-staged")).toBeTruthy();
+  fireEvent.keyDown(input, { key: "Enter" });
+  // it attaches to the next message as a pill in the composer: its number and lines, the note on hover
+  await waitFor(() => expect(document.querySelector(".composer .note")).toBeTruthy());
+  const note = document.querySelector<HTMLElement>(".composer .note")!;
+  expect(note.textContent).toBe("1Why clear the timer?"); // the pill shows the note; where it is shows on hover
+  // the chat box takes focus, so ↵ sends it
+  await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".composer textarea")));
+  // on the line, the same numbered badge
+  expect(document.querySelector(".qb.s-staged")!.textContent).toBe("1");
   expect(document.querySelector("tr.qd")).toBeTruthy();
-  expect(document.querySelector(".send-n")!.textContent).toBe("1");
+
+  // clicking it reopens the popup it was written in, to edit; ↵ saves in place
+  fireEvent.click(document.querySelector<HTMLElement>(".composer .note")!);
+  const edit = await waitFor(() => document.querySelector<HTMLTextAreaElement>(".ask-pop .ask-in textarea")!);
+  expect(edit.value).toBe("Why clear the timer?");
+  fireEvent.change(edit, { target: { value: "Why clear it here?" } });
+  fireEvent.keyDown(edit, { key: "Enter" });
+  await waitFor(() => expect(document.querySelector(".ask-pop")).toBeNull());
+  const { useChat } = await import("../chat");
+  expect(
+    useChat
+      .getState()
+      .chat.questions.filter((q) => q.status === "staged")
+      .map((q) => [q.n, q.text]),
+  ).toEqual([[1, "Why clear it here?"]]);
+  expect(document.querySelector(".composer .note")!.className).toBe("note");
 
   // send all with an extra typed message
   type("anything else?");
-  await waitFor(() => expect(document.querySelector(".tray")).toBeNull());
+  await waitFor(() => expect(document.querySelector(".composer .note")).toBeNull());
   expect(document.querySelectorAll(".ans-h").length).toBeGreaterThanOrEqual(2); // numbered -> headers
   await act(async () => release!());
   await waitFor(() => expect(document.querySelector(".qb.s-answered")).toBeTruthy());
 });
 
-test("questions asked mid-answer wait, then go out together as one turn", async () => {
+test("messages asked mid-answer queue, can be edited or removed, and go out one per turn", async () => {
   await mount();
   fireEvent.click(screen.getByTitle("New chat"));
   turnBodies.length = 0;
@@ -225,25 +279,54 @@ test("questions asked mid-answer wait, then go out together as one turn", async 
   await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
   type("second?");
   type("third?");
+  type("fourth?");
   expect(turnBodies).toHaveLength(1); // nothing new sent while streaming
-  expect(document.querySelectorAll(".msg.user.waiting .bubble")).toHaveLength(2);
-  expect(document.querySelector(".wait-note")!.textContent).toBe("2");
+  // queued above the composer, not in the thread
+  const rows = () => [...document.querySelectorAll(".queue-row .qt")].map((q) => q.textContent);
+  expect(rows()).toEqual(["second?", "third?", "fourth?"]);
+  expect(document.querySelector(".queue-h")!.textContent).toBe("3 Queued");
 
-  await act(async () => release!()); // first answer finishes → waiting batch sends
-  await waitFor(() => expect(turnBodies).toHaveLength(2));
-  expect(turnBodies[1].questions.map((q) => [q.n, q.text])).toEqual([
-    [1, "second?"],
-    [2, "third?"],
-  ]);
-  expect(document.querySelector(".msg.user.waiting")).toBeNull();
+  // edit one in the composer: the row says so, ✓ saves it back in place
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[1].querySelector('[title="Edit"]')!);
+  const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  expect(ta.value).toBe("third?");
+  expect(document.querySelector(".editing-chip")).toBeTruthy();
+  expect(document.querySelector(".queue-row.editing .queue-tag")!.textContent).toBe("Editing");
+  fireEvent.change(ta, { target: { value: "third, edited?" } });
+  fireEvent.click(screen.getByTitle("Save"));
+  expect(rows()).toEqual(["second?", "third, edited?", "fourth?"]);
+  expect(document.querySelector(".editing-chip")).toBeNull();
+  // remove one
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[2].querySelector('[title="Remove"]')!);
+  expect(rows()).toEqual(["second?", "third, edited?"]);
+  // collapse to a pill and back
+  fireEvent.click(screen.getByTitle("Collapse"));
+  expect(document.querySelector(".queue-pill")!.textContent).toBe("Queued 2");
+  fireEvent.click(document.querySelector(".queue-pill")!);
+
+  // with nothing typed, send becomes Stop
+  fireEvent.click(screen.getByTitle("Stop"));
+  const fetched = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+  expect(fetched.some((u) => /\/api\/chats\/[^/]+\/stop$/.test(u))).toBe(true);
+
+  // while a queued message is being edited, the queue holds (and Steer is gone); saving lets it go on
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[1].querySelector('[title="Edit"]')!);
+  expect(screen.queryByText("Steer")).toBeNull();
   await act(async () => release!());
-  await waitFor(() =>
-    expect([...document.querySelectorAll(".ans-t")].map((a) => a.textContent)).toEqual([
-      "answer 0",
-      "answer 1",
-      "answer 2",
-    ]),
-  );
+  await new Promise((r) => setTimeout(r, 50));
+  expect(turnBodies).toHaveLength(1);
+  fireEvent.keyDown(document.querySelector(".composer textarea")!, { key: "Escape" });
+
+  // each turn's end sends the next queued message, alone
+  await waitFor(() => expect(turnBodies).toHaveLength(2));
+  expect(turnBodies[1].questions.map((q) => q.text)).toEqual(["second?"]);
+  expect(rows()).toEqual(["third, edited?"]);
+  await act(async () => release!());
+  await waitFor(() => expect(turnBodies).toHaveLength(3));
+  expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["third, edited?"]);
+  expect(document.querySelector(".queue")).toBeNull();
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(3));
 });
 
 test("answers link citations to diff rows; show_code chips focus the diff, auto-jumping only if it wasn't touched", async () => {
@@ -262,7 +345,9 @@ test("answers link citations to diff rows; show_code chips focus the diff, auto-
   const cite = document.querySelector<HTMLElement>(".ans-t button.cite")!;
   expect(cite.textContent).toBe("session.ts:6–7");
   expect(cite.title).toBe("src/auth/session.ts · Show in diff");
-  expect(document.querySelector(".ans-t code.cite.off")!.textContent).toBe("README.md:1"); // not in the diff
+  // not in the diff: opens in a tab
+  const other = document.querySelector<HTMLElement>('.ans-t button.cite[title="README.md · Open in a tab"]')!;
+  expect(other.textContent).toBe("README.md:1");
   fireEvent.mouseEnter(cite);
   expect(row("src/auth/session.ts:6").className).toMatch(/\bhl\b/);
   expect(row("src/auth/session.ts:5").className).not.toMatch(/\bhl\b/);
@@ -327,8 +412,191 @@ test("a turn's reasoning and tools fold into one line that opens to a timeline",
   expect(items[1].textContent).toBe("Check who calls it.");
 });
 
+test("a tool call that failed is marked in the timeline", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  type("fail at grepping");
+  await waitFor(() => expect(document.querySelector(".trace-live")).toBeTruthy());
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelector(".trace-live")).toBeNull());
+  fireEvent.click(document.querySelector(".trace-h")!);
+  const row = document.querySelector(".trace-tool")!;
+  expect(row.classList.contains("failed")).toBe(true);
+  expect(row.querySelector(".fail")!.textContent).toBe("Failed");
+});
+
 test("reasoning headlines: first bold phrase, else first sentence", async () => {
   const { headline } = await import("../components/ChatPanel");
   expect(headline("**Finding callers**\n\nI'll grep.")).toBe("Finding callers");
   expect(headline("Check the timer. Then the API.")).toBe("Check the timer.");
+});
+
+test("chat opens on the guide's session; new chats fork it; history keeps the two apart", async () => {
+  await mount();
+  const g = useApp.getState().guide!;
+  useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "codex", session: "th_1" } } });
+  const { useChat } = await import("../chat");
+  await act(async () => useChat.getState().openGuide());
+  expect(document.querySelector(".chat-title")!.textContent).toBe("Guide session");
+  expect(document.querySelector('.chat-mark svg[aria-label="Codex"]')).toBeTruthy();
+  const posts = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+  type("keep going");
+  await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
+  const post = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+    .slice(posts)
+    .find(([u, i]) => String(u) === "/api/chats" && i?.method === "POST");
+  expect(JSON.parse(String(post![1].body)).kind).toBe("guide");
+  await act(async () => release!());
+
+  fireEvent.click(screen.getByTitle("New chat"));
+  expect(document.querySelector(".chat-title .kind")).toBeTruthy(); // a fork
+  fireEvent.click(screen.getByTitle("History"));
+  expect(document.querySelector(".chat-title")!.textContent).toBe("History");
+  await waitFor(() => expect(document.querySelector(".h-item.guide .h-t")!.textContent).toBe("Guide session"));
+  useApp.setState({ guide: g });
+});
+
+test("the guide session runs in the harness's permission modes and asks in the conversation; forks only read", async () => {
+  await mount();
+  const g = useApp.getState().guide!;
+  useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "claude-code", session: "s1" } } });
+  const { useChat } = await import("../chat");
+  await act(async () => useChat.getState().openGuide());
+  const mode = () => document.querySelector<HTMLElement>(".composer button.mode")!;
+  expect(mode().textContent).toBe("Manual");
+  fireEvent.click(mode());
+  const items = [...document.querySelectorAll(".mode-menu .mode-item")].map((i) => i.textContent);
+  expect(items).toEqual(["Manual", "Accept edits", "Plan", "Auto"]);
+  fireEvent.click(screen.getByText("Plan"));
+  expect(mode().textContent).toBe("Plan");
+  expect(document.querySelector(".mode-menu")).toBeNull();
+  fireEvent.click(mode());
+  fireEvent.click(screen.getByRole("menuitemradio", { name: /Manual/ }));
+  type("risky cleanup");
+  await waitFor(() => expect(document.querySelector(".thread .ask-card")).toBeTruthy());
+  expect(turnBodies.at(-1)!.mode).toBe("default");
+  expect(document.querySelector(".ask-d")!.textContent).toBe("rm -rf build");
+  fireEvent.keyDown(window, { key: "Enter" }); // ↵ allows
+  expect(document.querySelector(".ask-card")).toBeNull();
+  await waitFor(() => expect(approveBodies).toEqual([{ id: "a1", decision: "allow" }]));
+  await act(async () => release!());
+  // a fork can only read
+  fireEvent.click(screen.getByTitle("New chat"));
+  expect(document.querySelector(".composer .mode")!.textContent).toBe("Read-only");
+  expect(document.querySelector("button.mode")).toBeNull();
+  useApp.setState({ guide: g });
+});
+
+test("an edit to approve shows its diff, and allowing edits for the session switches the mode", async () => {
+  const { useChat } = await import("../chat");
+  useChat.setState({
+    mode: "default",
+    asks: [
+      {
+        id: "e1",
+        tool: "Edit",
+        summary: "Edit",
+        input: { file_path: "src/a.rs", old_string: "a\nb", new_string: "c" },
+      },
+    ],
+  });
+  const { AskCardForTest } = await import("../components/ChatPanel");
+  const { render } = await import("@testing-library/react");
+  const r = render(<AskCardForTest id="e1" />);
+  expect(r.container.querySelector(".ask-h code")!.textContent).toBe("src/a.rs");
+  expect([...r.container.querySelectorAll(".ask-diff span")].map((l) => l.className)).toEqual(["del", "del", "add"]);
+  fireEvent.click(r.getByText("Allow edits this session"));
+  expect(useChat.getState().mode).toBe("acceptEdits");
+  r.unmount();
+
+  // a plan reads as the plan; approving it leaves plan mode
+  useChat.getState().setMode("plan");
+  useChat.setState({
+    asks: [{ id: "p1", tool: "ExitPlanMode", summary: "ExitPlanMode", input: { plan: "## Plan\n\n1. Do it" } }],
+  });
+  const p = render(<AskCardForTest id="p1" />);
+  expect(p.container.querySelector(".ask-plan h2")!.textContent).toBe("Plan");
+  fireEvent.click(p.getByText("Approve"));
+  expect(useChat.getState().mode).toBe("default");
+  p.unmount();
+});
+
+test("@ in the composer picks a file from the diff", async () => {
+  await mount();
+  const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  fireEvent.change(ta, { target: { value: "what about @sess", selectionStart: 16 } });
+  await waitFor(() => expect(document.querySelector(".ta-menu")).toBeTruthy());
+  expect(document.querySelector(".ta-item.on .ta-label")!.textContent).toBe("session.ts");
+  const items = document.querySelectorAll(".ta-item").length;
+  fireEvent.keyDown(ta, { key: "n", ctrlKey: true });
+  if (items > 1) expect(document.querySelectorAll(".ta-item")[1].classList.contains("on")).toBe(true);
+  fireEvent.keyDown(ta, { key: "p", ctrlKey: true });
+  expect(document.querySelector(".ta-item.on .ta-label")!.textContent).toBe("session.ts");
+  fireEvent.keyDown(ta, { key: "Enter" });
+  expect(ta.value).toBe("what about @src/auth/session.ts ");
+  expect(document.querySelector(".ta-menu")).toBeNull();
+  expect(turnBodies.at(-1)?.questions[0]?.text).not.toBe("what about @sess");
+});
+
+test("Steer sends a queued message into the running answer, or else stops it and sends it next", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  turnBodies.length = 0;
+  type("first?");
+  await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
+  type("also this?");
+  fireEvent.click(screen.getByText("Steer"));
+  // in the thread at once, as a turn of its own; the queue is empty
+  await waitFor(() =>
+    expect([...document.querySelectorAll(".bubble")].map((b) => b.textContent)).toEqual(["first?", "also this?"]),
+  );
+  expect(document.querySelector(".queue")).toBeNull();
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(2));
+  const answers = [...document.querySelectorAll(".ans-t")].map((a) => a.textContent);
+  expect(answers).toEqual(["answer 0", "steered also this?"]);
+  expect(turnBodies).toHaveLength(1); // one turn answered both
+
+  // a harness that can't steer: stop, then it goes as the next turn
+  steerOk = false;
+  type("second?");
+  await waitFor(() => expect(turnBodies).toHaveLength(2));
+  type("instead?");
+  fireEvent.click(screen.getByText("Steer"));
+  await waitFor(() => {
+    const fetched = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    expect(fetched.some((u) => /\/stop$/.test(u))).toBe(true);
+  });
+  await act(async () => release!());
+  await waitFor(() => expect(turnBodies).toHaveLength(3));
+  expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["instead?"]);
+  await act(async () => release!());
+  steerOk = true;
+});
+
+test("editing a sent message resends it in its place, rewinding the session to before it", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  turnBodies.length = 0;
+  type("first?");
+  await waitFor(() => expect(release).toBeTruthy());
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(1));
+  type("second?");
+  await waitFor(() => expect(turnBodies).toHaveLength(2));
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(2));
+  // the first message has nothing before it to go back to; the second can be edited
+  const edits = document.querySelectorAll<HTMLElement>(".edit-sent");
+  expect(edits).toHaveLength(1);
+  fireEvent.click(edits[0]);
+  const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  await waitFor(() => expect(ta.value).toBe("second?"));
+  expect(document.querySelector(".editing-chip")).toBeTruthy();
+  fireEvent.change(ta, { target: { value: "second, better?" } });
+  fireEvent.click(screen.getByTitle("Save"));
+  await waitFor(() => expect(turnBodies).toHaveLength(3));
+  expect(turnBodies[2].rewind).toEqual({ uuid: "u2", code: false });
+  expect([...document.querySelectorAll(".bubble")].map((b) => b.textContent)).toEqual(["first?", "second, better?"]);
+  await act(async () => release!());
 });

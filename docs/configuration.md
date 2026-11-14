@@ -3,8 +3,8 @@
 Nothing needs configuring. Guides are written by the coding agent you ask for a review (Claude Code, Codex or
 Cursor), with its own tools and login. Chat in the browser runs on that same agent's CLI:
 
-- **Claude Code** and **Codex**: chat continues from a fork of the session that wrote the guide, so it starts out
-  knowing everything the agent read. The session itself is left untouched.
+- **Claude Code** and **Codex**: chat opens on the session that wrote the guide and carries it on, so it knows
+  everything the agent read. New chats fork that session instead, leaving it untouched. Both are read-only.
 - **Cursor**: its CLI can't fork a session, so chat starts a fresh one, seeded with the guide and what you told
   the agent you care about. Cursor needs the [`cursor-agent` CLI](https://cursor.com/cli) signed in.
 

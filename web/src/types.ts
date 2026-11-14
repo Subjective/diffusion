@@ -132,7 +132,14 @@ export interface Guide {
   skippable: { file: string; hunks: string[]; reason: SkipReason }[];
   uncovered: string[];
   validation: { total_refs: number; invalid_refs: number; clamped_refs: number };
-  meta?: { head_sha: string; source?: "agent" | "chat"; harness?: string | null; created_at?: number };
+  meta?: {
+    head_sha: string;
+    source?: "agent" | "chat";
+    harness?: string | null;
+    /** The agent session that wrote the guide, which chat forks or continues. */
+    session?: string | null;
+    created_at?: number;
+  };
 }
 
 /** One saved version of the guide for the current head: every submit, and every edit made from chat. */

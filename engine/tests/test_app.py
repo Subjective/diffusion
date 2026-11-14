@@ -70,14 +70,18 @@ async def test_pr_endpoint_returns_files_and_hunks(setup):
     assert by["src/auth/session.ts"]["hunks"][0]["id"].startswith("H")
 
 
-async def test_file_endpoint_serves_changed_files_at_head(setup):
+async def test_file_endpoint_serves_any_tracked_file_at_head(setup):
     client, *_ = setup
     r = await client.get("/api/file", params={"url": URL, "path": "src/auth/types.ts"})
     assert r.status_code == 200
     assert r.json()["text"].count("expiresAt") == 1
-    # only files in the diff are served
-    r = await client.get("/api/file", params={"url": URL, "path": "README.md"})
-    assert r.status_code == 404
+    # files outside the diff open in tabs; paths the head doesn't track don't
+    tree = (await client.get("/api/tree", params={"url": URL})).json()["files"]
+    assert "src/auth/types.ts" in tree and tree == sorted(tree)
+    other = next(f for f in tree if f.endswith((".ts", ".json", ".md")) and f != "src/auth/types.ts")
+    assert (await client.get("/api/file", params={"url": URL, "path": other})).status_code == 200
+    for bad in ("nope.md", "../etc/passwd", "HEAD"):
+        assert (await client.get("/api/file", params={"url": URL, "path": bad})).status_code == 404
 
 
 async def test_definition_endpoint_finds_imported_definitions(setup):
@@ -213,6 +217,66 @@ async def test_chat_bad_guide_block_is_explained_not_saved(setup):
     assert (await client.get("/api/guides", params={"url": URL})).json()["versions"] == []
 
 
+async def test_guide_chat_continues_the_guide_session(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="codex", session="th_1")
+    seen = []
+
+    async def runner(req):
+        seen.append((req.resume, req.fork, req.adopt))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "th_1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    # one guide chat per target
+    assert (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"] == cid
+    for text in ("a", "b"):
+        r = await client.post(
+            f"/api/chats/{cid}/turn", json={"url": URL, "questions": [{"n": 1, "text": text}]}
+        )
+        assert parse_sse(r.text)[-1][0] == "done"
+    # added to, never forked; only the first turn brings the chat's instructions
+    assert seen == [("th_1", False, True), ("th_1", False, False)]
+    listed = (await client.get("/api/chats", params={"url": URL})).json()
+    assert [(c["id"], c["kind"], c["harness"]) for c in listed] == [(cid, "guide", "codex")]
+
+
+async def test_guide_chat_is_stored_by_its_first_turn(setup):
+    # The UI shows the guide chat from GET without creating it, so asking in it must work straight away.
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="codex", session="th_1")
+
+    async def runner(req):
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "th_1")
+
+    runners["chat"] = runner
+    r = await client.post("/api/chats/guide/turn", json={"url": URL, "questions": [{"n": 1, "text": "hi"}]})
+    assert r.status_code == 200
+    assert parse_sse(r.text)[-1][0] == "done"
+    assert [c["id"] for c in (await client.get("/api/chats", params={"url": URL})).json()] == ["guide"]
+
+
+async def test_guide_chat_without_a_session_says_so(setup):
+    client, runners, deps, prep = setup
+    submit(deps, prep, guide_for(prep), harness="cursor", session="c1")
+    runners["chat"] = None
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    evs = parse_sse(
+        (
+            await client.post(
+                f"/api/chats/{cid}/turn", json={"url": URL, "questions": [{"n": 1, "text": "x"}]}
+            )
+        ).text
+    )
+    assert evs[-1][0] == "error" and "can't be continued" in evs[-1][1]["message"]
+
+
 async def test_fork_failure_falls_back_to_a_fresh_session(setup):
     client, runners, deps, prep = setup
     from diffusion.agent import TextEvent
@@ -343,6 +407,29 @@ async def test_thinking_streams_and_is_kept_with_the_turn(setup):
     assert t["trace"] == [{"think": "Look at the timer."}, {"tool": "Read session.ts"}] and t["seconds"] >= 0
 
 
+async def test_failed_tool_calls_are_marked_in_the_trace(setup):
+    client, runners, deps, _ = setup
+    from diffusion.agent import TextEvent, ToolFailedEvent
+
+    async def runner(req):
+        yield ToolEvent("mcp__x__post_message", "post_message", "tu_1")
+        yield ToolFailedEvent("tu_1")
+        yield ToolEvent("Read", "Read session.ts", "tu_2")
+        yield TextEvent("ans")
+        yield DoneEvent(1, 0, False, "s")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 0, "text": "x"}]}
+    evs = parse_sse((await client.post(f"/api/chats/{cid}/turn", json=body)).text)
+    assert ("tool_failed", {"id": "tu_1"}) in evs
+    t = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()["turns"][0]
+    assert t["trace"] == [
+        {"tool": "post_message", "id": "tu_1", "failed": True},
+        {"tool": "Read session.ts", "id": "tu_2"},
+    ]
+
+
 async def test_overlapping_turns_serialize_and_both_persist(setup):
     client, runners, deps, _ = setup
     from diffusion.agent import TextEvent
@@ -396,3 +483,270 @@ async def test_local_target_end_to_end(tmp_path):
     submit(deps, prep, guide_for(prep, "local!"))
     g = (await client.get("/api/pr", params={"url": target})).json()["guide"]
     assert g["tldr"] == "local!" and g["uncovered"] == []
+
+
+async def test_guide_chat_history_is_the_sessions_transcript(setup, tmp_path, monkeypatch):
+    client, runners, deps, prep = setup
+    import json
+
+    from diffusion.agent import TextEvent
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    path = tmp_path / "claude/projects/-repo/s1.jsonl"
+    path.parent.mkdir(parents=True)
+
+    def log(*entries):
+        with path.open("a") as f:
+            f.writelines(json.dumps(e) + "\n" for e in entries)
+
+    def said(role, text):
+        return {
+            "type": role,
+            "message": {
+                "role": role,
+                "content": text if role == "user" else [{"type": "text", "text": text}],
+            },
+        }
+
+    log(said("user", "write the guide"), said("assistant", "written"))
+    # before anything is asked here, the guide chat already shows the conversation that wrote the guide
+    got = (await client.get("/api/chats/guide", params={"url": URL})).json()
+    assert [(t["questions"][0]["text"], t["answers"]["0"]) for t in got["turns"]] == [
+        ("write the guide", "written")
+    ]
+    assert got["harness"] == "claude-code"
+
+    async def runner(req):
+        log(said("user", req.prompt), said("assistant", "ok"))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    await client.post(f"/api/chats/{cid}/turn", json={"url": URL, "questions": [{"n": 1, "text": "why?"}]})
+    log(said("user", "from the terminal"), said("assistant", "sure"))
+    got = (await client.get(f"/api/chats/{cid}", params={"url": URL})).json()
+    assert [t["questions"][0]["text"] for t in got["turns"]] == [
+        "write the guide",
+        "why?",
+        "from the terminal",
+    ]
+    assert got["turns"][1]["answers"] == {"1": "ok"}  # Diffusion's own record of its turn
+
+
+async def test_guide_chat_asks_the_reviewer_before_tools_its_settings_dont_allow(setup):
+    client, runners, deps, prep = setup
+    import asyncio
+
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    seen = []
+
+    async def runner(req):
+        seen.append(req.mode)
+        ok = await req.approve("Bash", "Ran rm -rf build", {"command": "rm -rf build"})
+        no = await req.approve("Edit", "Edit a.ts", {"file_path": "a.ts"})
+        ok, no = ok == "allow", no == "allow"
+        yield TextEvent(f"{ok} {no}")
+        yield DoneEvent(1, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "clean up"}], "mode": "default"}
+    waiting = (
+        client._transport.app.state.approvals
+    )  # the SSE stream is buffered here, so answer from the side
+
+    async def reviewer():
+        for allow in (True, False):
+            while not waiting:
+                await asyncio.sleep(0.01)
+            (aid,) = list(waiting)
+            r = await client.post(
+                f"/api/chats/{cid}/approve", json={"id": aid, "decision": "allow" if allow else "deny"}
+            )
+            assert r.status_code == 200
+            while aid in waiting:
+                await asyncio.sleep(0.01)
+
+    r, _ = await asyncio.wait_for(
+        asyncio.gather(client.post(f"/api/chats/{cid}/turn", json=body), reviewer()), timeout=10
+    )
+    events = parse_sse(r.text)
+    asked = [d for e, d in events if e == "approval"]
+    assert [(a["tool"], a["summary"], a["input"]) for a in asked] == [
+        ("Bash", "Ran rm -rf build", {"command": "rm -rf build"}),
+        ("Edit", "Edit a.ts", {"file_path": "a.ts"}),
+    ]
+    assert ("delta", {"n": 1, "text": "True False"}) in events and seen == ["default"]
+    assert (
+        await client.post(f"/api/chats/{cid}/approve", json={"id": "nope", "decision": "allow"})
+    ).status_code == 404
+
+
+async def test_forks_stay_read_only_whatever_mode_is_asked(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    seen = []
+
+    async def runner(req):
+        seen.append((req.mode, req.native))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "x"}], "mode": "auto"}
+    await client.post(f"/api/chats/{cid}/turn", json=body)
+    assert seen == [("read-only", False)]
+
+
+async def test_stop_ends_a_running_turn_and_closes_the_agent(setup):
+    client, runners, deps, prep = setup
+    import asyncio
+
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    started, closed = asyncio.Event(), []
+
+    async def runner(req):
+        try:
+            yield TextEvent("partial")
+            started.set()
+            await asyncio.sleep(30)  # still working when stopped
+            yield TextEvent(" never")
+        finally:
+            closed.append(True)
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "long job"}]}
+
+    async def stopper():
+        await started.wait()
+        assert (await client.post(f"/api/chats/{cid}/stop")).json() == {"ok": True}
+
+    r, _ = await asyncio.wait_for(
+        asyncio.gather(client.post(f"/api/chats/{cid}/turn", json=body), stopper()), timeout=10
+    )
+    events = parse_sse(r.text)
+    assert ("delta", {"n": 1, "text": "partial"}) in events
+    assert events[-1][0] == "done" and events[-1][1]["stopped"] is True
+    assert closed == [True]
+    turn = deps.store.load_chat(prep.meta.ref.key, "guide")["turns"][-1]
+    assert turn["status"] == "done" and turn["stopped"] is True
+    # nothing running: stopping again is a no-op
+    assert (await client.post(f"/api/chats/{cid}/stop")).json() == {"ok": False}
+
+
+async def test_a_command_in_the_guide_session_goes_as_typed(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    prompts = []
+
+    async def runner(req):
+        prompts.append(req.prompt)
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    for text in ("/code-review auth", "why?"):
+        await client.post("/api/chats/guide/turn", json={"url": URL, "questions": [{"n": 1, "text": text}]})
+    assert prompts[0] == "/code-review auth"
+    assert prompts[1] != "why?" and "why?" in prompts[1]  # a question keeps the chat's wrapping
+
+
+async def test_steer_sends_questions_into_the_running_turn(setup):
+    client, runners, deps, prep = setup
+    import asyncio
+
+    from diffusion.agent import SteeredEvent, TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    started = asyncio.Event()
+
+    async def runner(req):
+        yield TextEvent("first part")
+        started.set()
+        text, accepted = await req.steer.get()  # the runner takes it in at its next step
+        accepted.set_result(True)
+        assert text.startswith("also check the timer")
+        yield SteeredEvent(text)
+        yield TextEvent("steered part")
+        yield DoneEvent(2, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "long job"}]}
+
+    async def steerer():
+        await started.wait()
+        steer = {"questions": [{"n": 2, "text": "also check the timer"}]}
+        assert (await client.post(f"/api/chats/{cid}/steer", json=steer)).json() == {"ok": True}
+
+    r, _ = await asyncio.wait_for(
+        asyncio.gather(client.post(f"/api/chats/{cid}/turn", json=body), steerer()), timeout=10
+    )
+    events = parse_sse(r.text)
+    assert ("steered", {"ns": [2]}) in events
+    assert ("delta", {"n": 2, "text": "steered part"}) in events
+    assert events[-1][0] == "done" and events[-1][1]["ns"] == [1, 2]
+    turn = deps.store.load_chat(prep.meta.ref.key, "guide")["turns"][-1]
+    assert [q["text"] for q in turn["questions"]] == ["long job", "also check the timer"]
+    assert turn["answers"] == {"1": "first part", "2": "steered part"}
+    # nothing running: the client stops and sends instead
+    assert (
+        await client.post(f"/api/chats/{cid}/steer", json={"questions": [{"n": 3, "text": "x"}]})
+    ).json() == {"ok": False}
+
+
+async def test_editing_a_sent_message_rewinds_the_session_to_just_before_it(setup, monkeypatch, tmp_path):
+    client, runners, deps, prep = setup
+    import json as _json
+
+    import diffusion.app as app_mod
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    seen = []
+    ids = iter(["u1", "u2", "u3"])
+
+    async def runner(req):
+        seen.append((req.resume_at, req.restore_files))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s1", prompt_id=next(ids))
+
+    runners["chat"] = runner
+    for text in ("first?", "second?"):
+        r = await client.post(
+            "/api/chats/guide/turn", json={"url": URL, "questions": [{"n": 0, "text": text}]}
+        )
+    assert parse_sse(r.text)[-1][1]["uuid"] == "u2"
+    # the session's transcript: u2 follows the answer to u1 (a1)
+    transcript = tmp_path / "s1.jsonl"
+    transcript.write_text("\n".join(_json.dumps(e) for e in [
+        {"type": "user", "uuid": "u1", "parentUuid": None, "message": {"role": "user", "content": "first?"}},
+        {"type": "assistant", "uuid": "a1", "parentUuid": "u1", "message": {"role": "assistant", "content": []}},
+        {"type": "user", "uuid": "u2", "parentUuid": "a1", "message": {"role": "user", "content": "second?"}},
+    ]))  # fmt: skip
+    monkeypatch.setattr(app_mod, "find_transcript", lambda harness, session: transcript)
+    body = {
+        "url": URL,
+        "questions": [{"n": 0, "text": "second, better?"}],
+        "rewind": {"uuid": "u2", "code": True},
+    }
+    r = await client.post("/api/chats/guide/turn", json=body)
+    assert parse_sse(r.text)[-1][0] == "done"
+    assert seen[-1] == ("a1", "u2")  # resumed just before it, with the files put back as they were then
+    turns = deps.store.load_chat(prep.meta.ref.key, "guide")["turns"]
+    assert [t["questions"][0]["text"] for t in turns] == ["first?", "second, better?"]
+    # the first message can't be edited: there's nothing before it to go back to
+    body["rewind"] = {"uuid": "u1"}
+    r = await client.post("/api/chats/guide/turn", json=body)
+    assert parse_sse(r.text)[-1][0] == "error"

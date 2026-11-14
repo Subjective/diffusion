@@ -1192,21 +1192,23 @@ tr.ln:hover .ask-btn {
 }
 .ask-in {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 6px;
 }
-.ask-in input {
+.ask-in textarea {
   flex: 1;
-  height: 36px;
+  min-height: 36px;
+  resize: none;
+  overflow-y: hidden;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0 14px;
+  border-radius: 18px;
+  padding: 7px 14px;
   outline: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px var(--sans);
+  font: 14px / 20px var(--sans);
 }
-.ask-in input:focus {
+.ask-in textarea:focus {
   border-color: var(--subtle);
 }
 
@@ -1295,6 +1297,7 @@ tr.ln:hover .ask-btn {
 }
 .bubble {
   background: var(--chip);
+  overflow-wrap: anywhere;
   padding: 9px 14px;
   border-radius: 18px;
   font-size: 14px;
@@ -1350,6 +1353,18 @@ tr.ln:hover .ask-btn {
   vertical-align: -2px;
   animation: blink 1s steps(2) infinite;
 }
+.streaming .md > :last-child:not(ul, ol, pre)::after,
+.streaming .md > :is(ul, ol):last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  vertical-align: -2px;
+  animation: blink 1s steps(2) infinite;
+}
 @keyframes blink {
   50% {
     opacity: 0;
@@ -1379,7 +1394,219 @@ tr.ln:hover .ask-btn {
   color: var(--text);
   font: 14px / 22px var(--sans);
   padding: 5px 0;
+  overflow-y: hidden; /* autosize turns scrolling on past 12 lines */
+}
+/* Stacked, flex: 1 would size it by the column (to nothing) and ignore the height autosize sets. */
+.composer.stack textarea {
+  flex: none;
+}
+
+/* Composer mode: how much the guide session may do (forks are read-only) */
+.composer .mode {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 15px;
+  background: none;
+  color: var(--muted);
+  font: 12px / 1 var(--sans);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.composer button.mode:hover {
+  background: var(--chip);
+  color: var(--text);
+}
+.composer .mode.ro {
+  cursor: default;
+}
+.composer.stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 8px 8px 16px;
+  border-radius: 20px;
+}
+.c-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -8px;
+}
+.composer .mode.m-auto {
+  color: var(--del-fg);
+}
+.mode-box {
+  position: relative;
+}
+.mode-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  min-width: 230px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.mode-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: 13px / 18px var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.mode-item:hover,
+.mode-item.on {
+  background: var(--chip);
+}
+
+/* The session's terminal history before this chat, folded to one line */
+.earlier {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: none;
+  color: var(--muted);
+  font: 13px / 18px var(--sans);
+  cursor: pointer;
+}
+.earlier:hover {
+  color: var(--text);
+}
+.earlier.open .ic:last-child {
+  transform: rotate(180deg);
+}
+
+/* A tool call waiting on the reviewer, in the conversation */
+.ask-card {
+  margin: 4px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.ask-h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text);
+}
+.ask-h .verb {
+  font-weight: 500;
+}
+.ask-h code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px / 18px var(--mono);
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--chip);
+}
+.ask-h .cnt {
+  font: 12px var(--mono);
+}
+.ask-h .cnt .a {
+  color: var(--add-fg);
+}
+.ask-h .cnt .d {
+  color: var(--del-fg);
+}
+.ask-diff {
+  margin: 8px -12px;
+  padding: 6px 0;
+  max-height: 220px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font: 12px / 19px var(--mono);
+  white-space: pre;
+}
+.ask-diff span {
+  display: block;
+  padding: 0 12px;
+}
+.ask-diff .add {
+  background: var(--add);
+}
+.ask-diff .del {
+  background: var(--del);
+}
+.ask-d {
+  margin: 8px 0;
+  padding: 7px 9px;
   max-height: 140px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--chip);
+  font: 12px / 18px var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ask-plan {
+  margin: 8px -12px;
+  padding: 2px 12px;
+  max-height: 320px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.ask-b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ask-act.ghost {
+  border-color: transparent;
+  color: var(--muted);
+}
+.ask-act .k {
+  margin-left: 4px;
+  opacity: 0.6;
+}
+.ask-act {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: none;
+  color: var(--text);
+  font: 500 12.5px / 1 var(--sans);
+  cursor: pointer;
+}
+.ask-act:hover {
+  background: var(--chip);
+}
+.ask-act.primary {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+.ask-act.primary:hover {
+  opacity: 0.88;
 }
 
 /* ---------- drag-to-range ---------- */
@@ -1439,9 +1666,9 @@ tr.qd.sel td.mark {
   border: 1px solid transparent;
 }
 .qb.s-staged {
-  background: var(--surface);
-  color: var(--muted);
-  border: 1px dashed var(--subtle);
+  padding: 0 6px;
+  background: var(--hl-bar);
+  color: #fff;
 }
 .qb.s-pending {
   background: var(--chip);
@@ -1467,75 +1694,165 @@ tr.qd.sel td.mark {
   flex: none;
 }
 .qn.staged {
-  background: var(--surface);
-  color: var(--muted);
-  border: 1px dashed var(--subtle);
+  background: var(--hl-bar);
+  color: #fff;
 }
-
-.tray {
-  border: 1px solid var(--border-strong);
-  border-radius: 16px;
-  margin-bottom: 8px;
-  padding: 6px;
-  background: var(--panel);
+.note-peek {
+  width: auto;
+  max-width: 320px;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+/* Line notes attached to the next message, as pills in the composer. */
+.notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 4px -6px;
+}
+.note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 4px 0 5px;
+  border-radius: 999px;
+  background: var(--chip);
+  cursor: pointer;
   animation: pop 0.14s ease-out;
 }
-.tray-h {
+.note .ref {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--text);
+  font: 12.5px / 1 var(--sans);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.note-peek .peek-at {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font: 11.5px var(--mono);
+}
+.note.hover {
+  box-shadow: 0 0 0 2px var(--hl-bar);
+}
+.note .x {
+  width: 18px;
+  height: 18px;
+}
+.note .x {
+  opacity: 0;
+}
+.note:hover .x {
+  opacity: 1;
+}
+/* Messages waiting for the running turn: a panel above the composer, one row each, sent one per turn. */
+.queue {
+  margin: 0 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 4px;
+  animation: pop 0.14s ease-out;
+}
+.queue-h {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px 2px 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.queue-rows {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.queue-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 0 4px 8px;
-  color: var(--subtle);
-  font-size: 12px;
+  min-height: 30px;
+  padding: 0 4px 0 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 13.5px;
 }
-.q-row {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px 4px 8px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 13px;
+.queue-row:hover {
+  background: var(--chip);
 }
-.q-row:hover,
-.q-row.hover {
-  background: var(--hover);
+.queue-row.editing {
+  border-color: var(--border-strong);
 }
-.q-row .ref {
-  font: 11px var(--mono);
-  color: var(--subtle);
-  white-space: nowrap;
-}
-.q-row .qt {
-  white-space: nowrap;
+.queue-row .qt {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.q-row .x {
-  opacity: 0;
+.queue-act {
+  display: none;
+  align-items: center;
+  gap: 2px;
 }
-.q-row:hover .x {
-  opacity: 1;
+.queue-row:hover .queue-act {
+  display: flex;
+}
+.queue-act .text-btn {
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.queue-act .text-btn,
+.queue-tag {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.queue-act .text-btn:hover {
+  color: var(--text);
+}
+.queue-pill {
+  cursor: pointer;
+  font-family: inherit;
+  margin: 0 4px 8px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+}
+.queue-pill span {
+  margin-left: 4px;
+  color: var(--muted);
+}
+.editing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 2px 0 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hl-bar) 14%, transparent);
+  color: var(--hl-bar);
+  font-size: 13px;
+}
+.editing-chip .icon-btn {
+  width: 18px;
+  height: 18px;
+  color: inherit;
 }
 #chatSend,
 #askSend {
   position: relative;
-}
-.send-n {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--hl-bar);
-  color: #fff;
-  font: 600 9.5px / 1 var(--sans);
-  display: grid;
-  place-items: center;
-  border: 2px solid var(--surface);
 }
 
 /* ---------- chat: resize + history ---------- */
@@ -1586,9 +1903,40 @@ body.resizing * {
   animation: pop 0.14s ease-out;
 }
 .h-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   padding: 9px 10px;
   border-radius: 10px;
   cursor: pointer;
+}
+.h-ic {
+  flex: none;
+  display: inline-grid;
+  margin-top: 2px;
+  color: var(--subtle);
+}
+.h-item.guide .h-ic {
+  color: var(--text);
+}
+.h-body {
+  flex: 1;
+  min-width: 0;
+}
+.h-div {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border);
+}
+.chat-mark {
+  display: inline-grid;
+  color: var(--text);
+}
+.chat-title .kind {
+  display: inline-flex;
+  margin-right: 6px;
+  vertical-align: -2px;
+  color: var(--subtle);
 }
 .h-item + .h-item {
   margin-top: 2px;
@@ -1710,61 +2058,115 @@ body.resizing * {
   flex: 1;
   min-width: 0;
 }
-.rail {
+.rail-wrap {
+  position: relative;
   flex: none;
-  width: 220px;
+  display: flex;
+  min-height: 0;
+}
+.rail {
+  flex: 1;
+  min-width: 0;
   overflow-y: auto;
   padding: 8px 8px 16px;
   border-right: 1px solid var(--border);
   background: var(--bg);
   font-size: 13px;
 }
-.rail-g + .rail-g {
-  margin-top: 6px;
-}
-.rail-dir {
-  width: 100%;
+.rail-h {
+  position: sticky;
+  top: -8px;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 8px;
+  margin: -8px -8px 6px;
+  padding: 8px;
+  background: var(--bg);
+}
+.rail-h .seg {
+  flex: none;
+  margin: 0;
+}
+.rail-h .seg .icon-btn {
+  width: 28px;
+  height: 24px;
+}
+.rail-q {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 8px;
   border-radius: 8px;
+  background: var(--chip);
   color: var(--subtle);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-align: left;
 }
-.rail-dir:hover {
-  background: var(--hover);
-  color: var(--muted);
+.rail-q input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 12.5px var(--sans);
 }
-/* A folded directory holding the file in view stands in for it. */
-.rail-dir.on {
+.rail-q input::placeholder {
+  color: var(--subtle);
+}
+.rail-q .clr {
+  display: inline-grid;
+  color: var(--subtle);
+}
+.rail-q .clr:hover {
   color: var(--text);
 }
-.rail-dir span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.rail-none {
+  padding: 8px;
+  color: var(--subtle);
+  font-size: 12.5px;
 }
+.rail-dir,
 .rail-f {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 8px;
+  height: 26px;
+  padding-right: 8px;
   border-radius: 8px;
-  color: var(--muted);
   white-space: nowrap;
   text-align: left;
 }
-.rail-f.nested {
-  padding-left: 27px;
+.rail-dir {
+  gap: 4px;
+  color: var(--text);
 }
+.rail-dir .tw {
+  display: inline-grid;
+  color: var(--subtle);
+}
+.rail-dir:hover,
 .rail-f:hover {
   background: var(--hover);
+}
+/* A folded folder holding the file in view stands in for it. */
+.rail-dir.on {
+  background: var(--chip);
+}
+.rail-dir .fd {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--add-fg);
+}
+.rail-f {
+  color: var(--muted);
+}
+.rail-f:hover {
   color: var(--text);
 }
 .rail-f.on {
@@ -1773,19 +2175,152 @@ body.resizing * {
   font-weight: 500;
 }
 .rail-f.viewed .nm,
-.rail-f.skip .nm {
+.rail-f.skip .nm,
+.rail-f.plain .nm {
   color: var(--subtle);
 }
+.rail-f.plain:hover .nm,
+.rail-f.plain.on .nm {
+  color: var(--text);
+}
+.rail-dir .nm,
 .rail-f .nm {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.rail-f mark {
+  background: rgba(217, 154, 0, 0.25);
+  color: inherit;
+  border-radius: 2px;
+}
 .rail-f .dot.sm {
   flex: none;
 }
+
+/* ---------- tabs ---------- */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 9px;
+  border-radius: 8px;
+  color: var(--muted);
+  font: 12.5px var(--sans);
+  white-space: nowrap;
+}
+.tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.tab.on {
+  background: var(--chip);
+  color: var(--text);
+}
+.tab-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  color: inherit;
+}
+.tab.preview .nm {
+  font-style: italic;
+}
+.tab .x {
+  display: inline-grid;
+  margin-right: -3px;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--subtle);
+  visibility: hidden;
+}
+.tab.on .x,
+.tab:hover .x {
+  visibility: visible;
+}
+.tab .x:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.diffwrap[hidden] {
+  display: none;
+}
+.file-scroll {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  container-type: inline-size;
+}
+.fileview .file {
+  content-visibility: visible;
+}
+.fileview .file-h {
+  cursor: default;
+}
+.fileview td.no:nth-child(2) {
+  display: none;
+}
+/* One line-number column: it sticks where the diff's first one does. */
+.fileview td.no + td.no {
+  left: 26px;
+}
+.fileview tr.ln.add td.mark {
+  box-shadow: inset 3px 0 0 var(--add-fg);
+}
+.fileview tr.ln.cut td.mark {
+  position: relative;
+}
+/* A notch where lines were deleted. */
+.fileview tr.ln.cut td.mark::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -4px;
+  border-left: 6px solid var(--del-fg);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.peek-h .path.go {
+  cursor: pointer;
+}
+.peek-f {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--subtle);
+  font: 11.5px / 16px var(--sans);
+}
+.peek-f kbd {
+  display: inline-block;
+  min-width: 16px;
+  margin-right: 2px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 11px / 15px var(--sans);
+  text-align: center;
+}
+.peek-h .path.go:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* Narrow diff: the rail floats over the code instead of squeezing it. */
 @container (max-width: 600px) {
-  .rail {
+  .rail-wrap {
     position: absolute;
     inset: 0 auto 0 0;
     z-index: 5;
@@ -2041,4 +2576,90 @@ tr.peek-row > td {
   padding: 10px 14px;
   color: var(--subtle);
   font-size: 12.5px;
+}
+
+/* The composer's @ file and / command menu */
+.composer.stack {
+  position: relative;
+}
+.ta-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  max-height: 290px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.ta-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: 13px / 18px var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.ta-item.on {
+  background: var(--chip);
+}
+.ta-label {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.ta-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Editing a sent message: a pencil beside its bubble on hover; the bubble shows while it's being edited */
+.q-item {
+  position: relative;
+}
+.edit-sent {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 4px);
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.q-item:hover .edit-sent,
+.edit-sent:focus-visible {
+  opacity: 1;
+}
+.bubble.rewriting {
+  box-shadow: 0 0 0 2px var(--hl-bar);
+}
+.restore-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: 12.5px var(--sans);
+  cursor: pointer;
+}
+.restore-chip.on {
+  border-color: transparent;
+  background: var(--chip);
+  color: var(--text);
 }

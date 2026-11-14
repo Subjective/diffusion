@@ -1,6 +1,7 @@
-import { ArrowUp, FileCode, ListPlus, MessageCircle, X } from "lucide-react";
+import { ArrowUp, Check, FileCode, ListPlus, MessageCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Anchor } from "../chat";
+import { autosize } from "../lib/autosize";
 import { rangeText } from "../lib/selection";
 import { ic } from "./icons";
 
@@ -8,6 +9,8 @@ export interface AskState {
   anchor: Anchor;
   x: number;
   y: number;
+  /** Editing a line note that's attached to the next message. */
+  edit?: { id: string; text: string };
 }
 
 export function AskPopup({
@@ -15,19 +18,24 @@ export function AskPopup({
   onClose,
   onAsk,
   onStage,
+  onEdit,
 }: {
   state: AskState | null;
   onClose: () => void;
   onAsk: (text: string, a: Anchor) => void;
   onStage: (text: string, a: Anchor) => void;
+  /** Save an edited note; empty text removes it. */
+  onEdit: (id: string, text: string) => void;
 }) {
   const [text, setText] = useState("");
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (state) {
-      setText("");
+      setText(state.edit?.text ?? "");
       input.current?.focus();
+      if (state.edit) requestAnimationFrame(() => input.current?.select());
+      requestAnimationFrame(() => autosize(input.current, 5));
     }
   }, [state]);
 
@@ -47,7 +55,13 @@ export function AskPopup({
 
   if (!state) return null;
   const a = state.anchor;
+  const editing = state.edit;
   const submit = (stage: boolean) => {
+    if (editing) {
+      onEdit(editing.id, text.trim());
+      onClose();
+      return;
+    }
     const q = text.trim() || (a.comment ? "Tell me more about this comment." : "Explain this.");
     (stage ? onStage : onAsk)(q, a);
     onClose();
@@ -75,25 +89,38 @@ export function AskPopup({
         </button>
       </div>
       <div className="ask-in">
-        <input
+        <textarea
           ref={input}
+          rows={1}
           value={text}
           placeholder={a.comment ? "Ask about this comment" : "Ask about these lines"}
           autoComplete="off"
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            autosize(e.target, 5);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            // ↵ queues, ⌘↵ asks now, ⇧↵ is a new line.
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              submit(e.shiftKey);
+              submit(!(e.metaKey || e.ctrlKey));
             }
           }}
         />
-        <button type="button" className="icon-btn" title="Queue (⇧↵)" onClick={() => submit(true)}>
-          {ic(ListPlus, 17)}
-        </button>
-        <button type="button" className="icon-btn solid" title="Ask now (↵)" onClick={() => submit(false)}>
-          {ic(ArrowUp, 16)}
-        </button>
+        {editing ? (
+          <button type="button" className="icon-btn solid" title="Save (↵)" onClick={() => submit(true)}>
+            {ic(Check, 16)}
+          </button>
+        ) : (
+          <>
+            <button type="button" className="icon-btn" title="Queue (↵)" onClick={() => submit(true)}>
+              {ic(ListPlus, 17)}
+            </button>
+            <button type="button" className="icon-btn solid" title="Ask now (⌘↵)" onClick={() => submit(false)}>
+              {ic(ArrowUp, 16)}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

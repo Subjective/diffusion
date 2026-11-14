@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import type { CodeLoc } from "./lib/cite";
 import { errorText, postSSE } from "./lib/sse";
+import { storage } from "./lib/storage";
 import { useApp } from "./store";
 import type { Ref } from "./types";
 import { diffActivity } from "./ui";
@@ -24,8 +25,9 @@ export interface Anchor {
   commentTitle?: string;
 }
 
-// staged: queued line comment (tray) · waiting: sent while a turn was running; goes out with the next turn
-export type QStatus = "staged" | "waiting" | "pending" | "answered" | "error";
+// staged: a line note attached to the next message · waiting: sent while a turn was running; queued, and goes out
+// one message (batch) per turn
+export type QStatus = "staged" | "waiting" | "steering" | "pending" | "answered" | "error";
 export interface Question {
   id: string; // local id
   n: number | null; // number shown in UI/sent to engine; null for plain composer messages
@@ -44,9 +46,15 @@ export interface Question {
   seconds?: number;
   /** The guide version this answer saved, when it was asked to change the guide. */
   guideVersion?: number;
+  /** The session's id for the message that started this turn: editing it rewinds the session to just before. */
+  uuid?: string;
+  /** Asked of the session somewhere else (its terminal), read from its transcript. */
+  fromSession?: boolean;
+  /** Queued: the message it was sent with (a typed message and the notes attached to it go out together). */
+  batch?: string;
 }
 
-export type TraceItem = { think: string } | { tool: string };
+export type TraceItem = { think: string } | { tool: string; id?: string; failed?: boolean };
 
 /** Add a tool call, or a piece of streamed reasoning (joined to the reasoning just before it). */
 export function extendTrace(trace: TraceItem[] = [], item: TraceItem): TraceItem[] {
@@ -65,11 +73,28 @@ export interface ChatSummary {
   questions: number;
   anchored: number;
   updated_at: number;
+  kind?: ChatKind;
+  harness?: string | null;
 }
+
+/** "guide": the agent session that wrote the guide, continued. "fork": a read-only branch of it. */
+export type ChatKind = "guide" | "fork";
+
+/** Agents whose sessions chat can fork or continue (the engine's FORKABLE). */
+const CONTINUABLE = new Set(["claude-code", "codex"]);
+
+/** The session that wrote a guide, if chat can carry it on. */
+export function guideSessionOf(meta: { session?: string | null; harness?: string | null } | undefined) {
+  return meta?.session && meta.harness && CONTINUABLE.has(meta.harness) ? { harness: meta.harness } : null;
+}
+const guideSession = () => guideSessionOf(useApp.getState().guide?.meta);
 
 interface Chat {
   key: number; // stable local identity (id is assigned lazily by the engine)
   id: string | null; // engine id once created
+  kind: ChatKind;
+  /** The agent it runs on, once it has; until then the guide's. */
+  harness: string | null;
   questions: Question[];
   turns: number;
   nextN: number;
@@ -82,10 +107,37 @@ interface State {
   history: ChatSummary[];
   historyOpen: boolean;
   error: string | null;
+  mode: ChatMode;
+  setMode(mode: ChatMode): void;
+  /** Tool calls waiting on the reviewer in the running turn. */
+  asks: Ask[];
+  answer(id: string, decision: Decision): Promise<void>;
+  /** End the running turn; the next queued message goes out. */
+  stop(): Promise<void>;
+  /** A queued message: drop it, change its text (empty drops the typed part), or send it now (it goes next and
+   *  the running turn stops). */
+  unqueue(batch: string): void;
+  editQueued(batch: string, text: string): void;
+  sendNow(batch: string): Promise<void>;
+  /** Send a queued message into the running turn, as the harness allows; else stop the turn and send it next. */
+  steer(batch: string): Promise<void>;
+  /** The queued message being edited in the composer: the queue holds until the edit is saved or cancelled. */
+  editing: string | null;
+  /** A sent message being edited in the composer (its question id). */
+  rewriting: string | null;
+  setRewriting(id: string | null): void;
+  /** Send an edited version of a sent message: the session rewinds to just before it (``code``: the files too),
+   *  and it and everything after it go. */
+  editSent(id: string, text: string, code: boolean): void;
+  setEditing(batch: string | null): void;
   /** The diff should jump to this show: the model's first `show_code` of a turn, if the diff wasn't touched since asking. */
   autoShow: { q: string; i: number; n: number } | null;
 
   reset(pr: string): void;
+  /** Open the guide's own session, continued where it (or this chat) left off. */
+  openGuide(): Promise<void>;
+  /** Pick up what was said to the guide's session elsewhere (its terminal) since the chat was loaded. */
+  syncGuide(): Promise<void>;
   newChat(): void;
   openChat(id: string): Promise<void>;
   loadHistory(): Promise<void>;
@@ -93,16 +145,48 @@ interface State {
 
   stage(text: string, anchor: Anchor): Question;
   unstage(id: string): void;
+  /** Change a line note's text (same number, same lines); empty removes it. */
+  editStaged(id: string, text: string): void;
   clearStaged(): void;
   ask(text: string, anchor?: Anchor | null): void;
   sendStaged(extra?: string): void;
 }
 
+/** How much the guide session may do: the harness's own permission modes. Forks are always read-only. */
+export type ChatMode = "default" | "acceptEdits" | "plan" | "auto";
+/** The reviewer's answer to a tool call; "always" also allows its kind for the rest of the session. */
+export type Decision = "allow" | "deny" | "always";
+/** The modes an agent has, in the order its own Shift+Tab cycles them. Codex can't stop mid-run to ask, so its
+ * modes are its sandboxes: Plan reads, Auto writes in the workspace. */
+export const modesFor = (harness: string | null): ChatMode[] =>
+  harness === "claude-code" ? ["default", "acceptEdits", "plan", "auto"] : harness === "codex" ? ["plan", "auto"] : [];
+
+/** A tool call the session wants to make that its settings don't already allow. */
+export const EDIT_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
+
+export interface Ask {
+  id: string;
+  tool: string;
+  summary: string;
+  input: Record<string, unknown>;
+}
+
 let chatSeq = 0;
-const emptyChat = (): Chat => ({ key: ++chatSeq, id: null, questions: [], turns: 0, nextN: 1, busy: false });
+const emptyChat = (kind: ChatKind = "fork"): Chat => ({
+  key: ++chatSeq,
+  id: null,
+  kind,
+  harness: null,
+  questions: [],
+  turns: 0,
+  nextN: 1,
+  busy: false,
+});
 let qSeq = 0;
 const qid = () => `q${++qSeq}`;
 const ctrls = new Set<AbortController>();
+/** The running turn: where its streamed events go, so a message steered into it can join. */
+let live: { chatKey: number; byN: Map<number, string>; all: string[]; cur: string[] } | null = null;
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(await errorText(res));
@@ -120,28 +204,40 @@ export const useChat = create<State>((set, get) => {
   async function ensureChat(): Promise<string> {
     const { chat, pr } = get();
     if (chat.id) return chat.id;
+    // No session to continue (an agent that can't, or a guide written by hand): it's a fresh chat after all.
+    const kind = chat.kind === "guide" && guideSession() ? "guide" : "fork";
     const c = await json<{ id: string }>(
       await fetch("/api/chats", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: pr }),
+        body: JSON.stringify({ url: pr, kind }),
       }),
     );
-    set((s) => ({ chat: { ...s.chat, id: c.id } }));
+    set((s) => ({ chat: { ...s.chat, id: c.id, kind } }));
     return c.id;
   }
 
-  async function send(qs: Question[]) {
+  /** The next queued message goes out, unless a turn is running or a queued message is being edited. */
+  function sendNext() {
+    const { chat, editing } = get();
+    if (chat.busy || editing) return;
+    const next = chat.questions.find((q) => q.status === "waiting")?.batch;
+    if (next) void send(chat.questions.filter((q) => q.status === "waiting" && q.batch === next));
+  }
+
+  async function send(qs: Question[], rewind?: { uuid: string; code: boolean }) {
     if (!qs.length) return;
     const ids0 = new Set(qs.map((q) => q.id));
-    if (get().chat.busy) {
-      // One turn at a time: hold these and send them all as the next turn.
+    if (get().chat.busy || get().editing) {
+      // One turn at a time: queue this message; each queued one goes out after the turn before it ends (and not
+      // while one is being edited).
+      const batch = qid();
       set((s) => ({
         chat: {
           ...s.chat,
           questions: [
             ...s.chat.questions.filter((q) => !ids0.has(q.id)),
-            ...qs.map((q) => ({ ...q, status: "waiting" as const, turn: null })),
+            ...qs.map((q) => ({ ...q, status: "waiting" as const, turn: null, batch })),
           ],
         },
       }));
@@ -163,6 +259,9 @@ export const useChat = create<State>((set, get) => {
     // engine needs unique numbers per turn; unnumbered single questions use 0
     const wire = sent.map((q) => ({ n: q.n ?? 0, text: q.text, anchor: q.anchor ? toWire(q.anchor) : null }));
     const byN = new Map(sent.map((q) => [q.n ?? 0, q.id]));
+    // `all` is everything this turn answers (steered messages join it); `cur` what it's answering now.
+    const turnRef = { chatKey: chatRef.key, byN, all: ids, cur: ids };
+    live = turnRef;
     const ctrl = new AbortController();
     ctrls.add(ctrl);
     const askedAt = Date.now();
@@ -171,7 +270,13 @@ export const useChat = create<State>((set, get) => {
       const id = await ensureChat();
       await postSSE(
         `/api/chats/${id}/turn`,
-        { url: get().pr, questions: wire, version: useApp.getState().guide?.version ?? null },
+        {
+          url: get().pr,
+          questions: wire,
+          version: useApp.getState().guide?.version ?? null,
+          mode: chatRef.kind === "guide" ? get().mode : "read-only",
+          ...(rewind ? { rewind } : {}),
+        },
         ({ event, data }) => {
           const d = data as Record<string, unknown>;
           if (event === "delta") {
@@ -201,39 +306,57 @@ export const useChat = create<State>((set, get) => {
               .getState()
               .refresh()
               .then(() => useApp.getState().showVersion(v));
+          } else if (event === "steered") {
+            // The session took a steered message in: what came before is done, what follows answers it.
+            const now = new Set((d.ns as number[]).map((n) => byN.get(n)).filter(Boolean) as string[]);
+            const seconds = Math.round((Date.now() - askedAt) / 100) / 10;
+            patch(get().chat, turnRef.cur, (q) => (q.status === "pending" ? { status: "answered", seconds } : {}));
+            turnRef.cur = [...now];
+            patch(get().chat, turnRef.cur, () => ({ status: "pending" }));
           } else if (event === "tool") {
-            patch(get().chat, ids, (q) =>
+            patch(get().chat, turnRef.cur, (q) =>
               q.status === "pending"
                 ? {
                     tools: [...q.tools, d.summary as string],
-                    trace: extendTrace(q.trace, { tool: d.summary as string }),
+                    trace: extendTrace(q.trace, { tool: d.summary as string, ...(d.id ? { id: String(d.id) } : {}) }),
                   }
                 : {},
             );
+          } else if (event === "approval") {
+            set((s) => ({ asks: [...s.asks, d as unknown as Ask] }));
+          } else if (event === "tool_failed") {
+            patch(get().chat, turnRef.cur, (q) => ({
+              trace: q.trace?.map((t) => ("tool" in t && t.id === d.id ? { ...t, failed: true } : t)),
+            }));
           } else if (event === "thinking") {
-            patch(get().chat, ids, (q) => ({ trace: extendTrace(q.trace, { think: d.text as string }) }));
+            patch(get().chat, turnRef.cur, (q) => ({ trace: extendTrace(q.trace, { think: d.text as string }) }));
           } else if (event === "done") {
             const seconds = typeof d.seconds === "number" ? d.seconds : undefined;
-            patch(get().chat, ids, () => ({ status: "answered", seconds }));
+            patch(get().chat, turnRef.cur, () => ({ status: "answered", seconds }));
+            patch(get().chat, turnRef.all, (q) => (q.status === "steering" ? { status: "answered", seconds } : {}));
+            if (typeof d.uuid === "string") patch(get().chat, [ids[0]], () => ({ uuid: d.uuid as string }));
           } else if (event === "error") {
-            patch(get().chat, ids, (q) => ({ status: "error", answer: q.answer || "" }));
+            patch(get().chat, turnRef.all, (q) => ({ status: "error", answer: q.answer || "" }));
             set({ error: String(d.message) });
           }
         },
         ctrl.signal,
       );
-      patch(get().chat, ids, (q) => (q.status === "pending" ? { status: "answered" } : {}));
+      patch(get().chat, turnRef.all, (q) =>
+        q.status === "pending" || q.status === "steering" ? { status: "answered" } : {},
+      );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
-        patch(chatRef, ids, () => ({ status: "error" }));
+        patch(chatRef, turnRef.all, () => ({ status: "error" }));
         set({ error: String((e as Error).message ?? e) });
       }
     } finally {
+      if (live === turnRef) live = null;
       ctrls.delete(ctrl);
+      set({ asks: [] });
       if (get().chat.key === chatRef.key) {
         set((s) => ({ chat: { ...s.chat, busy: false } }));
-        const waiting = get().chat.questions.filter((q) => q.status === "waiting");
-        if (waiting.length) void send(waiting);
+        sendNext();
       }
       if (get().historyOpen) void get().loadHistory();
     }
@@ -246,16 +369,218 @@ export const useChat = create<State>((set, get) => {
     historyOpen: false,
     error: null,
     autoShow: null,
+    mode: ((m) => (modesFor("claude-code").includes(m) ? m : "default"))(
+      storage.get<ChatMode>("rv-chat-mode", "default"),
+    ),
+    asks: [],
+    editing: null,
+    rewriting: null,
+    setRewriting(id) {
+      set({ rewriting: id });
+    },
+    editSent(id, text, code) {
+      const { chat } = get();
+      const q = chat.questions.find((x) => x.id === id);
+      if (!q?.uuid || q.turn == null || chat.busy || !text.trim()) return;
+      set((s) => ({
+        rewriting: null,
+        chat: { ...s.chat, questions: s.chat.questions.filter((x) => x.turn == null || x.turn < q.turn!) },
+      }));
+      void send(
+        [
+          {
+            id: qid(),
+            n: q.n,
+            text: text.trim(),
+            anchor: q.anchor,
+            status: "pending",
+            answer: "",
+            tools: [],
+            turn: null,
+            shows: [],
+          },
+        ],
+        { uuid: q.uuid, code },
+      );
+    },
+
+    setEditing(batch) {
+      set({ editing: batch });
+      if (!batch) sendNext();
+    },
+    setMode(mode) {
+      storage.set("rv-chat-mode", mode);
+      set({ mode });
+    },
+    async answer(id, decision) {
+      const ask = get().asks.find((a) => a.id === id);
+      set((s) => ({ asks: s.asks.filter((a) => a.id !== id) }));
+      // "Allow edits this session" is the terminal's switch to accepting edits: show it in the mode too.
+      if (decision === "always" && ask && EDIT_TOOLS.includes(ask.tool)) get().setMode("acceptEdits");
+      // Approving a plan leaves plan mode, as the terminal does.
+      if (decision !== "deny" && ask?.tool === "ExitPlanMode")
+        get().setMode(decision === "always" ? "acceptEdits" : "default");
+      const chat = get().chat.id;
+      if (!chat) return;
+      try {
+        await fetch(`/api/chats/${chat}/approve`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, decision }),
+        });
+      } catch {
+        // the turn ends on its own if it can't hear back
+      }
+    },
+
+    unqueue(batch) {
+      set((s) => ({
+        chat: { ...s.chat, questions: s.chat.questions.filter((q) => q.batch !== batch || q.status !== "waiting") },
+      }));
+    },
+    editQueued(batch, text) {
+      set((s) => {
+        const qs = s.chat.questions;
+        const mine = qs.filter((q) => q.status === "waiting" && q.batch === batch);
+        const typed = mine.find((q) => !q.anchor);
+        let out: Question[];
+        if (typed) out = text ? qs.map((q) => (q === typed ? { ...q, text } : q)) : qs.filter((q) => q !== typed);
+        else if (text) {
+          const at = qs.lastIndexOf(mine.at(-1)!);
+          const q: Question = {
+            id: qid(),
+            n: null,
+            text,
+            anchor: null,
+            status: "waiting",
+            answer: "",
+            tools: [],
+            turn: null,
+            shows: [],
+            batch,
+          };
+          out = [...qs.slice(0, at + 1), q, ...qs.slice(at + 1)];
+        } else out = qs;
+        return { chat: { ...s.chat, questions: out } };
+      });
+    },
+    async steer(batch) {
+      const { chat } = get();
+      const turn = live;
+      const mine = chat.questions.filter((q) => q.status === "waiting" && q.batch === batch);
+      if (!mine.length) return;
+      if (!turn || turn.chatKey !== chat.key || !chat.id) return get().sendNow(batch);
+      // Into the thread as a turn of its own, waiting for the session to take it in.
+      const multi = mine.length > 1;
+      let nextN = chat.nextN;
+      let free = -1;
+      while (turn.byN.has(free)) free--;
+      const steered = mine.map((q) => ({
+        ...q,
+        n: q.n ?? (multi ? nextN++ : null),
+        status: "steering" as const,
+        turn: chat.turns,
+        batch: undefined,
+      }));
+      // An unnumbered message still needs its own number in the turn: a negative one, never shown.
+      const wire = steered.map((q) => ({
+        n: q.n ?? free,
+        text: q.text,
+        anchor: q.anchor ? toWire(q.anchor) : null,
+      }));
+      set((s) => ({
+        chat: {
+          ...s.chat,
+          questions: [...s.chat.questions.filter((q) => !mine.includes(q)), ...steered],
+          turns: s.chat.turns + 1,
+          nextN,
+        },
+      }));
+      for (const [i, q] of steered.entries()) turn.byN.set(wire[i].n, q.id);
+      turn.all = [...turn.all, ...steered.map((q) => q.id)];
+      let ok = false;
+      try {
+        const r = await fetch(`/api/chats/${chat.id}/steer`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ questions: wire }),
+        });
+        ok = r.ok && (await r.json()).ok === true;
+      } catch {
+        ok = false;
+      }
+      if (ok) return;
+      // The turn ended first, or can't take it: queue it next and send it the usual way.
+      for (const w of wire) turn.byN.delete(w.n);
+      turn.all = turn.all.filter((id) => !steered.some((q) => q.id === id));
+      set((s) => ({
+        chat: {
+          ...s.chat,
+          questions: [...mine, ...s.chat.questions.filter((q) => !steered.some((x) => x.id === q.id))],
+        },
+      }));
+      sendNext();
+      if (get().chat.busy) await get().stop();
+    },
+    async sendNow(batch) {
+      set((s) => {
+        const mine = s.chat.questions.filter((q) => q.status === "waiting" && q.batch === batch);
+        const rest = s.chat.questions.filter((q) => !mine.includes(q));
+        const at = rest.findIndex((q) => q.status === "waiting");
+        const questions = at < 0 ? [...rest, ...mine] : [...rest.slice(0, at), ...mine, ...rest.slice(at)];
+        return { chat: { ...s.chat, questions } };
+      });
+      await get().stop();
+    },
+    async stop() {
+      const chat = get().chat;
+      if (!chat.busy || !chat.id) return;
+      try {
+        await fetch(`/api/chats/${chat.id}/stop`, { method: "POST" });
+      } catch {
+        // offline: the turn ends on its own
+      }
+    },
 
     reset(pr) {
       if (pr === get().pr) return;
       for (const c of ctrls) c.abort();
-      set({ pr, chat: emptyChat(), history: [], historyOpen: false, error: null });
+      // Chat starts in the guide's own session, picking up any earlier turns in it.
+      set({ pr, chat: emptyChat("guide"), history: [], historyOpen: false, error: null });
+      void get().openGuide();
+    },
+    async openGuide() {
+      const from = get().chat.key;
+      let chat = emptyChat("guide");
+      try {
+        const res = await fetch(`/api/chats/guide?url=${encodeURIComponent(get().pr)}`);
+        if (res.ok) chat = fromWire(await res.json());
+      } catch {
+        // no earlier turns: start it fresh
+      }
+      // Don't swap out a chat the reviewer moved to meanwhile.
+      if (get().chat.key !== from) return;
+      set({ chat, historyOpen: false, error: null });
+    },
+    async syncGuide() {
+      const { chat, pr } = get();
+      const settled = (c: Chat) => !c.busy && c.questions.every((q) => q.status === "answered" || q.status === "error");
+      if (chat.kind !== "guide" || !settled(chat)) return;
+      try {
+        const res = await fetch(`/api/chats/guide?url=${encodeURIComponent(pr)}`);
+        if (!res.ok) return;
+        const next = fromWire(await res.json());
+        const now = get().chat;
+        if (now.key !== chat.key || !settled(now) || next.questions.length === now.questions.length) return;
+        set({ chat: { ...next, key: now.key } });
+      } catch {
+        // offline: keep what's on screen
+      }
     },
     newChat() {
       const { chat } = get();
-      if (!chat.questions.length) return set({ historyOpen: false });
-      set({ chat: emptyChat(), historyOpen: false, error: null });
+      if (!chat.questions.length && chat.kind === "fork") return set({ historyOpen: false });
+      set({ chat: emptyChat("fork"), historyOpen: false, error: null });
     },
     async openChat(id) {
       const raw = await json<WireChat>(await fetch(`/api/chats/${id}?url=${encodeURIComponent(get().pr)}`));
@@ -293,6 +618,10 @@ export const useChat = create<State>((set, get) => {
     },
     unstage(id) {
       set((s) => ({ chat: { ...s.chat, questions: s.chat.questions.filter((q) => q.id !== id) } }));
+    },
+    editStaged(id, text) {
+      if (!text) return get().unstage(id);
+      set((s) => ({ chat: { ...s.chat, questions: s.chat.questions.map((q) => (q.id === id ? { ...q, text } : q)) } }));
     },
     clearStaged() {
       set((s) => ({ chat: { ...s.chat, questions: s.chat.questions.filter((q) => q.status !== "staged") } }));
@@ -334,13 +663,22 @@ interface WireAnchor {
 }
 interface WireChat {
   id: string;
+  kind?: ChatKind;
+  harness?: string | null;
   turns: {
-    questions: { n: number; text: string; anchor: (WireAnchor & { ui?: Partial<Anchor> }) | null }[];
+    questions: {
+      n: number;
+      text: string;
+      anchor: (WireAnchor & { ui?: Partial<Anchor> }) | null;
+      steered?: number;
+    }[];
     answers: Record<string, string>;
     tools: string[];
     shows?: (Show & { n: number })[];
     guide_version?: number;
-    trace?: TraceItem[];
+    source?: string;
+    uuid?: string;
+    trace?: (TraceItem | { steered: number })[];
     seconds?: number;
     status: string;
   }[];
@@ -359,11 +697,29 @@ function toWire(a: Anchor) {
   };
 }
 
+/** The part of a turn's trace that a steered message (or, with none, the message before any) set off. */
+function traceFor(trace: (TraceItem | { steered: number })[], steered: number | undefined): TraceItem[] {
+  const out: TraceItem[] = [];
+  let at: number | undefined;
+  for (const t of trace) {
+    if ("steered" in t) at = t.steered;
+    else if (at === steered) out.push(t);
+  }
+  return out;
+}
+
 export function fromWire(c: WireChat): Chat {
   const questions: Question[] = [];
   let nextN = 1;
-  c.turns.forEach((t, turn) => {
+  // A message steered into a turn shows as a turn of its own, after what was answered before it.
+  let turn = -1;
+  c.turns.forEach((t) => {
+    let group: number | undefined = -1;
     t.questions.forEach((q) => {
+      if (q.steered !== group) {
+        if (group === -1 || q.steered) turn++;
+        group = q.steered;
+      }
       const anchor = q.anchor ? ({ ...q.anchor, ...(q.anchor.ui ?? {}) } as Anchor) : null;
       const n = q.n > 0 ? q.n : null;
       if (n) nextN = Math.max(nextN, n + 1);
@@ -378,10 +734,21 @@ export function fromWire(c: WireChat): Chat {
         tools: t.tools,
         shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
         guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
-        trace: t.trace ?? t.tools.map((tool) => ({ tool })),
+        uuid: q === t.questions[0] ? t.uuid : undefined,
+        fromSession: t.source === "session",
+        trace: traceFor(t.trace ?? t.tools.map((tool) => ({ tool })), q.steered),
         seconds: t.seconds,
       });
     });
   });
-  return { key: ++chatSeq, id: c.id, questions, turns: c.turns.length, nextN, busy: false };
+  return {
+    key: ++chatSeq,
+    id: c.id,
+    kind: c.kind ?? "fork",
+    harness: c.harness ?? null,
+    questions,
+    turns: turn + 1,
+    nextN,
+    busy: false,
+  };
 }

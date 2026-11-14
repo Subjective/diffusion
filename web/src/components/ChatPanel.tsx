@@ -1,42 +1,72 @@
 import {
   ArrowUp,
+  Check,
+  ChevronDown,
   ChevronRight,
-  Clock,
+  ChevronsUpDown,
   FileCode,
+  FilePen,
   FileText,
   FlaskConical,
+  GitFork,
+  Hand,
   History,
   Layers,
+  ListChecks,
   LocateFixed,
+  Lock,
   MessageCircle,
+  Minus,
+  Pencil,
   Search,
   ShieldAlert,
   Sparkles,
+  Square,
   SquarePen,
   SquareTerminal,
   Trash2,
+  Undo2,
   Workflow,
   Wrench,
   X,
+  Zap,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Anchor, type Question, type Show, useChat } from "../chat";
-import { type CodeLoc, expandCites, parseCites, type Resolved, resolveLoc } from "../lib/cite";
+import { type Command, fetchCommands } from "../api";
+import {
+  type Anchor,
+  type Ask,
+  type ChatMode,
+  EDIT_TOOLS,
+  guideSessionOf,
+  modesFor,
+  type Question,
+  type Show,
+  type TraceItem,
+  useChat,
+} from "../chat";
+import { autosize } from "../lib/autosize";
+import { type CodeLoc, expandCites, parseCites, parsePath, type Resolved, repoPath, resolveLoc } from "../lib/cite";
 import { useHunkIndex } from "../lib/linking";
+import { listStep } from "../lib/listKeys";
 import { InlineCodeContext, Markdown } from "../lib/md";
 import { CHAT_W, startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
+import { cachedTree } from "../lib/tree";
+import { complete, rankCommands, rankFiles, type Trigger, trigger } from "../lib/typeahead";
 import { useApp } from "../store";
 import type { StepKind } from "../types";
 import { useUI } from "../ui";
-import { ic, STEP_ICON } from "./icons";
+import { HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
 
 export interface ChatLinkProps {
   /** Hover a question (by local id) to highlight its lines; null clears. */
   onHoverQ: (id: string | null) => void;
   /** Click a question to scroll to + flash its lines. */
   onFocusQ: (q: Question) => void;
+  /** Click a line note waiting to be sent to edit it, in the popup it was written in. */
+  onEditQ: (id: string, el: Element | null) => boolean;
   hoverQ: string | null;
   flashQ: { id: string; n: number } | null;
 }
@@ -44,6 +74,20 @@ export interface ChatLinkProps {
 export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; link: ChatLinkProps }) {
   const { chat, historyOpen, setHistoryOpen, newChat, error } = useChat();
   const toggleChat = useApp((s) => s.toggleChat);
+  const meta = useApp((s) => s.guide?.meta);
+  const guideHarness = meta?.harness ?? null;
+  // Back from the terminal: show what was said to the guide's session there.
+  useEffect(() => {
+    const sync = () => document.visibilityState === "visible" && void useChat.getState().syncGuide();
+    addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, []);
+  // The guide session, unless it can't be continued (then the first question starts a fork).
+  const isGuide = chat.kind === "guide" && (chat.id != null || !!guideSessionOf(meta));
   const msgs = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const sent = chat.questions.filter((q) => q.turn != null);
@@ -55,7 +99,13 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
   });
 
   const turns = groupTurns(sent);
-  const waiting = chat.questions.filter((q) => q.status === "waiting");
+  const asks = useChat((s) => s.asks);
+  // The conversation the session had in the terminal before this chat: folded to one line until opened.
+  let earlier = turns.findIndex((qs) => !qs.every((q) => q.fromSession));
+  if (earlier < 0) earlier = turns.length;
+  const [showEarlier, setShowEarlier] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fold again whenever another chat opens
+  useEffect(() => setShowEarlier(false), [chat.key]);
 
   // The model's first show_code of a turn jumps the diff (chat.ts decides whether the reviewer was busy there).
   const autoShow = useChat((s) => s.autoShow);
@@ -71,10 +121,23 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
     <aside className="chat">
       <Resizer onWidth={onWidth} />
       <div className="chat-h">
-        {ic(MessageCircle, 16)}
-        <span className={`chat-title${title ? "" : " none"}`} title={title || undefined}>
-          {title || "New chat"}
+        <span className="chat-mark" title={harnessName(chat.harness ?? guideHarness)}>
+          <HarnessMark harness={chat.harness ?? guideHarness} size={15} />
         </span>
+        {historyOpen ? (
+          <span className="chat-title">History</span>
+        ) : isGuide ? (
+          <span className="chat-title" title="The session that wrote the guide, continued">
+            Guide session
+          </span>
+        ) : (
+          <span className={`chat-title${title ? "" : " none"}`} title={title || undefined}>
+            <span className="kind" title="A fork of the guide session">
+              {ic(GitFork, 13)}
+            </span>
+            {title || "New chat"}
+          </span>
+        )}
         <button
           type="button"
           className={`icon-btn sm${historyOpen ? " on" : ""}`}
@@ -104,10 +167,27 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
         ) : (
           <InlineCodeContext.Provider value={Cite}>
             <div className="thread">
-              {turns.map((qs, i) => (
-                <Turn key={i} qs={qs} link={link} />
+              {earlier > 0 && (
+                <button
+                  type="button"
+                  className={`earlier${showEarlier ? " open" : ""}`}
+                  aria-expanded={showEarlier}
+                  onClick={() => setShowEarlier(!showEarlier)}
+                >
+                  {ic(SquareTerminal, 14)}
+                  <span>
+                    {earlier} {earlier === 1 ? "turn" : "turns"} in the terminal
+                  </span>
+                  <span className="grow" />
+                  {ic(ChevronDown, 14)}
+                </button>
+              )}
+              {turns.map((qs, i) =>
+                i < earlier && !showEarlier ? null : <Turn key={i} qs={qs} link={link} first={i === 0} />,
+              )}
+              {asks.map((a, i) => (
+                <AskCard key={a.id} a={a} first={i === 0} />
               ))}
-              {waiting.length > 0 && <Waiting qs={waiting} link={link} />}
             </div>
           </InlineCodeContext.Provider>
         )}
@@ -141,6 +221,8 @@ const locLink = (r: Resolved) => ({
  *  hover); others stay plain code. A list on one file (`a.ts:3, 8–10`) links each range. */
 function Cite({ text }: { text: string }) {
   const cites = useMemo(() => parseCites(text), [text]);
+  const path = useMemo(() => (cites ? null : parsePath(text)), [cites, text]);
+  if (path) return <PathLink path={path} label={text.trim()} />;
   if (!cites) return <code>{text}</code>;
   if (cites.length === 1) return <CiteLink {...cites[0]} />;
   return (
@@ -160,13 +242,64 @@ function CiteLink({ loc, text }: { loc: CodeLoc; text: string }) {
   const r = useMemo(() => resolve(loc), [loc, resolve]);
   if (!r)
     return (
-      <code className="cite off" title="Not part of this diff">
-        {text}
-      </code>
+      <button
+        type="button"
+        className="cite"
+        title={`${loc.file} · Open in a tab`}
+        onClick={(e) => {
+          e.stopPropagation();
+          useUI.getState().openFile(loc.file, { line: loc.start, end: loc.end });
+        }}
+      >
+        <code>{text.trim().replace(/^.*\//, "")}</code>
+      </button>
     );
   return (
     <button type="button" className="cite" title={`${r.file} · Show in diff`} {...locLink(r)}>
       <code>{text.trim().replace(/^.*\//, "")}</code>
+    </button>
+  );
+}
+
+/** Every file the reviewer can open: the diff's, and (once loaded) the rest of the repository's. */
+function useKnownFiles(): string[] {
+  const files = useApp((s) => s.files);
+  const url = useApp((s) => s.pr?.url ?? s.url);
+  const [tree, setTree] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    if (url) void cachedTree(url).then((t) => live && setTree(t));
+    return () => {
+      live = false;
+    };
+  }, [url]);
+  return useMemo(() => [...new Set([...files.map((f) => f.path), ...tree])], [files, tree]);
+}
+
+/** A file named without a line (in an answer, or an approval card): opens it in the diff when it's changed, else in
+ *  a tab; ⌘-click always opens a tab. Shown by `label`, else by its path in the repository. */
+function PathLink({ path, label }: { path: string; label?: string }) {
+  const known = useKnownFiles();
+  const files = useApp((s) => s.files);
+  const resolve = useResolveLoc();
+  const repo = useMemo(() => repoPath(path, known), [path, known]);
+  if (!repo) return <code>{label ?? path}</code>;
+  const inDiff = files.some((f) => f.path === repo);
+  return (
+    <button
+      type="button"
+      className="cite"
+      title={`${repo} · ${inDiff ? "Show in diff" : "Open in a tab"}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        const r = inDiff && !(e.metaKey || e.ctrlKey) ? resolve({ file: repo, start: 1, end: 1e9, side: "new" }) : null;
+        if (r) {
+          useUI.getState().showTab(null);
+          useUI.getState().focus(r.keys.slice(0, 1), r.files);
+        } else useUI.getState().openFile(repo, undefined, e.metaKey || e.ctrlKey);
+      }}
+    >
+      <code>{label ? label.replace(/^.*\//, "") : repo}</code>
     </button>
   );
 }
@@ -219,26 +352,63 @@ function Resizer({ onWidth }: { onWidth: (w: number) => void }) {
 }
 
 function HistoryList() {
-  const { history, chat, openChat } = useChat();
+  const { history, chat, openChat, openGuide } = useChat();
+  const meta = useApp((s) => s.guide?.meta);
+  const live = guideSessionOf(meta);
+  const guide = history.find((c) => c.kind === "guide");
+  const forks = history.filter((c) => c.kind !== "guide");
   return (
     <div className="hist">
-      {!history.length && <div className="h-empty">{ic(History, 18)}</div>}
-      {history.map((c) => (
-        <div key={c.id} className={`h-item${c.id === chat.id ? " active" : ""}`} onClick={() => void openChat(c.id)}>
-          <div className="h-t">{c.title || "Chat"}</div>
-          <div className="h-m">
-            <span>
-              {ic(MessageCircle, 12)}
-              {c.questions}
+      {(live || guide) && (
+        <>
+          <div
+            className={`h-item guide${chat.kind === "guide" ? " active" : ""}`}
+            onClick={() => void openGuide()}
+            title="The session that wrote the guide, continued"
+          >
+            <span className="h-ic">
+              <HarnessMark harness={guide?.harness ?? meta?.harness} size={15} />
             </span>
-            {c.anchored > 0 && (
+            <div className="h-body">
+              <div className="h-t">Guide session</div>
+              <div className="h-m">
+                <span>{harnessName(guide?.harness ?? meta?.harness)}</span>
+                {guide && (
+                  <span>
+                    {ic(MessageCircle, 12)}
+                    {guide.questions}
+                  </span>
+                )}
+                <span className="grow" />
+                {guide && <span>{ago(guide.updated_at)}</span>}
+              </div>
+            </div>
+          </div>
+          {forks.length > 0 && <div className="h-div" />}
+        </>
+      )}
+      {!forks.length && !live && !guide && <div className="h-empty">{ic(History, 18)}</div>}
+      {forks.map((c) => (
+        <div key={c.id} className={`h-item${c.id === chat.id ? " active" : ""}`} onClick={() => void openChat(c.id)}>
+          <span className="h-ic" title="A fork of the guide session">
+            {ic(GitFork, 15)}
+          </span>
+          <div className="h-body">
+            <div className="h-t">{c.title || "Chat"}</div>
+            <div className="h-m">
               <span>
-                {ic(FileCode, 12)}
-                {c.anchored}
+                {ic(MessageCircle, 12)}
+                {c.questions}
               </span>
-            )}
-            <span className="grow" />
-            <span>{ago(c.updated_at)}</span>
+              {c.anchored > 0 && (
+                <span>
+                  {ic(FileCode, 12)}
+                  {c.anchored}
+                </span>
+              )}
+              <span className="grow" />
+              <span>{ago(c.updated_at)}</span>
+            </div>
           </div>
         </div>
       ))}
@@ -299,8 +469,17 @@ function CtxCard({ a }: { a: Anchor }) {
 export const Qn = ({ q }: { q: Question }) =>
   q.n ? <span className={`qn${q.status === "staged" ? " staged" : ""}`}>{q.n}</span> : null;
 
-function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
+function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first: boolean }) {
   const multi = qs.length > 1 || qs.some((q) => q.n);
+  // A sent message can be edited where the session can rewind to before it (Claude Code), as in the terminal.
+  const editable = useChat(
+    (s) =>
+      !first &&
+      !!qs[0].uuid &&
+      !s.chat.busy &&
+      (s.chat.harness ?? useApp.getState().guide?.meta?.harness ?? "claude-code") === "claude-code",
+  );
+  const rewriting = useChat((s) => s.rewriting);
   const pending = qs.some((q) => q.status === "pending");
   const linked = (q: Question) =>
     q.anchor
@@ -317,39 +496,61 @@ function Turn({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
         {qs.map((q) => (
           <div key={q.id} className={`q-item${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
             {q.anchor && <CtxCard a={q.anchor} />}
-            <div className="bubble">
+            {editable && q === qs[0] && (
+              <button
+                type="button"
+                className="icon-btn sm edit-sent"
+                title="Edit"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  useChat.getState().setRewriting(q.id);
+                }}
+              >
+                {ic(Pencil, 13)}
+              </button>
+            )}
+            <div className={`bubble${rewriting === q.id ? " rewriting" : ""}`}>
               <Qn q={q} />
               {q.text}
             </div>
           </div>
         ))}
       </div>
-      <div className="msg ai">
-        <div className="ai-body">
-          <Trace q={qs[0]} pending={pending} />
-          {qs.map((q) => (
-            <div
-              key={q.id}
-              className={`ans${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
-              data-ans={q.id}
-            >
-              {multi && (
-                <div className={`ans-h${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
-                  <Qn q={q} />
-                  {q.anchor ? anchorLabel(q.anchor) : q.text.slice(0, 28)}
+      {/* A steered message the session hasn't taken in yet: just the message, for now */}
+      {!qs.every((q) => q.status === "steering") && (
+        <div className="msg ai">
+          <div className="ai-body">
+            <Trace q={qs[0]} pending={pending} />
+            {qs.map((q) => (
+              <div
+                key={q.id}
+                className={`ans${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
+                data-ans={q.id}
+              >
+                {multi && (
+                  <div className={`ans-h${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
+                    <Qn q={q} />
+                    {q.anchor ? anchorLabel(q.anchor) : q.text.slice(0, 28)}
+                  </div>
+                )}
+                <div className="ans-t">
+                  {q.answer ? (
+                    // While streaming, the cursor sits at the end of the last line, so nothing moves when it goes.
+                    <div className={q.status === "pending" ? "streaming" : undefined}>
+                      <Markdown text={expandCites(q.answer)} />
+                    </div>
+                  ) : (
+                    q.status === "pending" && <span className="cursor" />
+                  )}
+                  {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
                 </div>
-              )}
-              <div className="ans-t">
-                {q.answer ? <Markdown text={expandCites(q.answer)} /> : null}
-                {q.status === "pending" && <span className="cursor" />}
-                {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
+                {q.shows.length > 0 && <Shows shows={q.shows} />}
+                {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
               </div>
-              {q.shows.length > 0 && <Shows shows={q.shows} />}
-              {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
@@ -374,12 +575,12 @@ const TOOL_ICONS: Partial<Record<string, typeof Wrench>> = {
 };
 
 /** One tool call as a quiet line, the way chat apps show them: an icon, a verb, and what it acted on. */
-function ToolRow({ summary }: { summary: string }) {
+function ToolRow({ summary, failed }: { summary: string; failed?: boolean }) {
   const sp = summary.indexOf(" ");
   const verb = sp < 0 ? summary : summary.slice(0, sp);
   const Icon = TOOL_ICONS[verb];
   return (
-    <li className="trace-tool" title={summary}>
+    <li className={`trace-tool${failed ? " failed" : ""}`} title={failed ? `${summary} · failed` : summary}>
       {ic(Icon ?? Wrench, 12)}
       {Icon ? (
         <>
@@ -389,6 +590,7 @@ function ToolRow({ summary }: { summary: string }) {
       ) : (
         <span className="arg">{summary}</span>
       )}
+      {failed && <span className="fail">Failed</span>}
     </li>
   );
 }
@@ -430,7 +632,7 @@ function Trace({ q, pending }: { q: Question; pending: boolean }) {
                 <Markdown text={t.think} />
               </li>
             ) : (
-              <ToolRow key={i} summary={t.tool} />
+              <ToolRow key={i} summary={t.tool} failed={t.failed} />
             ),
           )}
         </ol>
@@ -456,125 +658,594 @@ function GuideUpdated({ v }: { v: number }) {
   );
 }
 
-/** Questions asked while an answer was streaming; they go out together as the next turn. */
-function Waiting({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
+const MODE_UI: Record<ChatMode, { icon: typeof Lock; label: string; hint: string }> = {
+  default: { icon: Hand, label: "Manual", hint: "Asks before anything the session's settings don't allow" },
+  acceptEdits: { icon: FilePen, label: "Accept edits", hint: "Edits files without asking; asks before commands" },
+  plan: { icon: ListChecks, label: "Plan", hint: "Reads and plans; changes nothing until you approve" },
+  auto: { icon: Zap, label: "Auto", hint: "Acts without asking; a safety check blocks risky actions" },
+};
+
+/** The guide session's permission mode, as in the harness. New chats fork the session and can only read. */
+function ModeMenu() {
+  const { chat, mode, setMode } = useChat();
+  const guideHarness = useApp((s) => s.guide?.meta?.harness ?? null);
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const modes = chat.kind === "guide" ? modesFor(chat.harness ?? guideHarness) : [];
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    addEventListener("mousedown", away);
+    addEventListener("keydown", esc);
+    return () => {
+      removeEventListener("mousedown", away);
+      removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  if (!modes.length) {
+    return (
+      <span className="mode ro" title="New chats fork the guide session and can only read">
+        {ic(Lock, 13)}
+        <span>Read-only</span>
+      </span>
+    );
+  }
+  const cur = modes.includes(mode) ? mode : modes[0];
+  const ui = MODE_UI[cur];
   return (
-    <div className="msg user waiting">
-      {qs.map((q) => (
-        <div
-          key={q.id}
-          className={`q-item${link.hoverQ === q.id ? " hover" : ""}`}
-          {...(q.anchor
-            ? {
-                "data-q": q.id,
-                onMouseEnter: () => link.onHoverQ(q.id),
-                onMouseLeave: () => link.onHoverQ(null),
-                onClick: () => link.onFocusQ(q),
-              }
-            : {})}
-        >
-          {q.anchor && <CtxCard a={q.anchor} />}
-          <div className="bubble">
-            <Qn q={q} />
-            {q.text}
-          </div>
+    <div className="mode-box" ref={box}>
+      {open && (
+        <div className="mode-menu" role="menu">
+          {modes.map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="menuitemradio"
+              aria-checked={m === cur}
+              className={`mode-item${m === cur ? " on" : ""}`}
+              title={MODE_UI[m].hint}
+              onClick={() => {
+                setMode(m);
+                setOpen(false);
+              }}
+            >
+              {ic(MODE_UI[m].icon, 14)}
+              <span>{MODE_UI[m].label}</span>
+              <span className="grow" />
+              {m === cur && ic(Check, 14)}
+            </button>
+          ))}
         </div>
-      ))}
-      <div className="wait-note" title="Sends when the current answer finishes">
-        {ic(Clock, 12)}
-        {qs.length}
+      )}
+      <button
+        type="button"
+        className={`mode m-${cur}`}
+        title={ui.hint}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {ic(ui.icon, 13)}
+        <span>{ui.label}</span>
+        {ic(ChevronsUpDown, 12)}
+      </button>
+    </div>
+  );
+}
+
+/** An edit as -/+ lines: Edit's old and new text, each of MultiEdit's, or a new file's contents. */
+function editLines(a: Ask): { t: "add" | "del"; s: string }[] {
+  const lines = (v: unknown) => (typeof v === "string" && v ? v.split("\n") : []);
+  const pair = (e: Record<string, unknown>) => [
+    ...lines(e.old_string).map((s) => ({ t: "del" as const, s })),
+    ...lines(e.new_string).map((s) => ({ t: "add" as const, s })),
+  ];
+  if (a.tool === "Write") return lines(a.input.content).map((s) => ({ t: "add" as const, s }));
+  if (a.tool === "MultiEdit" && Array.isArray(a.input.edits))
+    return (a.input.edits as Record<string, unknown>[]).flatMap(pair);
+  return pair(a.input);
+}
+
+/** A tool call the session's settings don't allow, put to the reviewer in the conversation, as the terminal does.
+ * ↵ allows, Esc denies (the first card, while the composer is empty). */
+function AskCard({ a, first }: { a: Ask; first: boolean }) {
+  const answer = useChat((s) => s.answer);
+  const edit = EDIT_TOOLS.includes(a.tool);
+  const plan = a.tool === "ExitPlanMode" && typeof a.input.plan === "string" ? a.input.plan : null;
+  const path = typeof a.input.file_path === "string" ? a.input.file_path : null;
+  const diff = edit ? editLines(a) : [];
+  const adds = diff.filter((l) => l.t === "add").length;
+  const dels = diff.length - adds;
+  useEffect(() => {
+    if (!first) return;
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLTextAreaElement && e.target.value.trim();
+      if (typing || e.isComposing) return;
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        void answer(a.id, "allow");
+      } else if (e.key === "Escape") void answer(a.id, "deny");
+    };
+    addEventListener("keydown", onKey, true);
+    return () => removeEventListener("keydown", onKey, true);
+  }, [first, a.id, answer]);
+  return (
+    <div className="ask-card" role="alertdialog" aria-label={`Allow ${a.summary}?`}>
+      <div className="ask-h">
+        {ic(plan !== null ? ListChecks : edit ? FilePen : a.tool === "Bash" ? SquareTerminal : Wrench, 14)}
+        <span className="verb">
+          {plan !== null
+            ? "Ready to code?"
+            : edit
+              ? a.tool === "Write"
+                ? "Write"
+                : "Edit"
+              : a.tool === "Bash"
+                ? "Run"
+                : a.tool}
+        </span>
+        {edit && path && <PathLink path={path} />}
+        <span className="grow" />
+        {edit && diff.length > 0 && (
+          <span className="cnt">
+            <span className="a">+{adds}</span> <span className="d">−{dels}</span>
+          </span>
+        )}
+      </div>
+      {plan !== null ? (
+        <div className="ask-plan">
+          <Markdown text={plan} />
+        </div>
+      ) : edit && diff.length > 0 ? (
+        <pre className="ask-diff">
+          {diff.slice(0, 200).map((l, i) => (
+            <span key={i} className={l.t}>
+              {l.t === "add" ? "+ " : "− "}
+              {l.s}
+              {"\n"}
+            </span>
+          ))}
+        </pre>
+      ) : (
+        <pre className="ask-d">
+          {typeof a.input.command === "string" ? a.input.command : (path ?? JSON.stringify(a.input, null, 2))}
+        </pre>
+      )}
+      <div className="ask-b">
+        <button type="button" className="ask-act ghost" title="Deny (Esc)" onClick={() => void answer(a.id, "deny")}>
+          {plan !== null ? "Keep planning" : "Deny"}
+        </button>
+        <span className="grow" />
+        <button type="button" className="ask-act" onClick={() => void answer(a.id, "always")}>
+          {plan !== null ? "Approve, accept edits" : edit ? "Allow edits this session" : "Allow this session"}
+        </button>
+        <button type="button" className="ask-act primary" title="Allow (↵)" onClick={() => void answer(a.id, "allow")}>
+          {plan !== null ? "Approve" : "Allow"} <span className="k">↵</span>
+        </button>
       </div>
     </div>
   );
 }
 
-function Composer({ link }: { link: ChatLinkProps }) {
-  const { chat, unstage, clearStaged, ask, sendStaged } = useChat();
-  const [text, setText] = useState("");
-  const ta = useRef<HTMLTextAreaElement>(null);
-  const staged = chat.questions.filter((q) => q.status === "staged");
+/** For tests: the card for a waiting ask, by id. */
+export function AskCardForTest({ id }: { id: string }) {
+  const a = useChat((s) => s.asks.find((x) => x.id === id));
+  return a ? <AskCard a={a} first /> : null;
+}
 
+/** A line note (attached, or queued): hover lights its lines, click goes to them. */
+const noteLink = (q: Question, link: ChatLinkProps) =>
+  q.anchor
+    ? {
+        "data-q": q.id,
+        onMouseEnter: () => link.onHoverQ(q.id),
+        onMouseLeave: () => link.onHoverQ(null),
+        onClick: () => link.onFocusQ(q),
+      }
+    : {};
+
+function RemoveBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="icon-btn sm x"
+      title="Remove"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {ic(X, 12)}
+    </button>
+  );
+}
+
+/** Queued messages, one per batch, in send order: the typed text, or the notes it carries. */
+function batches(waiting: Question[]): { batch: string; qs: Question[] }[] {
+  const out: { batch: string; qs: Question[] }[] = [];
+  for (const q of waiting) {
+    const b = q.batch ?? q.id;
+    const last = out.at(-1);
+    if (last?.batch === b) last.qs.push(q);
+    else out.push({ batch: b, qs: [q] });
+  }
+  return out;
+}
+
+/** Messages waiting for the running turn, as Cursor shows them: one per row, sent one per turn. */
+function Queue({
+  waiting,
+  editing,
+  onEdit,
+  link,
+}: {
+  waiting: Question[];
+  editing: string | null;
+  onEdit: (batch: string, text: string) => void;
+  link: ChatLinkProps;
+}) {
+  const { unqueue, steer } = useChat();
+  const [open, setOpen] = useState(true);
+  const rows = batches(waiting);
+  if (!open)
+    return (
+      <button type="button" className="queue-pill" onClick={() => setOpen(true)}>
+        Queued <span>{rows.length}</span>
+      </button>
+    );
+  return (
+    <div className="queue">
+      <div className="queue-h">
+        <span>{rows.length} Queued</span>
+        <span className="grow" />
+        <button type="button" className="icon-btn sm" title="Collapse" onClick={() => setOpen(false)}>
+          {ic(Minus, 14)}
+        </button>
+      </div>
+      <div className="queue-rows">
+        {rows.map(({ batch, qs }) => {
+          const typed = qs.find((q) => !q.anchor)?.text ?? "";
+          return (
+            <div key={batch} className={`queue-row${editing === batch ? " editing" : ""}`}>
+              {qs
+                .filter((q) => q.anchor)
+                .map((q) => (
+                  <span key={q.id} className="qn-wrap" {...noteLink(q, link)}>
+                    <Qn q={q} />
+                  </span>
+                ))}
+              <span className="qt">{typed}</span>
+              {editing === batch ? (
+                <span className="queue-tag">Editing</span>
+              ) : (
+                <span className="queue-act">
+                  {!editing && (
+                    <button
+                      type="button"
+                      className="text-btn"
+                      title="Send this into the answer now"
+                      onClick={() => void steer(batch)}
+                    >
+                      Steer
+                    </button>
+                  )}
+                  <button type="button" className="icon-btn sm" title="Edit" onClick={() => onEdit(batch, typed)}>
+                    {ic(Pencil, 14)}
+                  </button>
+                  <button type="button" className="icon-btn sm" title="Remove" onClick={() => unqueue(batch)}>
+                    {ic(Trash2, 14)}
+                  </button>
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const commandLists = new Map<string, Promise<Command[]>>();
+/** The guide session's / commands, once per target. */
+function useCommands(on: boolean): Command[] {
+  const url = useApp((s) => s.pr?.url ?? s.url);
+  const [cmds, setCmds] = useState<Command[]>([]);
+  useEffect(() => {
+    if (!on || !url) return setCmds([]);
+    let live = true;
+    if (!commandLists.has(url))
+      commandLists.set(
+        url,
+        Promise.resolve()
+          .then(() => fetchCommands(url))
+          .catch(() => {
+            commandLists.delete(url);
+            return [];
+          }),
+      );
+    void commandLists.get(url)!.then((c) => live && setCmds(c));
+    return () => {
+      live = false;
+    };
+  }, [on, url]);
+  return cmds;
+}
+
+type Pick = { key: string; insert: string; label: string; detail: string };
+
+/** The @ file and / command menu for what's typed at the caret. */
+function useTypeahead(text: string, caret: number, guide: boolean) {
+  const known = useKnownFiles();
+  const files = useApp((s) => s.files);
+  const cmds = useCommands(guide);
+  const [closed, setClosed] = useState<number | null>(null);
+  const [active, setActive] = useState(0);
+  const t: Trigger | null = trigger(text, caret);
+  const kind = t?.kind;
+  const query = t?.query ?? "";
+  const picks = useMemo<Pick[]>(() => {
+    if (!kind) return [];
+    if (kind === "/")
+      return guide
+        ? rankCommands(cmds, query).map((c) => ({
+            key: c.name,
+            insert: `/${c.name}`,
+            label: `/${c.name}`,
+            detail: c.description,
+          }))
+        : [];
+    const changed = new Set(files.map((f) => f.path));
+    return rankFiles(known, query, changed).map((p) => {
+      const i = p.lastIndexOf("/");
+      return { key: p, insert: `@${p}`, label: p.slice(i + 1), detail: i > 0 ? p.slice(0, i) : "" };
+    });
+  }, [kind, query, guide, cmds, known, files]);
+  const open = !!t && picks.length > 0 && closed !== t.start;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new query starts at the top
+  useEffect(() => setActive(0), [kind, query]);
+  useEffect(() => {
+    if (!kind) setClosed(null);
+  }, [kind]);
+  return {
+    t,
+    picks,
+    open,
+    active: Math.min(active, picks.length - 1),
+    setActive,
+    close: () => setClosed(t?.start ?? null),
+  };
+}
+
+function TypeaheadMenu({
+  picks,
+  active,
+  onPick,
+  onHover,
+}: {
+  picks: Pick[];
+  active: number;
+  onPick: (p: Pick) => void;
+  onHover: (i: number) => void;
+}) {
+  return (
+    <div className="ta-menu" role="listbox">
+      {picks.map((p, i) => (
+        <button
+          type="button"
+          role="option"
+          aria-selected={i === active}
+          key={p.key}
+          className={`ta-item${i === active ? " on" : ""}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onMouseEnter={() => onHover(i)}
+          onClick={() => onPick(p)}
+        >
+          <span className="ta-label">{p.label}</span>
+          {p.detail && <span className="ta-detail">{p.detail}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** A step that changed files (what Claude Code's rewind can put back). */
+const isEdit = (t: TraceItem) => "tool" in t && /^(Edit|MultiEdit|Write|NotebookEdit)\b/.test(t.tool);
+
+function Composer({ link }: { link: ChatLinkProps }) {
+  const { chat, unstage, ask, sendStaged, stop, editQueued } = useChat();
+
+  const [text, setText] = useState("");
+  const editing = useChat((s) => s.editing);
+  const setEditing = useChat((s) => s.setEditing);
+  // A sent message being edited: its text here; saving rewinds the session to before it.
+  const rewriting = useChat((s) => (s.rewriting ? s.chat.questions.find((q) => q.id === s.rewriting) : undefined));
+  const touchedFiles = useChat((s) => {
+    const q = s.rewriting && s.chat.questions.find((x) => x.id === s.rewriting);
+    return !!q && s.chat.questions.some((x) => x.turn! >= q.turn! && x.trace?.some(isEdit));
+  });
+  const [restoreCode, setRestoreCode] = useState(false);
+  const rewritingId = rewriting?.id;
+  useEffect(() => {
+    const q = rewritingId && useChat.getState().chat.questions.find((x) => x.id === rewritingId);
+    if (!q) return;
+    setEditing(null);
+    setRestoreCode(false);
+    setText(q.text);
+    requestAnimationFrame(() => {
+      autosize(ta.current, 12);
+      ta.current?.focus();
+    });
+  }, [rewritingId, setEditing]);
+  const [caret, setCaret] = useState(0);
+  const ta = useRef<HTMLTextAreaElement>(null);
+  const menu = useTypeahead(text, caret, chat.kind === "guide");
+  const pick = (p: Pick) => {
+    if (!menu.t) return;
+    const [next, at] = complete(text, caret, menu.t, p.insert);
+    setText(next);
+    setCaret(at);
+    requestAnimationFrame(() => {
+      ta.current?.setSelectionRange(at, at);
+      autosize(ta.current, 12);
+    });
+  };
+  const staged = chat.questions.filter((q) => q.status === "staged");
+  const waiting = chat.questions.filter((q) => q.status === "waiting");
+  // Queuing a line comment puts you here, so ↵ sends the batch (the popup that queued it has just closed).
+  const queued = useRef(staged.length);
+  useEffect(() => {
+    if (staged.length > queued.current) requestAnimationFrame(() => ta.current?.focus());
+    queued.current = staged.length;
+  }, [staged.length]);
+  // Closing the chat mid-edit lets the queue go on.
+  useEffect(() => () => useChat.getState().setEditing(null), []);
+  // A queued message that was removed (or went out) while being edited: stop editing it.
+  useEffect(() => {
+    if (editing && !waiting.some((q) => q.batch === editing)) {
+      setEditing(null);
+      setText("");
+    }
+  }, [editing, waiting, setEditing]);
+
+  const reset = () => {
+    setText("");
+    requestAnimationFrame(() => autosize(ta.current, 12));
+  };
+  const startEdit = (batch: string, t: string) => {
+    useChat.getState().setRewriting(null);
+    setEditing(batch);
+    setText(t);
+    requestAnimationFrame(() => {
+      autosize(ta.current, 12);
+      ta.current?.focus();
+    });
+  };
+  const cancelEdit = () => {
+    setEditing(null);
+    useChat.getState().setRewriting(null);
+    reset();
+  };
   const send = () => {
-    if (staged.length) sendStaged(text);
+    if (rewriting) {
+      useChat.getState().editSent(rewriting.id, text, restoreCode);
+    } else if (editing) {
+      editQueued(editing, text.trim());
+      setEditing(null);
+      setText("");
+    } else if (staged.length) sendStaged(text);
     else if (text.trim()) ask(text.trim());
     else return;
-    setText("");
-    if (ta.current) ta.current.style.height = "";
+    reset();
   };
 
   return (
     <div className="composer-wrap">
-      {staged.length > 0 && (
-        <div className="tray">
-          <div className="tray-h">
-            {ic(Layers, 13)}
-            <span>{staged.length}</span>
-            <span className="grow" />
-            <button type="button" className="icon-btn sm" title="Clear queue" onClick={clearStaged}>
-              {ic(Trash2, 14)}
-            </button>
-          </div>
-          {staged.map((q) => (
-            <div
-              key={q.id}
-              className={`q-row${link.hoverQ === q.id || link.flashQ?.id === q.id ? " hover" : ""}${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
-              data-q={q.id}
-              onMouseEnter={() => link.onHoverQ(q.id)}
-              onMouseLeave={() => link.onHoverQ(null)}
-              onClick={() => link.onFocusQ(q)}
-            >
-              <Qn q={q} />
-              <span className="ref">{q.anchor ? anchorLabel(q.anchor) : ""}</span>
-              <span className="qt">{q.text}</span>
+      {waiting.length > 0 && <Queue waiting={waiting} editing={editing} onEdit={startEdit} link={link} />}
+      <div className="composer stack">
+        {menu.open && <TypeaheadMenu picks={menu.picks} active={menu.active} onPick={pick} onHover={menu.setActive} />}
+        {(editing || rewriting) && (
+          <div className="notes">
+            <span className="editing-chip">
+              {ic(Pencil, 13)}
+              Editing
+              <button type="button" className="icon-btn sm" title="Cancel (Esc)" onClick={cancelEdit}>
+                {ic(X, 12)}
+              </button>
+            </span>
+            {rewriting && touchedFiles && (
               <button
                 type="button"
-                className="icon-btn sm x"
-                title="Remove"
+                className={`restore-chip${restoreCode ? " on" : ""}`}
+                aria-pressed={restoreCode}
+                title="Also put the files back as they were before this message"
+                onClick={() => setRestoreCode(!restoreCode)}
+              >
+                {ic(Undo2, 13)}
+                Restore code
+              </button>
+            )}
+          </div>
+        )}
+        {!editing && !rewriting && staged.length > 0 && (
+          <div className="notes">
+            {staged.map((q) => (
+              <div
+                key={q.id}
+                className={`note${link.hoverQ === q.id ? " hover" : ""}`}
+                {...noteLink(q, link)}
                 onClick={(e) => {
-                  e.stopPropagation();
-                  unstage(q.id);
+                  link.onFocusQ(q);
+                  link.onEditQ(q.id, e.currentTarget);
                 }}
               >
-                {ic(X, 13)}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="composer">
+                <Qn q={q} />
+                <span className="ref">{q.text}</span>
+                <RemoveBtn onClick={() => unstage(q.id)} />
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={ta}
           rows={1}
           value={text}
-          placeholder={
-            staged.length
-              ? "Add a message, or send"
-              : chat.busy
-                ? "Ask another — sends after this answer"
-                : "Ask anything"
-          }
+          placeholder="Ask anything"
           onChange={(e) => {
             setText(e.target.value);
-            e.target.style.height = "";
-            e.target.style.height = `${e.target.scrollHeight}px`;
+            setCaret(e.target.selectionStart);
+            autosize(e.target, 12);
           }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (menu.open && !e.nativeEvent.isComposing) {
+              const n = menu.picks.length;
+              const step = listStep(e);
+              if (step) {
+                e.preventDefault();
+                return menu.setActive((menu.active + step + n) % n);
+              }
+              if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                e.preventDefault();
+                return pick(menu.picks[menu.active]);
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                return menu.close();
+              }
+            }
+            if (e.key === "Escape" && (editing || rewriting)) {
+              e.preventDefault();
+              cancelEdit();
+            } else if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
             }
           }}
         />
-        <button
-          type="button"
-          id="chatSend"
-          className="icon-btn solid"
-          title={staged.length ? `Send ${staged.length}` : "Send (↵)"}
-          onClick={send}
-        >
-          {ic(ArrowUp, 16)}
-          {staged.length > 0 && <span className="send-n">{staged.length}</span>}
-        </button>
+        <div className="c-row">
+          <ModeMenu />
+          <span className="grow" />
+          {editing || rewriting ? (
+            <button type="button" id="chatSend" className="icon-btn solid" title="Save" onClick={send}>
+              {ic(Check, 16)}
+            </button>
+          ) : chat.busy && !text.trim() && !staged.length ? (
+            <button
+              type="button"
+              id="chatSend"
+              className="icon-btn solid stop"
+              title="Stop"
+              onClick={() => void stop()}
+            >
+              {ic(Square, 12)}
+            </button>
+          ) : (
+            <button type="button" id="chatSend" className="icon-btn solid" title="Send" onClick={send}>
+              {ic(ArrowUp, 16)}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -11,20 +11,55 @@ change the guide, it ends its answer with the whole updated guide in a ``diffusi
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from contextlib import aclosing
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
+from typing import cast
 
 from pydantic import BaseModel, Field
 
-from .agent import AgentRequest, DoneEvent, Event, Runner, TextEvent, ThinkingEvent, ToolEvent, ToolSpec
+from .agent import (
+    AgentRequest,
+    Approver,
+    DoneEvent,
+    Event,
+    Mode,
+    Runner,
+    SteeredEvent,
+    TextEvent,
+    ThinkingEvent,
+    ToolEvent,
+    ToolFailedEvent,
+    ToolSpec,
+)
+from .commands import raw_command
 from .hunks import DiffIndex
 from .pipeline import Prepared
 
 SYSTEM_PROMPT = files("diffusion.prompts").joinpath("chat.md").read_text()
+
+_NATIVE = (
+    "## Your tools here\n"
+    "This is your own session, continued in Diffusion's review panel: you have your usual tools, settings and "
+    "permissions on your usual working directory. When the reviewer asks you to change code, run something, or fix "
+    "what you found, do it as you would in the terminal; anything your settings don't already allow is put to the "
+    "reviewer to approve in the chat. "
+)
+# What the chat may do, said plainly: the model otherwise guesses from what it remembers of earlier turns.
+MODE_NOTE: dict[str, str] = {
+    "read-only": "## Your tools here\nThis chat can only read the repository (checked out at the PR head): you "
+    "can't change files or run commands. If asked for a change, say so and give the exact edit instead.",
+    "default": _NATIVE + "This mode asks before edits and commands.",
+    "acceptEdits": _NATIVE + "This mode makes file edits without asking and asks before commands.",
+    "auto": _NATIVE + "This mode acts without asking; a safety check blocks risky actions.",
+    "plan": "## Your tools here\nThis is your own session, continued in Diffusion's review panel, in plan mode: "
+    "read and plan, and present the plan for the reviewer to approve before changing anything.",
+}
 MAX_ANCHOR_LINES = 80
 MAX_SHOWS_PER_TURN = 6
 MAX_HUNKS_PER_CALL = 12
@@ -169,6 +204,13 @@ class SectionSplitter:
 class ChatDelta:
     n: int
     text: str
+
+
+@dataclass
+class ChatSteered:
+    """Questions sent into the running turn reached the model; what it writes from here answers them."""
+
+    questions: list[Question]
 
 
 @dataclass
@@ -339,26 +381,54 @@ async def run_turn(
     model: str,
     resume: str | None,
     fork: bool = False,
+    adopt: bool = False,
     cwd: Path | None = None,
     block: GuideBlock | None = None,
     max_turns: int = 24,
-) -> AsyncIterator[ChatDelta | ChatFocus | ToolEvent | ThinkingEvent | DoneEvent]:
-    """``block`` collects an updated guide the answer ends with (``block.found``)."""
+    mode: Mode = "read-only",
+    approve: Approver | None = None,
+    harness: str = "",
+    steer: asyncio.Queue[tuple[list[Question], asyncio.Future[bool]]] | None = None,
+    resume_at: str | None = None,
+    restore_files: str | None = None,
+) -> AsyncIterator[
+    ChatDelta | ChatFocus | ChatSteered | ToolEvent | ToolFailedEvent | ThinkingEvent | DoneEvent
+]:
+    """``block`` collects an updated guide the answer ends with (``block.found``). ``steer`` takes questions to
+    send into the running turn, for runners that can (see ``AgentRequest.steer``)."""
     shown: list[dict] = []
     tools = [hunk_tool(prep.index), show_code_tool(prep.index, shown)]
     req = AgentRequest(
-        system_prompt=SYSTEM_PROMPT + "\n\n" + seed_context(prep, guide),
-        prompt=format_turn(questions, prep.index),
+        system_prompt=SYSTEM_PROMPT + "\n\n" + MODE_NOTE[mode] + "\n\n" + seed_context(prep, guide),
+        # A command (`/code-review`, a Codex `$skill`) goes as typed, so the harness runs it rather than reading it.
+        prompt=(len(questions) == 1 and not questions[0].anchor and raw_command(harness, questions[0].text))
+        or format_turn(questions, prep.index),
         model=model,
         cwd=cwd or prep.checkout.worktree,
         tools=tools,
         max_turns=max_turns,
         resume=resume,
         fork=fork,
+        adopt=adopt,
         include_partial=True,
+        mode=mode,
+        approve=approve,
+        steer=asyncio.Queue() if steer else None,
+        resume_at=resume_at,
+        restore_files=restore_files,
     )
     block = block if block is not None else GuideBlock()
     split = SectionSplitter([q.n for q in questions])
+    sent: dict[str, list[Question]] = {}  # steered text -> its questions
+
+    async def forward(src: asyncio.Queue, dst: asyncio.Queue) -> None:
+        while True:
+            qs, accepted = await src.get()
+            text = format_turn(qs, prep.index)
+            sent[text] = qs
+            await dst.put((text, accepted))
+
+    relay = asyncio.create_task(forward(steer, req.steer)) if steer and req.steer else None
     drained = 0
 
     def focuses() -> list[ChatFocus]:
@@ -372,21 +442,49 @@ async def run_turn(
             out.append(ChatFocus(n, s["file"], s["start"], s["end"], s["side"], s["label"]))
         return out
 
+    try:
+        async with aclosing(cast(AsyncGenerator[Event], runner(req))) as events:
+            async for out in _events(events, split, block, focuses, prep, sent):
+                yield out
+    finally:
+        if relay:
+            relay.cancel()
+
+
+async def _events(
+    events: AsyncIterator[Event],
+    split: SectionSplitter,
+    block: GuideBlock,
+    focuses: Callable[[], list[ChatFocus]],
+    prep: Prepared,
+    sent: dict[str, list[Question]],
+) -> AsyncIterator[
+    ChatDelta | ChatFocus | ChatSteered | ToolEvent | ToolFailedEvent | ThinkingEvent | DoneEvent
+]:
+    """The runner's events, as the chat's: text routed to questions, guide blocks held back, steers marked."""
     ev: Event
-    async for ev in runner(req):
+    async for ev in events:
         for f in focuses():
             yield f
-        if isinstance(ev, TextEvent):
+        if isinstance(ev, SteeredEvent):
+            qs = sent.pop(ev.text, None)
+            if qs:
+                for n, t in split.flush():
+                    yield ChatDelta(n, t)
+                split.valid |= {q.n for q in qs}
+                split.cur = qs[0].n
+                yield ChatSteered(qs)
+        elif isinstance(ev, TextEvent):
             for n, t in split.feed(block.feed(ev.text)):
                 yield ChatDelta(n, t)
-        elif isinstance(ev, ThinkingEvent):
+        elif isinstance(ev, ThinkingEvent | ToolFailedEvent):
             yield ev
         elif isinstance(ev, ToolEvent):
             # Text before a tool call is narration ("Let me check…"); reset so it doesn't glue to the answer.
             for n, t in split.break_line():
                 yield ChatDelta(n, t)
             if ev.name.endswith("get_hunk"):
-                ev = ToolEvent(ev.name, hunk_summary(ev.summary, prep.index))
+                ev = ToolEvent(ev.name, hunk_summary(ev.summary, prep.index), ev.id)
             yield ev
         elif isinstance(ev, DoneEvent):
             for n, t in split.feed(block.flush()) + split.flush():

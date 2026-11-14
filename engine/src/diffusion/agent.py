@@ -7,10 +7,11 @@ written by the agent Diffusion is launched from.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 # ---------- events surfaced to callers (CLI progress, SSE) ----------
 
@@ -19,6 +20,14 @@ from typing import Protocol
 class ToolEvent:
     name: str
     summary: str
+    id: str | None = None
+
+
+@dataclass
+class ToolFailedEvent:
+    """A tool call that came back as an error (the tool doesn't exist here, was denied, or failed)."""
+
+    id: str
 
 
 @dataclass
@@ -34,15 +43,25 @@ class ThinkingEvent:
 
 
 @dataclass
+class SteeredEvent:
+    """A message sent into the running turn (``AgentRequest.steer``) reached the model."""
+
+    text: str
+
+
+@dataclass
 class DoneEvent:
     turns: int
     cost_usd: float | None
     is_error: bool
     session_id: str | None
     result: str | None = None
+    prompt_id: str | None = (
+        None  # the session's id for the message that started the turn (to rewind to it later)
+    )
 
 
-Event = ToolEvent | TextEvent | ThinkingEvent | DoneEvent
+Event = ToolEvent | ToolFailedEvent | TextEvent | ThinkingEvent | SteeredEvent | DoneEvent
 
 
 def ran(command: str) -> str:
@@ -77,6 +96,19 @@ class ToolSpec:
     handler: Callable[[dict], Awaitable[str]]
 
 
+Mode = Literal["read-only", "default", "acceptEdits", "plan", "auto"]
+"""How much a chat may do. read-only: Diffusion's read tools only (forks). The rest are Claude Code's own permission
+modes (Manual, Accept edits, Plan, Auto), run with the session's own tools and settings: default asks before anything
+those don't allow, acceptEdits also lets file edits through, plan only plans, auto lets Claude Code's safety check
+decide instead of asking."""
+
+Decision = Literal["allow", "deny", "always"]
+"""The reviewer's answer to a tool call; always also allows its kind for the rest of the session."""
+
+Approver = Callable[[str, str, dict], Awaitable[Decision]]
+"""Ask the reviewer about a tool call: (tool name, one-line summary, input) -> decision."""
+
+
 @dataclass
 class AgentRequest:
     system_prompt: str
@@ -87,7 +119,22 @@ class AgentRequest:
     max_turns: int = 40
     resume: str | None = None
     fork: bool = False  # branch the resumed session instead of adding to it
+    adopt: bool = False  # add to someone else's session (the guide's), which hasn't seen our system prompt
     include_partial: bool = False
+    mode: Mode = "read-only"
+    approve: Approver | None = None
+    # Messages to slip into the running turn, as (text, accepted): the runner sets accepted True once it has sent
+    # the text on, or False when the turn is already over. Only runners that can steer read it.
+    steer: asyncio.Queue[tuple[str, asyncio.Future[bool]]] | None = None
+    # Rewinding (editing an earlier message): resume the session only up to this message id, and first put the
+    # files back as they were at that user message (``restore_files``), as Claude Code's rewind does.
+    resume_at: str | None = None
+    restore_files: str | None = None
+
+    @property
+    def native(self) -> bool:
+        """Run as the session itself would: its own tools, settings and instructions."""
+        return self.mode != "read-only"
 
 
 class Runner(Protocol):
