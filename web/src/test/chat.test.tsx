@@ -217,6 +217,9 @@ test("drag bubble across lines → popup → queue two → badges → send → l
   fireEvent.change(input, { target: { value: "Why clear the timer?" } });
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(document.querySelector(".tray")).toBeTruthy());
+  expect(document.querySelector(".tray-h")!.textContent).toBe("1 queued");
+  // the chat box takes focus, so ↵ sends the batch
+  await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".composer textarea")));
   expect(document.querySelectorAll(".q-row")).toHaveLength(1);
   expect(document.querySelector(".qb.s-staged")).toBeTruthy();
   expect(document.querySelector("tr.qd")).toBeTruthy();

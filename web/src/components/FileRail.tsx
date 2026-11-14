@@ -1,8 +1,8 @@
 import { ChevronDown, ChevronRight, FileDiff as FileDiffIcon, FolderTree, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchTree } from "../api";
 import { startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
+import { cachedTree } from "../lib/tree";
 import { useApp } from "../store";
 import type { FileDiff as FD } from "../types";
 import { useUI } from "../ui";
@@ -67,7 +67,6 @@ export function treeOrder(paths: string[]): string[] {
 }
 
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
-const tree = new Map<string, Promise<string[]>>();
 
 /** The changed files, or every file at the head, as a tree that follows the file in view. Folders holding changes
  *  start open, the rest folded. A changed file opens in the diff (⌘-click: a tab); any other opens in a tab. */
@@ -87,15 +86,7 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
   useEffect(() => {
     if (mode !== "all") return;
     let live = true;
-    if (!tree.has(url))
-      tree.set(
-        url,
-        fetchTree(url).catch(() => {
-          tree.delete(url);
-          return [];
-        }),
-      );
-    void tree.get(url)!.then((t) => live && setAll(t));
+    void cachedTree(url).then((t) => live && setAll(t));
     return () => {
       live = false;
     };

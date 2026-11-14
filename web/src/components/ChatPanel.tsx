@@ -41,12 +41,13 @@ import {
   useChat,
 } from "../chat";
 import { autosize } from "../lib/autosize";
-import { type CodeLoc, expandCites, parseCites, type Resolved, resolveLoc } from "../lib/cite";
+import { type CodeLoc, expandCites, parseCites, parsePath, type Resolved, repoPath, resolveLoc } from "../lib/cite";
 import { useHunkIndex } from "../lib/linking";
 import { InlineCodeContext, Markdown } from "../lib/md";
 import { CHAT_W, startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
+import { cachedTree } from "../lib/tree";
 import { useApp } from "../store";
 import type { StepKind } from "../types";
 import { useUI } from "../ui";
@@ -211,6 +212,8 @@ const locLink = (r: Resolved) => ({
  *  hover); others stay plain code. A list on one file (`a.ts:3, 8–10`) links each range. */
 function Cite({ text }: { text: string }) {
   const cites = useMemo(() => parseCites(text), [text]);
+  const path = useMemo(() => (cites ? null : parsePath(text)), [cites, text]);
+  if (path) return <PathLink path={path} label={text.trim()} />;
   if (!cites) return <code>{text}</code>;
   if (cites.length === 1) return <CiteLink {...cites[0]} />;
   return (
@@ -245,6 +248,49 @@ function CiteLink({ loc, text }: { loc: CodeLoc; text: string }) {
   return (
     <button type="button" className="cite" title={`${r.file} · Show in diff`} {...locLink(r)}>
       <code>{text.trim().replace(/^.*\//, "")}</code>
+    </button>
+  );
+}
+
+/** Every file the reviewer can open: the diff's, and (once loaded) the rest of the repository's. */
+function useKnownFiles(): string[] {
+  const files = useApp((s) => s.files);
+  const url = useApp((s) => s.pr?.url ?? s.url);
+  const [tree, setTree] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    if (url) void cachedTree(url).then((t) => live && setTree(t));
+    return () => {
+      live = false;
+    };
+  }, [url]);
+  return useMemo(() => [...new Set([...files.map((f) => f.path), ...tree])], [files, tree]);
+}
+
+/** A file named without a line (in an answer, or an approval card): opens it in the diff when it's changed, else in
+ *  a tab; ⌘-click always opens a tab. Shown by `label`, else by its path in the repository. */
+function PathLink({ path, label }: { path: string; label?: string }) {
+  const known = useKnownFiles();
+  const files = useApp((s) => s.files);
+  const resolve = useResolveLoc();
+  const repo = useMemo(() => repoPath(path, known), [path, known]);
+  if (!repo) return <code>{label ?? path}</code>;
+  const inDiff = files.some((f) => f.path === repo);
+  return (
+    <button
+      type="button"
+      className="cite"
+      title={`${repo} · ${inDiff ? "Show in diff" : "Open in a tab"}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        const r = inDiff && !(e.metaKey || e.ctrlKey) ? resolve({ file: repo, start: 1, end: 1e9, side: "new" }) : null;
+        if (r) {
+          useUI.getState().showTab(null);
+          useUI.getState().focus(r.keys.slice(0, 1), r.files);
+        } else useUI.getState().openFile(repo, undefined, e.metaKey || e.ctrlKey);
+      }}
+    >
+      <code>{label ? label.replace(/^.*\//, "") : repo}</code>
     </button>
   );
 }
@@ -737,7 +783,7 @@ function AskCard({ a, first }: { a: Ask; first: boolean }) {
                 ? "Run"
                 : a.tool}
         </span>
-        {edit && path && <code>{path}</code>}
+        {edit && path && <PathLink path={path} />}
         <span className="grow" />
         {edit && diff.length > 0 && (
           <span className="cnt">
@@ -792,6 +838,12 @@ function Composer({ link }: { link: ChatLinkProps }) {
   const [text, setText] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
   const staged = chat.questions.filter((q) => q.status === "staged");
+  // Queuing a line comment puts you here, so ↵ sends the batch (the popup that queued it has just closed).
+  const queued = useRef(staged.length);
+  useEffect(() => {
+    if (staged.length > queued.current) requestAnimationFrame(() => ta.current?.focus());
+    queued.current = staged.length;
+  }, [staged.length]);
 
   const send = () => {
     if (staged.length) sendStaged(text);
@@ -807,7 +859,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
         <div className="tray">
           <div className="tray-h">
             {ic(Layers, 13)}
-            <span>{staged.length}</span>
+            <span>{staged.length} queued</span>
             <span className="grow" />
             <button type="button" className="icon-btn sm" title="Clear queue" onClick={clearStaged}>
               {ic(Trash2, 14)}
@@ -847,7 +899,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
           value={text}
           placeholder={
             staged.length
-              ? "Add a message, or send"
+              ? "Add a message, or ↵ to send"
               : chat.busy
                 ? "Ask another — sends after this answer"
                 : chat.kind === "guide" && !chat.questions.length

@@ -41,6 +41,28 @@ export function parseCites(text: string): { loc: CodeLoc; text: string }[] | nul
   });
 }
 
+const FILE = /^\/?(?:[\w@.+-]+\/)*[\w@+-][\w@.+-]*\.\w+$/;
+
+/** A bare file path in inline code (`src/a.ts`, or an absolute one), or null. It needs a folder (`a/b.ts`), so
+ *  `x.y` code isn't taken for a file. */
+export function parsePath(text: string): string | null {
+  const t = text.trim().replace(/^\.\//, "");
+  return t.includes("/") && FILE.test(t) ? t : null;
+}
+
+/** A path as the repository knows it: itself; else, for a longer one (an absolute path in the agent's checkout),
+ *  the longest known path it ends with; else, for a shorter one, the one known path ending with it. */
+export function repoPath(path: string, known: Iterable<string>): string | null {
+  let longest: string | null = null;
+  const ending: string[] = [];
+  for (const k of known) {
+    if (k === path) return k;
+    if (path.endsWith(`/${k}`) && (!longest || k.length > longest.length)) longest = k;
+    if (k.endsWith(`/${path}`)) ending.push(k);
+  }
+  return longest ?? (ending.length === 1 ? ending[0] : null);
+}
+
 /** The first location of a citation (see `parseCites`). */
 export function parseCite(text: string): CodeLoc | null {
   return parseCites(text)?.[0].loc ?? null;
