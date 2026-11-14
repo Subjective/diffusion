@@ -1,9 +1,9 @@
 import {
-  ArrowDownAZ,
   ArrowLeftToLine,
   ArrowRightToLine,
   ChevronsDownUp,
   EyeOff,
+  FolderTree,
   MessageCircle,
   PanelLeft,
   Route,
@@ -17,7 +17,7 @@ import type { FileDiff as FD, Guide, Ref } from "../types";
 import { diffActivity, markDiffActivity, useUI } from "../ui";
 import { type AskComment, commentRows } from "./Comments";
 import { type Dot, FileDiff, type Gutter } from "./FileDiff";
-import { FileRail, fileInView } from "./FileRail";
+import { FileRail, fileInView, treeOrder } from "./FileRail";
 import { ic } from "./icons";
 import { FileView, TabBar } from "./Tabs";
 
@@ -62,10 +62,14 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
   const tab = useUI((s) => s.tab);
 
   const idx = useMemo(() => indexFiles(files), [files]);
-  const skipFiles = useMemo(
-    () => new Set([...files.filter((f) => f.skip).map((f) => f.path), ...(guide?.skippable.map((s) => s.file) ?? [])]),
-    [files, guide],
-  );
+  // A file is skippable when all of it is (a lockfile), not when the guide skips one hunk of it (an import).
+  const skipFiles = useMemo(() => {
+    const skipped = new Set(guide?.skippable.flatMap((s) => s.hunks) ?? []);
+    const whole = (f: (typeof files)[number]) =>
+      guide?.skippable.some((s) => s.file === f.path && !s.hunks.length) ||
+      (f.hunks.length > 0 && f.hunks.every((h) => skipped.has(h.id)));
+    return new Set(files.filter((f) => f.skip || whole(f)).map((f) => f.path));
+  }, [files, guide]);
 
   const { dots, fileSteps } = useMemo(() => {
     const dots = new Map<string, Dot[]>();
@@ -89,10 +93,11 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
     return { dots, fileSteps };
   }, [guide, idx]);
 
-  const ordered = useMemo(
-    () => (order === "guide" ? guideOrder(files, guide) : [...files].sort((a, b) => a.path.localeCompare(b.path))),
-    [files, guide, order],
-  );
+  const ordered = useMemo(() => {
+    if (order === "guide") return guideOrder(files, guide);
+    const at = new Map(treeOrder(files.map((f) => f.path)).map((p, i) => [p, i]));
+    return [...files].sort((a, b) => at.get(a.path)! - at.get(b.path)!);
+  }, [files, guide, order]);
 
   useEffect(() => {
     if (!scrollTo) return;
@@ -233,11 +238,15 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
           <>
             <button
               type="button"
-              className="icon-btn sm on"
-              title={order === "guide" ? "Order: guide" : "Order: A–Z"}
+              className="icon-btn sm"
+              title={
+                order === "guide"
+                  ? "In the guide's order · click for the file tree's order"
+                  : "In the file tree's order · click for the guide's order"
+              }
               onClick={() => setOrder(order === "guide" ? "alpha" : "guide")}
             >
-              {ic(order === "guide" ? Route : ArrowDownAZ, 15)}
+              {ic(order === "guide" ? Route : FolderTree, 15)}
             </button>
             <button
               type="button"

@@ -55,6 +55,17 @@ export function buildTree(paths: string[]): Dir {
 
 export const RAIL_W = 240;
 const clampRail = (w: number) => Math.round(Math.max(160, Math.min(w, 560)));
+/** Paths in the order the tree shows them: folders before files, A–Z. */
+export function treeOrder(paths: string[]): string[] {
+  const out: string[] = [];
+  const walk = (d: Dir) => {
+    for (const c of d.dirs) walk(c);
+    out.push(...d.files);
+  };
+  walk(buildTree(paths));
+  return out;
+}
+
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 const tree = new Map<string, Promise<string[]>>();
 
