@@ -20,9 +20,9 @@ import {
   Search,
   ShieldAlert,
   Sparkles,
+  Square,
   SquarePen,
   SquareTerminal,
-  Trash2,
   Workflow,
   Wrench,
   X,
@@ -90,7 +90,6 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
   });
 
   const turns = groupTurns(sent);
-  const waiting = chat.questions.filter((q) => q.status === "waiting");
   const asks = useChat((s) => s.asks);
   // The conversation the session had in the terminal before this chat: folded to one line until opened.
   let earlier = turns.findIndex((qs) => !qs.every((q) => q.fromSession));
@@ -178,7 +177,6 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
               {asks.map((a, i) => (
                 <AskCard key={a.id} a={a} first={i === 0} />
               ))}
-              {waiting.length > 0 && <Waiting qs={waiting} link={link} />}
             </div>
           </InlineCodeContext.Provider>
         )}
@@ -624,38 +622,6 @@ function GuideUpdated({ v }: { v: number }) {
   );
 }
 
-/** Questions asked while an answer was streaming; they go out together as the next turn. */
-function Waiting({ qs, link }: { qs: Question[]; link: ChatLinkProps }) {
-  return (
-    <div className="msg user waiting">
-      {qs.map((q) => (
-        <div
-          key={q.id}
-          className={`q-item${link.hoverQ === q.id ? " hover" : ""}`}
-          {...(q.anchor
-            ? {
-                "data-q": q.id,
-                onMouseEnter: () => link.onHoverQ(q.id),
-                onMouseLeave: () => link.onHoverQ(null),
-                onClick: () => link.onFocusQ(q),
-              }
-            : {})}
-        >
-          {q.anchor && <CtxCard a={q.anchor} />}
-          <div className="bubble">
-            <Qn q={q} />
-            {q.text}
-          </div>
-        </div>
-      ))}
-      <div className="wait-note" title="Sends when the current answer finishes">
-        {ic(Clock, 12)}
-        {qs.length}
-      </div>
-    </div>
-  );
-}
-
 const MODE_UI: Record<ChatMode, { icon: typeof Lock; label: string; hint: string }> = {
   default: { icon: Hand, label: "Manual", hint: "Asks before anything the session's settings don't allow" },
   acceptEdits: { icon: FilePen, label: "Accept edits", hint: "Edits files without asking; asks before commands" },
@@ -832,12 +798,40 @@ export function AskCardForTest({ id }: { id: string }) {
   return a ? <AskCard a={a} first /> : null;
 }
 
+/** A line note (attached, or queued): hover lights its lines, click goes to them. */
+const noteLink = (q: Question, link: ChatLinkProps) =>
+  q.anchor
+    ? {
+        "data-q": q.id,
+        onMouseEnter: () => link.onHoverQ(q.id),
+        onMouseLeave: () => link.onHoverQ(null),
+        onClick: () => link.onFocusQ(q),
+      }
+    : {};
+
+function RemoveBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="icon-btn sm x"
+      title="Remove"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {ic(X, 12)}
+    </button>
+  );
+}
+
 function Composer({ link }: { link: ChatLinkProps }) {
-  const { chat, unstage, clearStaged, ask, sendStaged } = useChat();
+  const { chat, unstage, ask, sendStaged, stop } = useChat();
 
   const [text, setText] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
   const staged = chat.questions.filter((q) => q.status === "staged");
+  const waiting = chat.questions.filter((q) => q.status === "waiting");
   // Queuing a line comment puts you here, so ↵ sends the batch (the popup that queued it has just closed).
   const queued = useRef(staged.length);
   useEffect(() => {
@@ -850,65 +844,59 @@ function Composer({ link }: { link: ChatLinkProps }) {
     else if (text.trim()) ask(text.trim());
     else return;
     setText("");
-    requestAnimationFrame(() => autosize(ta.current, 8));
+    requestAnimationFrame(() => autosize(ta.current, 12));
   };
 
   return (
     <div className="composer-wrap">
-      {staged.length > 0 && (
-        <div className="tray">
-          <div className="tray-h">
-            {ic(Layers, 13)}
-            <span>{staged.length} queued</span>
-            <span className="grow" />
-            <button type="button" className="icon-btn sm" title="Clear queue" onClick={clearStaged}>
-              {ic(Trash2, 14)}
-            </button>
-          </div>
-          {staged.map((q) => (
-            <div
-              key={q.id}
-              className={`q-row${link.hoverQ === q.id || link.flashQ?.id === q.id ? " hover" : ""}${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
-              data-q={q.id}
-              onMouseEnter={() => link.onHoverQ(q.id)}
-              onMouseLeave={() => link.onHoverQ(null)}
-              onClick={() => link.onFocusQ(q)}
-            >
-              <Qn q={q} />
-              <span className="ref">{q.anchor ? anchorLabel(q.anchor) : ""}</span>
+      {waiting.length > 0 && (
+        <div className="queue">
+          {waiting.map((q) => (
+            <div key={q.id} className="queue-row" {...noteLink(q, link)}>
+              {ic(Clock, 13)}
+              {q.anchor && <Qn q={q} />}
               <span className="qt">{q.text}</span>
               <button
                 type="button"
-                className="icon-btn sm x"
-                title="Remove"
+                className="icon-btn sm"
+                title="Send now"
                 onClick={(e) => {
                   e.stopPropagation();
-                  unstage(q.id);
+                  void stop();
                 }}
               >
-                {ic(X, 13)}
+                {ic(ArrowUp, 13)}
               </button>
+              <RemoveBtn onClick={() => unstage(q.id)} />
             </div>
           ))}
         </div>
       )}
       <div className="composer stack">
+        {staged.length > 0 && (
+          <div className="notes">
+            {staged.map((q) => (
+              <div
+                key={q.id}
+                title={q.text}
+                className={`note${link.hoverQ === q.id || link.flashQ?.id === q.id ? " hover" : ""}${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
+                {...noteLink(q, link)}
+              >
+                <Qn q={q} />
+                <span className="ref">{q.anchor ? anchorLabel(q.anchor) : ""}</span>
+                <RemoveBtn onClick={() => unstage(q.id)} />
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={ta}
           rows={1}
           value={text}
-          placeholder={
-            staged.length
-              ? "Add a message, or ↵ to send"
-              : chat.busy
-                ? "Ask another — sends after this answer"
-                : chat.kind === "guide" && !chat.questions.length
-                  ? "Continue the guide session"
-                  : "Ask anything"
-          }
+          placeholder="Ask anything"
           onChange={(e) => {
             setText(e.target.value);
-            autosize(e.target, 8);
+            autosize(e.target, 12);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -920,16 +908,21 @@ function Composer({ link }: { link: ChatLinkProps }) {
         <div className="c-row">
           <ModeMenu />
           <span className="grow" />
-          <button
-            type="button"
-            id="chatSend"
-            className="icon-btn solid"
-            title={staged.length ? `Send ${staged.length}` : "Send (↵)"}
-            onClick={send}
-          >
-            {ic(ArrowUp, 16)}
-            {staged.length > 0 && <span className="send-n">{staged.length}</span>}
-          </button>
+          {chat.busy && !text.trim() && !staged.length ? (
+            <button
+              type="button"
+              id="chatSend"
+              className="icon-btn solid stop"
+              title="Stop"
+              onClick={() => void stop()}
+            >
+              {ic(Square, 12)}
+            </button>
+          ) : (
+            <button type="button" id="chatSend" className="icon-btn solid" title="Send" onClick={send}>
+              {ic(ArrowUp, 16)}
+            </button>
+          )}
         </div>
       </div>
     </div>

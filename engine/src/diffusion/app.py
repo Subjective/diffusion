@@ -8,7 +8,7 @@ import json
 import os
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -109,7 +109,7 @@ def _clip(v, n: int = 4000):
     return v
 
 
-async def merged(events: AsyncIterator, side: asyncio.Queue) -> AsyncIterator:
+async def merged(events: AsyncIterator, side: asyncio.Queue) -> AsyncGenerator:
     """A turn's events, with anything put on ``side`` (approval requests) interleaved as it arrives."""
     it = aiter(events)
     nxt = asyncio.ensure_future(anext(it))
@@ -130,6 +130,14 @@ async def merged(events: AsyncIterator, side: asyncio.Queue) -> AsyncIterator:
     finally:
         for f in (nxt, got):
             f.cancel()
+        # Stopped early: close the agent too (its CLI ends with it), rather than leave it to the garbage collector.
+        if close := getattr(it, "aclose", None):
+            await asyncio.gather(nxt, return_exceptions=True)
+            await close()
+
+
+class Stop:
+    """Put on a running turn's side queue: the reviewer stopped it."""
 
 
 def chat_summary(c: dict) -> dict:
@@ -161,6 +169,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     chat_locks: dict[str, asyncio.Lock] = {}
     approvals: dict[str, asyncio.Future[Decision]] = {}  # tool calls waiting on the reviewer, by id
     app.state.approvals = approvals
+    running: dict[str, asyncio.Queue] = {}  # a running turn's side queue, by chat: Stop goes there
     symbols: dict[Path, SymbolIndex] = {}
     trees: dict[tuple[Path, str], frozenset[str]] = {}
     symbol_locks: dict[Path, asyncio.Lock] = {}
@@ -345,6 +354,14 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         turns = merge(found, chat.get("turns") or [], lambda text: text.rstrip().endswith(reminder))
         return {**chat, "harness": harness, "turns": turns}
 
+    @app.post("/api/chats/{chat_id}/stop")
+    async def stop(chat_id: str) -> dict:
+        side = running.get(chat_id)
+        if side is None:
+            return {"ok": False}
+        await side.put(Stop())
+        return {"ok": True}
+
     @app.post("/api/chats/{chat_id}/approve")
     async def approve(chat_id: str, req: Approval) -> dict:
         f = approvals.get(req.id)
@@ -413,16 +430,21 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     finally:
                         approvals.pop(aid, None)
 
+                running[chat_id] = side
                 try:
                     for resume, fork, cwd in _sessions(chat, meta, harness):
                         said = False
                         # The guide's own session, joined for the first time, hasn't seen the chat's instructions.
                         adopt = bool(resume) and not fork and resume != chat.get("session_id")
                         try:
-                            async for ev in merged(run_turn(
+                            async for ev in (evs := merged(run_turn(
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
                                 resume, fork=fork, adopt=adopt, cwd=cwd, block=block, mode=mode, approve=ask,
-                            ), side):  # fmt: skip
+                            ), side)):  # fmt: skip
+                                if isinstance(ev, Stop):
+                                    await evs.aclose()
+                                    record["stopped"] = True
+                                    break
                                 if isinstance(ev, ApprovalAsked):
                                     yield "approval", ev.payload
                                 elif isinstance(ev, ChatDelta):
@@ -474,12 +496,21 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                             yield "delta", {"n": req.questions[-1].n, "text": note}
                     record["status"] = "done"
                     record["seconds"] = round(time.time() - record["at"], 1)
-                    yield "done", {"ns": [q.n for q in req.questions], "seconds": record["seconds"]}
+                    yield (
+                        "done",
+                        {
+                            "ns": [q.n for q in req.questions],
+                            "seconds": record["seconds"],
+                            **({"stopped": True} if record.get("stopped") else {}),
+                        },
+                    )
                 except Exception as e:  # surface to the client; keep partial answers
                     record["status"] = "error"
                     record["error"] = str(e) or type(e).__name__
                     yield "error", {"message": record["error"]}
                 finally:
+                    if running.get(chat_id) is side:
+                        del running[chat_id]
                     for aid in mine:  # the reviewer left: nothing waits forever
                         if (f := approvals.pop(aid, None)) and not f.done():
                             f.set_result("deny")

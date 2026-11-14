@@ -1,4 +1,4 @@
-import { Clock, ListPlus, LoaderCircle, MessageCircle } from "lucide-react";
+import { Clock, LoaderCircle, MessageCircle } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { questionRows } from "../App";
 import { useChat } from "../chat";
@@ -29,11 +29,12 @@ export function useQuestionBadges(
         k,
         <span className="qbs" key={k}>
           {qs.map((q) => {
+            // A note waiting to be sent is just its number, as on its pill in the composer.
             const icon =
               q.status === "pending"
                 ? LoaderCircle
                 : q.status === "staged"
-                  ? ListPlus
+                  ? null
                   : q.status === "waiting"
                     ? Clock
                     : MessageCircle;
@@ -42,6 +43,7 @@ export function useQuestionBadges(
                 type="button"
                 key={q.id}
                 className={`qb s-${q.status}${hoverQ === q.id ? " hover" : ""}`}
+                title={q.status === "staged" ? q.text : undefined}
                 data-q={q.id}
                 onMouseEnter={() => onHoverQ(q.id)}
                 onMouseLeave={() => onHoverQ(null)}
@@ -50,7 +52,7 @@ export function useQuestionBadges(
                   revealQ(q.id);
                 }}
               >
-                {ic(icon, 11)}
+                {icon && ic(icon, 11)}
                 {q.n}
               </button>
             );

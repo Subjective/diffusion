@@ -107,6 +107,8 @@ interface State {
   /** Tool calls waiting on the reviewer in the running turn. */
   asks: Ask[];
   answer(id: string, decision: Decision): Promise<void>;
+  /** End the running turn; anything queued goes out next. */
+  stop(): Promise<void>;
   /** The diff should jump to this show: the model's first `show_code` of a turn, if the diff wasn't touched since asking. */
   autoShow: { q: string; i: number; n: number } | null;
 
@@ -344,6 +346,16 @@ export const useChat = create<State>((set, get) => {
         });
       } catch {
         // the turn ends on its own if it can't hear back
+      }
+    },
+
+    async stop() {
+      const chat = get().chat;
+      if (!chat.busy || !chat.id) return;
+      try {
+        await fetch(`/api/chats/${chat.id}/stop`, { method: "POST" });
+      } catch {
+        // offline: the turn ends on its own
       }
     },
 

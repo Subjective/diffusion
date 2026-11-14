@@ -1394,7 +1394,11 @@ tr.ln:hover .ask-btn {
   color: var(--text);
   font: 14px / 22px var(--sans);
   padding: 5px 0;
-  overflow-y: hidden; /* autosize turns scrolling on past 8 lines */
+  overflow-y: hidden; /* autosize turns scrolling on past 12 lines */
+}
+/* Stacked, flex: 1 would size it by the column (to nothing) and ignore the height autosize sets. */
+.composer.stack textarea {
+  flex: none;
 }
 
 /* Composer mode: how much the guide session may do (forks are read-only) */
@@ -1662,9 +1666,9 @@ tr.qd.sel td.mark {
   border: 1px solid transparent;
 }
 .qb.s-staged {
-  background: var(--surface);
-  color: var(--muted);
-  border: 1px dashed var(--subtle);
+  padding: 0 6px;
+  background: var(--hl-bar);
+  color: #fff;
 }
 .qb.s-pending {
   background: var(--chip);
@@ -1690,75 +1694,78 @@ tr.qd.sel td.mark {
   flex: none;
 }
 .qn.staged {
-  background: var(--surface);
-  color: var(--muted);
-  border: 1px dashed var(--subtle);
+  background: var(--hl-bar);
+  color: #fff;
 }
-
-.tray {
-  border: 1px solid var(--border-strong);
-  border-radius: 16px;
-  margin-bottom: 8px;
-  padding: 6px;
-  background: var(--panel);
-  animation: pop 0.14s ease-out;
-}
-.tray-h {
+/* Line notes attached to the next message, as pills in the composer. */
+.notes {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 4px -6px;
+}
+.note {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 0 4px 8px;
-  color: var(--subtle);
-  font-size: 12px;
-}
-.q-row {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px 4px 8px;
-  border-radius: 10px;
+  height: 26px;
+  padding: 0 4px 0 5px;
+  border-radius: 999px;
+  background: var(--chip);
   cursor: pointer;
-  font-size: 13px;
+  animation: pop 0.14s ease-out;
 }
-.q-row:hover,
-.q-row.hover {
-  background: var(--hover);
+.note .ref {
+  font: 12px var(--mono);
+  color: var(--text);
 }
-.q-row .ref {
-  font: 11px var(--mono);
-  color: var(--subtle);
-  white-space: nowrap;
+.note.hover {
+  box-shadow: 0 0 0 2px var(--hl-bar);
 }
-.q-row .qt {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.note .x {
+  width: 18px;
+  height: 18px;
 }
-.q-row .x {
+.note .x,
+.queue-row .x {
   opacity: 0;
 }
-.q-row:hover .x {
+.note:hover .x,
+.queue-row:hover .x {
   opacity: 1;
+}
+/* Messages waiting for the running turn to end. */
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 8px 6px;
+}
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 4px 0 10px;
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  animation: pop 0.14s ease-out;
+}
+.queue-row:hover {
+  background: var(--chip);
+}
+.queue-row .qt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
 }
 #chatSend,
 #askSend {
   position: relative;
-}
-.send-n {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--hl-bar);
-  color: #fff;
-  font: 600 9.5px / 1 var(--sans);
-  display: grid;
-  place-items: center;
-  border: 2px solid var(--surface);
 }
 
 /* ---------- chat: resize + history ---------- */

@@ -216,18 +216,20 @@ test("drag bubble across lines → popup → queue two → badges → send → l
   const input = document.querySelector<HTMLTextAreaElement>(".ask-in textarea")!;
   fireEvent.change(input, { target: { value: "Why clear the timer?" } });
   fireEvent.keyDown(input, { key: "Enter" });
-  await waitFor(() => expect(document.querySelector(".tray")).toBeTruthy());
-  expect(document.querySelector(".tray-h")!.textContent).toBe("1 queued");
-  // the chat box takes focus, so ↵ sends the batch
+  // it attaches to the next message as a pill in the composer: its number and lines, the note on hover
+  await waitFor(() => expect(document.querySelector(".composer .note")).toBeTruthy());
+  const note = document.querySelector<HTMLElement>(".composer .note")!;
+  expect(note.textContent).toBe("1session.ts:5–6");
+  expect(note.title).toBe("Why clear the timer?");
+  // the chat box takes focus, so ↵ sends it
   await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".composer textarea")));
-  expect(document.querySelectorAll(".q-row")).toHaveLength(1);
-  expect(document.querySelector(".qb.s-staged")).toBeTruthy();
+  // on the line, the same numbered badge
+  expect(document.querySelector(".qb.s-staged")!.textContent).toBe("1");
   expect(document.querySelector("tr.qd")).toBeTruthy();
-  expect(document.querySelector(".send-n")!.textContent).toBe("1");
 
   // send all with an extra typed message
   type("anything else?");
-  await waitFor(() => expect(document.querySelector(".tray")).toBeNull());
+  await waitFor(() => expect(document.querySelector(".composer .note")).toBeNull());
   expect(document.querySelectorAll(".ans-h").length).toBeGreaterThanOrEqual(2); // numbered -> headers
   await act(async () => release!());
   await waitFor(() => expect(document.querySelector(".qb.s-answered")).toBeTruthy());
@@ -242,8 +244,12 @@ test("questions asked mid-answer wait, then go out together as one turn", async 
   type("second?");
   type("third?");
   expect(turnBodies).toHaveLength(1); // nothing new sent while streaming
-  expect(document.querySelectorAll(".msg.user.waiting .bubble")).toHaveLength(2);
-  expect(document.querySelector(".wait-note")!.textContent).toBe("2");
+  // queued above the composer, not in the thread
+  expect([...document.querySelectorAll(".queue-row .qt")].map((q) => q.textContent)).toEqual(["second?", "third?"]);
+  // with nothing typed, send becomes Stop
+  fireEvent.click(screen.getByTitle("Stop"));
+  const fetched = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+  expect(fetched.some((u) => /\/api\/chats\/[^/]+\/stop$/.test(u))).toBe(true);
 
   await act(async () => release!()); // first answer finishes → waiting batch sends
   await waitFor(() => expect(turnBodies).toHaveLength(2));
@@ -251,7 +257,7 @@ test("questions asked mid-answer wait, then go out together as one turn", async 
     [1, "second?"],
     [2, "third?"],
   ]);
-  expect(document.querySelector(".msg.user.waiting")).toBeNull();
+  expect(document.querySelector(".queue")).toBeNull();
   await act(async () => release!());
   await waitFor(() =>
     expect([...document.querySelectorAll(".ans-t")].map((a) => a.textContent)).toEqual([

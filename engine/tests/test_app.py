@@ -602,3 +602,42 @@ async def test_forks_stay_read_only_whatever_mode_is_asked(setup):
     body = {"url": URL, "questions": [{"n": 1, "text": "x"}], "mode": "auto"}
     await client.post(f"/api/chats/{cid}/turn", json=body)
     assert seen == [("read-only", False)]
+
+
+async def test_stop_ends_a_running_turn_and_closes_the_agent(setup):
+    client, runners, deps, prep = setup
+    import asyncio
+
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+    started, closed = asyncio.Event(), []
+
+    async def runner(req):
+        try:
+            yield TextEvent("partial")
+            started.set()
+            await asyncio.sleep(30)  # still working when stopped
+            yield TextEvent(" never")
+        finally:
+            closed.append(True)
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "long job"}]}
+
+    async def stopper():
+        await started.wait()
+        assert (await client.post(f"/api/chats/{cid}/stop")).json() == {"ok": True}
+
+    r, _ = await asyncio.wait_for(
+        asyncio.gather(client.post(f"/api/chats/{cid}/turn", json=body), stopper()), timeout=10
+    )
+    events = parse_sse(r.text)
+    assert ("delta", {"n": 1, "text": "partial"}) in events
+    assert events[-1][0] == "done" and events[-1][1]["stopped"] is True
+    assert closed == [True]
+    turn = deps.store.load_chat(prep.meta.ref.key, "guide")["turns"][-1]
+    assert turn["status"] == "done" and turn["stopped"] is True
+    # nothing running: stopping again is a no-op
+    assert (await client.post(f"/api/chats/{cid}/stop")).json() == {"ok": False}
