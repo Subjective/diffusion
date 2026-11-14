@@ -56,7 +56,9 @@ class DoneEvent:
     is_error: bool
     session_id: str | None
     result: str | None = None
-    prompt_id: str | None = None  # the session's id for the message that started the turn (to rewind to it later)
+    prompt_id: str | None = (
+        None  # the session's id for the message that started the turn (to rewind to it later)
+    )
 
 
 Event = ToolEvent | ToolFailedEvent | TextEvent | ThinkingEvent | SteeredEvent | DoneEvent

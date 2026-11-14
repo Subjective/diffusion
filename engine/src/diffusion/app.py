@@ -470,7 +470,9 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                         yield "error", {"message": "That message can't be edited (it's the first, or gone)."}
                         return
                     restore = req.rewind.uuid if req.rewind.code else None
-                    at = next((i for i, t in enumerate(chat["turns"]) if t.get("uuid") == req.rewind.uuid), None)
+                    at = next(
+                        (i for i, t in enumerate(chat["turns"]) if t.get("uuid") == req.rewind.uuid), None
+                    )
                     if at is not None:
                         del chat["turns"][at:]
                 record = {

@@ -275,7 +275,12 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                         req.steer.get_nowait()[1].set_result(False)
             if last:
                 yield DoneEvent(
-                    turns, last.total_cost_usd, last.is_error, last.session_id, last.result, prompt_id=prompt_id
+                    turns,
+                    last.total_cost_usd,
+                    last.is_error,
+                    last.session_id,
+                    last.result,
+                    prompt_id=prompt_id,
                 )
 
     return run
