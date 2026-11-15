@@ -1,9 +1,30 @@
-import { Check, GitBranch, History, ListOrdered, Map as MapIcon, Moon, Sun } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  CircleCheck,
+  CircleDashed,
+  CircleX,
+  GitBranch,
+  History,
+  Layers2,
+  ListOrdered,
+  LoaderCircle,
+  Map as MapIcon,
+  Moon,
+  Search,
+  Sun,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "../chat";
 import { ago } from "../lib/time";
+import { usePopover } from "../lib/usePopover";
+import { inboxStack, useInbox, useReview } from "../review";
 import { useApp } from "../store";
+import type { Check as CheckRun, InboxPR, PRMeta } from "../types";
 import { useUI } from "../ui";
+import { Reviewers } from "./Inbox";
 import { GithubIcon, HarnessMark, harnessName, ic, Logo } from "./icons";
 
 export function TopBar() {
@@ -71,26 +92,204 @@ function ModeToggle() {
   );
 }
 
-/** What's under review: the PR (linking out), or the local repository and branch. */
+/** What's under review: the PR (with a switcher, its stack, checks and reviewers), or the local repository and branch. */
 function Target() {
   const pr = useApp((s) => s.pr);
   if (!pr) return <div className="target" />;
-  return (
-    <div className="target">
-      {pr.local ? (
+  if (pr.local)
+    return (
+      <div className="target">
         <span title={pr.url}>
           {ic(GitBranch, 15)}
           <b>{localName(pr.url)}</b>
           <span className="target-ref">{pr.head_ref}</span>
         </span>
-      ) : (
-        <a href={pr.url} target="_blank" rel="noreferrer" title={pr.url}>
-          <GithubIcon size={15} />
-          <b>
-            {pr.owner}/{pr.repo}
-          </b>
-          <span className="target-ref">#{pr.number}</span>
-        </a>
+      </div>
+    );
+  return <PRTarget pr={pr} />;
+}
+
+function PRTarget({ pr }: { pr: PRMeta }) {
+  const prs = useInbox((s) => s.inbox?.prs);
+  const review = useReview((s) => s.state);
+  useEffect(() => {
+    if (!useInbox.getState().inbox) void useInbox.getState().load();
+  }, []);
+  const { layers } = useMemo(() => inboxStack(prs ?? [], pr.owner, pr.repo, pr.number), [prs, pr]);
+  const at = layers.findIndex((p) => p.number === pr.number);
+  return (
+    <div className="target">
+      <span>
+        <GithubIcon size={15} />
+        <b>{pr.repo}</b>
+      </span>
+      <Switcher pr={pr} layers={layers} />
+      {layers.length > 0 && (
+        <span className="stk" data-tip={`Stack: ${layers.length - at} of ${layers.length}`}>
+          {ic(Layers2, 13)}
+          {layers.length - at}/{layers.length}
+        </span>
+      )}
+      <a className="icon-btn sm" href={pr.url} target="_blank" rel="noreferrer" data-tip="Open on GitHub">
+        {ic(ArrowUpRight, 14)}
+      </a>
+      {review?.checks && review.checks.state !== "none" && <ChecksChip checks={review.checks} />}
+      {review?.reviewers?.length ? <Reviewers list={review.reviewers} /> : null}
+    </div>
+  );
+}
+
+const CHECK_ICON = {
+  success: <span className="ck ok">{ic(CircleCheck, 15)}</span>,
+  failure: <span className="ck bad">{ic(CircleX, 15)}</span>,
+  pending: <span className="ck wait">{ic(LoaderCircle, 15)}</span>,
+  skipped: <span className="ck">{ic(CircleDashed, 15)}</span>,
+};
+
+/** The PR's checks at a glance, and each one (linking to its run) in a popover. */
+function ChecksChip({ checks }: { checks: { state: string; failing: number; list: CheckRun[] } }) {
+  const [open, setOpen, ref] = usePopover();
+  const tip =
+    checks.state === "success"
+      ? "Checks passed"
+      : checks.state === "pending"
+        ? "Checks running"
+        : checks.failing === 1
+          ? "1 check failing"
+          : `${checks.failing} checks failing`;
+  return (
+    <div className="pop-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`ci-chip ${checks.state}${open ? " on" : ""}`}
+        data-tip={open ? undefined : tip}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {checks.state === "success" && ic(Check, 14)}
+        {checks.state === "pending" && ic(LoaderCircle, 14)}
+        {checks.state === "failure" && (
+          <>
+            {ic(X, 13)}
+            {checks.failing > 0 && <span>{checks.failing}</span>}
+          </>
+        )}
+      </button>
+      {open && (
+        <div className="ci-pop" role="menu">
+          {checks.list.map((c) => (
+            <a key={`${c.name}-${c.url}`} className="r" role="menuitem" href={c.url} target="_blank" rel="noreferrer">
+              {CHECK_ICON[c.state]}
+              <span className="n">{c.name}</span>
+              {ic(ArrowUpRight, 14)}
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SWITCH_GROUPS = [
+  ["review", "Needs your review"],
+  ["yours", "Yours"],
+  ["drafts", "Drafts"],
+] as const;
+
+const NO_PRS: InboxPR[] = [];
+
+/** "#42", opening the other PRs you're on: this one's stack first, then the inbox's groups, with a filter. */
+function Switcher({ pr, layers }: { pr: PRMeta; layers: InboxPR[] }) {
+  const prs = useInbox((s) => s.inbox?.prs) ?? NO_PRS;
+  const go = useApp((s) => s.open);
+  const [open, setOpen, ref] = usePopover();
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setQ("");
+    void useInbox.getState().load();
+  }, [open]);
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const match = (p: InboxPR) =>
+    words.every((w) => `${p.repo} #${p.number} ${p.title} ${p.author}`.toLowerCase().includes(w));
+  const inStack = new Set(layers.map((p) => p.url));
+  const item = (p: InboxPR, lvl?: number) => (
+    <button
+      key={p.url}
+      type="button"
+      role="menuitem"
+      className={`sw-i${p.number === pr.number && p.repo === pr.repo ? " cur" : ""}`}
+      onClick={() => {
+        setOpen(false);
+        if (!(p.number === pr.number && p.repo === pr.repo)) go(p.url);
+      }}
+    >
+      {lvl != null && <span className="lvl">{lvl}</span>}
+      <span className="t">{p.title}</span>
+      <span className="n">#{p.number}</span>
+      <span className={`m ${p.checks.state}`}>
+        {p.checks.state === "success" && ic(Check, 13)}
+        {p.checks.state === "failure" && ic(X, 12)}
+        {p.checks.state === "pending" && ic(LoaderCircle, 13)}
+      </span>
+    </button>
+  );
+  const stack = layers.filter(match);
+  return (
+    <div className="pop-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`target-ref sw-btn${open ? " on" : ""}`}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        #{pr.number}
+        {ic(ChevronDown, 12)}
+      </button>
+      {open && (
+        <div className="sw-pop" role="menu">
+          <label className="sw-q">
+            {ic(Search, 14)}
+            <input
+              // biome-ignore lint/a11y/noAutofocus: the filter is what the popover opens for
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Filter"
+              spellCheck={false}
+            />
+          </label>
+          <div className="sw-b">
+            {stack.length > 0 && (
+              <>
+                <div className="sw-h">
+                  {ic(Layers2, 12)}
+                  Stack
+                </div>
+                <div className="sw-stack">
+                  {stack.map((p) => item(p, p.stack!.index))}
+                  <div className="sw-base">
+                    {ic(GitBranch, 12)}
+                    <span>{layers[layers.length - 1].base_ref}</span>
+                  </div>
+                </div>
+              </>
+            )}
+            {SWITCH_GROUPS.map(([g, label]) => {
+              const ps = prs.filter((p) => p.group === g && !inStack.has(p.url) && match(p));
+              if (!ps.length) return null;
+              return (
+                <div key={g}>
+                  <div className="sw-h">{label}</div>
+                  {ps.map((p) => item(p))}
+                </div>
+              );
+            })}
+            {!stack.length && !prs.some((p) => !inStack.has(p.url) && match(p)) && (
+              <div className="sw-none">{prs.length ? "No matches" : "No open pull requests"}</div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

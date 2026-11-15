@@ -79,7 +79,7 @@ function stackReviewers(prs: InboxPR[]): Reviewer[] {
   return [...by.values()];
 }
 
-function Reviewers({ list }: { list: Reviewer[] }) {
+export function Reviewers({ list }: { list: Reviewer[] }) {
   return (
     <span className="rvs">
       {list.slice(0, 3).map((r) => (

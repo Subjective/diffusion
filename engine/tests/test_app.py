@@ -802,3 +802,27 @@ async def test_inbox_reports_a_missing_gh_as_an_error(setup):
     deps.inbox = inbox
     body = (await client.get("/api/inbox")).json()
     assert body == {"login": "", "prs": [], "error": "Install the GitHub CLI"}
+
+
+async def test_review_state_is_cached_and_local_targets_have_none(setup):
+    client, _, deps, _ = setup
+    calls = []
+
+    def review_state(ref):
+        calls.append(ref.number)
+        return {
+            "viewer": "jy",
+            "threads": [],
+            "reviewers": [],
+            "checks": {"state": "none", "failing": 0, "list": []},
+        }
+
+    deps.review_state = review_state
+    body = (await client.get("/api/review", params={"url": URL})).json()
+    assert body["available"] and body["viewer"] == "jy"
+    await client.get("/api/review", params={"url": URL})
+    assert calls == [7]
+    await client.get("/api/review", params={"url": URL, "refresh": True})
+    assert calls == [7, 7]
+    local = (await client.get("/api/review", params={"url": "local:/tmp/x#main..dev"})).json()
+    assert local == {"available": False}

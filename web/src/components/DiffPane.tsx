@@ -8,10 +8,12 @@ import {
   PanelLeft,
   Route,
 } from "lucide-react";
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { backStack, wordAtPoint } from "../lib/definition";
 import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
+import { usePopover } from "../lib/usePopover";
+import { useReview } from "../review";
 import { useApp } from "../store";
 import type { FileDiff as FD, Guide, Ref } from "../types";
 import { diffActivity, markDiffActivity, useUI } from "../ui";
@@ -20,6 +22,7 @@ import { type Dot, FileDiff, type Gutter } from "./FileDiff";
 import { FileRail, fileInView, treeOrder } from "./FileRail";
 import { ic } from "./icons";
 import { FileView, TabBar } from "./Tabs";
+import { ThreadsPopover, threadLayout } from "./Threads";
 
 /** Files in guide order: by first step that references them, then unreferenced, then skippable. */
 export function guideOrder(files: FD[], guide: Guide | null): FD[] {
@@ -212,11 +215,21 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
 
   const comments = guide?.comments ?? [];
   const open = comments.filter((c) => !resolved[c.title]).length;
-  const after = useMemo(
-    () => (hideComments ? undefined : commentRows(guide?.comments ?? [], idx, resolved, onAskComment)),
-    [guide, idx, resolved, hideComments, onAskComment],
+  const review = useReview((s) => s.state);
+  const hiddenFiles = useReview((s) => s.hiddenFiles);
+  const threads = review?.threads ?? [];
+  const layout = useMemo(
+    () => (hideComments || !threads.length ? null : threadLayout(threads, idx, hiddenFiles)),
+    [threads, idx, hiddenFiles, hideComments],
   );
-  const gutter: Gutter = useMemo(() => ({ dots, extras, after }), [dots, extras, after]);
+  const after = useMemo(() => {
+    const own = hideComments ? undefined : commentRows(guide?.comments ?? [], idx, resolved, onAskComment);
+    return layout ? mergeRows(own, layout.after) : own;
+  }, [guide, idx, resolved, hideComments, onAskComment, layout]);
+  const gutter: Gutter = useMemo(
+    () => ({ dots, extras, after, ranged: layout?.ranged, top: layout?.top }),
+    [dots, extras, after, layout],
+  );
   const allCollapsed = useUI((s) => files.length > 0 && files.every((f) => s.collapsed[f.path]));
 
   return (
@@ -256,16 +269,29 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
             >
               {ic(EyeOff, 15)}
             </button>
-            {comments.length > 0 && (
-              <button
-                type="button"
-                className={`icon-btn sm cmt-tg${hideComments ? "" : " on"}`}
-                title={hideComments ? "Show comments" : "Hide comments"}
-                onClick={toggleHideComments}
-              >
-                {ic(MessageCircle, 15)}
-                {open > 0 && <span>{open}</span>}
-              </button>
+            {threads.length > 0 ? (
+              <ThreadsButton
+                onJump={(t, keys) => {
+                  if (hideComments) toggleHideComments();
+                  if (hiddenFiles.includes(t.path)) useReview.getState().toggleFile(t.path);
+                  useReview.getState().expand(t.id);
+                  if (keys.length) useUI.getState().focus(keys, [t.path]);
+                  else pickFile(t.path);
+                }}
+                idx={idx}
+              />
+            ) : (
+              comments.length > 0 && (
+                <button
+                  type="button"
+                  className={`icon-btn sm cmt-tg${hideComments ? "" : " on"}`}
+                  title={hideComments ? "Show comments" : "Hide comments"}
+                  onClick={toggleHideComments}
+                >
+                  {ic(MessageCircle, 15)}
+                  {open > 0 && <span>{open}</span>}
+                </button>
+              )
             )}
             <button
               type="button"
@@ -311,6 +337,64 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
         </div>
       </div>
     </section>
+  );
+}
+
+/** Two sets of rows under lines, as one: both kinds under a line that has both. */
+function mergeRows(a: Map<string, ReactNode> | undefined, b: Map<string, ReactNode>): Map<string, ReactNode> {
+  if (!a?.size) return b;
+  const out = new Map(a);
+  for (const [k, v] of b)
+    out.set(
+      k,
+      out.has(k) ? (
+        <>
+          <Fragment key="a">{out.get(k)}</Fragment>
+          <Fragment key="b">{v}</Fragment>
+        </>
+      ) : (
+        v
+      ),
+    );
+  return out;
+}
+
+/** The comments button once GitHub has threads on the PR: the open count, and every thread in a popover. */
+function ThreadsButton({
+  idx,
+  onJump,
+}: {
+  idx: ReturnType<typeof indexFiles>;
+  onJump: Parameters<typeof ThreadsPopover>[0]["onJump"];
+}) {
+  const state = useReview((s) => s.state);
+  const [open, setOpen, ref] = usePopover();
+  const threads = state?.threads ?? [];
+  const n = threads.filter((t) => !t.resolved).length;
+  return (
+    <div className="th-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`icon-btn sm cmt-tg${open ? " on" : ""}`}
+        data-tip="Comments"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {ic(MessageCircle, 15)}
+        {n > 0 && <span>{n}</span>}
+      </button>
+      {open && (
+        <ThreadsPopover
+          threads={threads}
+          viewer={state?.viewer ?? ""}
+          idx={idx}
+          onJump={(t, keys) => {
+            setOpen(false);
+            onJump(t, keys);
+          }}
+        />
+      )}
+    </div>
   );
 }
 

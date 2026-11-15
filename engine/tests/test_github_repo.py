@@ -10,9 +10,11 @@ from diffusion.github import (
     _fetch_meta_rest,
     fetch_inbox,
     fetch_meta,
+    fetch_review_state,
     inbox_pr,
     link_stacks,
     parse_pr_url,
+    pr_review_state,
 )
 from diffusion.repo import RepoCache
 
@@ -271,3 +273,157 @@ def test_fetch_inbox_uses_gh_graphql(tmp_path):
 def test_fetch_inbox_without_gh():
     with pytest.raises(GitHubError, match="gh auth login"):
         fetch_inbox(gh="definitely-not-gh")
+
+
+def _review_payload():
+    comment = lambda i, who, typ="User": {  # noqa: E731
+        "id": f"c{i}",
+        "body": f"note {i}",
+        "createdAt": "2026-11-15T10:00:00Z",
+        "url": f"https://github.com/acme/web/pull/42#discussion_r{i}",
+        "author": {"__typename": typ, "login": who, "avatarUrl": f"https://a/{who}"},
+    }
+    return {
+        "viewer": {"login": "jy"},
+        "repository": {
+            "pullRequest": {
+                "author": {"login": "sam"},
+                "reviewRequests": {"nodes": []},
+                "latestOpinionatedReviews": {
+                    "nodes": [{"state": "APPROVED", "author": {"login": "lm", "avatarUrl": "https://a/lm"}}]
+                },
+                "commits": {
+                    "nodes": [
+                        {
+                            "commit": {
+                                "statusCheckRollup": {
+                                    "state": "FAILURE",
+                                    "contexts": {
+                                        "nodes": [
+                                            {
+                                                "__typename": "CheckRun",
+                                                "name": "lint",
+                                                "status": "COMPLETED",
+                                                "conclusion": "SUCCESS",
+                                                "detailsUrl": "https://ci/lint",
+                                            },
+                                            {
+                                                "__typename": "CheckRun",
+                                                "name": "test",
+                                                "status": "COMPLETED",
+                                                "conclusion": "FAILURE",
+                                                "detailsUrl": "https://ci/test",
+                                            },
+                                            {
+                                                "__typename": "CheckRun",
+                                                "name": "build",
+                                                "status": "IN_PROGRESS",
+                                                "conclusion": None,
+                                            },
+                                            {
+                                                "__typename": "StatusContext",
+                                                "context": "deploy",
+                                                "state": "SUCCESS",
+                                                "targetUrl": None,
+                                            },
+                                        ]
+                                    },
+                                }
+                            }
+                        }
+                    ]
+                },  # fmt: skip
+                "reviewThreads": {
+                    "nodes": [
+                        {
+                            "id": "T1",
+                            "isResolved": False,
+                            "isOutdated": False,
+                            "path": "src/a.rs",
+                            "line": 53,
+                            "startLine": 41,
+                            "diffSide": "RIGHT",
+                            "subjectType": "LINE",
+                            "comments": {"nodes": [comment(1, "pk"), comment(2, "sam")]},
+                        },
+                        {
+                            "id": "T2",
+                            "isResolved": True,
+                            "isOutdated": False,
+                            "path": "src/a.rs",
+                            "line": 7,
+                            "startLine": None,
+                            "diffSide": "LEFT",
+                            "subjectType": "LINE",
+                            "comments": {"nodes": [comment(3, "claude", "Bot")]},
+                        },
+                        {
+                            "id": "T3",
+                            "isResolved": False,
+                            "isOutdated": False,
+                            "path": "src/b.rs",
+                            "line": None,
+                            "startLine": None,
+                            "diffSide": "RIGHT",
+                            "subjectType": "FILE",
+                            "comments": {"nodes": [comment(4, "sam")]},
+                        },
+                        {
+                            "id": "T4",
+                            "isResolved": False,
+                            "isOutdated": True,
+                            "path": "src/b.rs",
+                            "line": None,
+                            "startLine": None,
+                            "diffSide": "RIGHT",
+                            "subjectType": "LINE",
+                            "comments": {"nodes": [comment(5, "pk")]},
+                        },
+                    ]
+                },  # fmt: skip
+            }
+        },
+    }
+
+
+def test_pr_review_state_reads_threads_checks_and_reviewers():
+    st = pr_review_state(_review_payload())
+    assert st["viewer"] == "jy"
+    assert [(r["login"], r["state"]) for r in st["reviewers"]] == [("lm", "approved")]
+    assert st["checks"]["state"] == "failure" and st["checks"]["failing"] == 1
+    assert [(c["name"], c["state"]) for c in st["checks"]["list"]] == [
+        ("test", "failure"),
+        ("build", "pending"),
+        ("deploy", "success"),
+        ("lint", "success"),
+    ]
+    t1, t2, t3, t4 = st["threads"]
+    assert (t1["path"], t1["side"], t1["start"], t1["end"], t1["resolved"]) == (
+        "src/a.rs",
+        "new",
+        41,
+        53,
+        False,
+    )
+    assert [c["author"] for c in t1["comments"]] == ["pk", "sam"]
+    assert (t2["side"], t2["start"], t2["end"], t2["resolved"], t2["comments"][0]["bot"]) == (
+        "old",
+        7,
+        7,
+        True,
+        True,
+    )
+    assert t3["file_level"] and not t3["outdated"]
+    assert t4["outdated"] and not t4["file_level"]
+
+
+def test_fetch_review_state_passes_the_pr_to_gh(tmp_path):
+    fake = tmp_path / "gh"
+    fake.write_text(
+        f"#!/bin/sh\necho \"$@\" > {tmp_path}/args\ncat <<'EOF'\n{json.dumps({'data': _review_payload()})}\nEOF\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    st = fetch_review_state(PRRef("github.com", "acme", "web", 42), gh=str(fake))
+    assert len(st["threads"]) == 4
+    args = (tmp_path / "args").read_text()
+    assert "owner=acme" in args and "repo=web" in args and "number=42" in args

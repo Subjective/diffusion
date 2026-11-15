@@ -1,10 +1,11 @@
 import { BookOpen, GitBranch, GitPullRequest, History, MessageCircle, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchInbox, fetchTargets } from "../api";
+import { fetchTargets } from "../api";
 import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
+import { useInbox } from "../review";
 import { useApp } from "../store";
-import type { Inbox as InboxData, Target } from "../types";
+import type { Target } from "../types";
 import { NoGuide } from "./GuidePane";
 import { Inbox, InboxSkeleton } from "./Inbox";
 import { GithubIcon, ic } from "./icons";
@@ -28,15 +29,14 @@ const title = (t: Target) => t.title || t.label;
 
 type View = "guides" | "prs";
 
-// The last lists fetched, so coming back home shows them at once while fresh ones load.
+// The last list fetched, so coming back home shows it at once while a fresh one loads.
 let lastTargets: Target[] | null = null;
-let lastInbox: InboxData | null = null;
 
 /** Past reviews, newest first, or your open PRs on GitHub, when no review is open. */
 export function Home() {
   const open = useApp((s) => s.open);
   const [targets, setTargets] = useState<Target[] | null>(lastTargets);
-  const [inbox, setInbox] = useState<InboxData | null>(lastInbox);
+  const inbox = useInbox((s) => s.inbox);
   const [view, setView] = useState<View>(() => storage.get<View>("rv-home-view", "guides"));
   const [q, setQ] = useState("");
   const input = useRef<HTMLInputElement>(null);
@@ -59,16 +59,10 @@ export function Home() {
       lastTargets = t;
       setTargets(t);
     };
-    const keepInbox = (i: InboxData) => {
-      lastInbox = i;
-      setInbox(i);
-    };
     fetchTargets()
       .then(keepTargets)
       .catch(() => keepTargets(lastTargets ?? []));
-    fetchInbox()
-      .then(keepInbox)
-      .catch((e) => keepInbox(lastInbox ?? { login: "", prs: [], error: String(e.message ?? e) }));
+    void useInbox.getState().load();
   }, []);
 
   const show = (v: View) => {

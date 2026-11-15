@@ -1,5 +1,5 @@
 import { errorText } from "./lib/sse";
-import type { Guide, GuideVersion, Inbox, PRPayload, Target } from "./types";
+import type { Guide, GuideVersion, Inbox, PRPayload, ReviewState, Target } from "./types";
 
 /** The diff and a guide: version `v`, or the latest. */
 export async function fetchPR(url: string, v?: number | null): Promise<PRPayload> {
@@ -87,6 +87,15 @@ export async function fetchTargets(): Promise<Target[]> {
 /** The signed-in user's open PRs on GitHub (the engine reuses its answer for a minute unless `refresh`). */
 export async function fetchInbox(refresh = false): Promise<Inbox> {
   const res = await fetch(`/api/inbox${refresh ? "?refresh=true" : ""}`);
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+/** A PR's review threads, reviewers and checks from GitHub (reused for half a minute unless `refresh`). */
+export async function fetchReview(url: string, refresh = false): Promise<ReviewState> {
+  const q = new URLSearchParams({ url });
+  if (refresh) q.set("refresh", "true");
+  const res = await fetch(`/api/review?${q}`);
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }

@@ -1,0 +1,294 @@
+import { Bot, Check, ChevronDown, ChevronRight, EyeOff, FileCode, User } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
+import { Inline, Markdown } from "../lib/md";
+import { type HunkIndex, rowKey } from "../lib/refs";
+import { ago, dateText } from "../lib/time";
+import { useReview } from "../review";
+import type { Thread, ThreadComment } from "../types";
+import { useUI } from "../ui";
+import { ic } from "./icons";
+
+/** Where GitHub's review threads sit on the diff: under the last line each covers (`after`), with every covered
+ *  line marked (`ranged`), and file-level threads under their file's header (`top`). */
+export interface ThreadLayout {
+  after: Map<string, ReactNode>;
+  ranged: Set<string>;
+  top: Map<string, ReactNode>;
+  /** The diff rows each thread covers, for hover and jumping to it. */
+  keys: Map<string, string[]>;
+}
+
+/** The diff rows a thread covers: its lines on its side, among the rows the diff shows. */
+export function threadKeys(t: Thread, idx: HunkIndex): string[] {
+  if (t.start == null || t.end == null) return [];
+  const out: string[] = [];
+  for (const [id, rows] of idx.rows) {
+    if (idx.byId.get(id)?.file !== t.path) continue;
+    for (const r of rows) {
+      const n = t.side === "new" ? (r.type === "del" ? null : r.new) : r.type === "add" ? null : r.old;
+      if (n != null && n >= t.start && n <= t.end) out.push(rowKey(r.file, r.pos));
+    }
+  }
+  return out;
+}
+
+export function threadLayout(threads: Thread[], idx: HunkIndex, hidden: string[]): ThreadLayout {
+  const after = new Map<string, Thread[]>();
+  const top = new Map<string, Thread[]>();
+  const ranged = new Set<string>();
+  const keys = new Map<string, string[]>();
+  for (const t of threads) {
+    if (hidden.includes(t.path) || t.outdated) continue;
+    if (t.file_level) {
+      top.set(t.path, [...(top.get(t.path) ?? []), t]);
+      continue;
+    }
+    const ks = threadKeys(t, idx);
+    if (!ks.length) continue;
+    keys.set(t.id, ks);
+    if (!t.resolved) for (const k of ks) ranged.add(k);
+    const last = ks[ks.length - 1];
+    after.set(last, [...(after.get(last) ?? []), t]);
+  }
+  const rows = (ts: Thread[]) => ts.map((t) => <ThreadRow key={t.id} t={t} keys={keys.get(t.id) ?? []} />);
+  return {
+    after: new Map([...after].map(([k, ts]) => [k, rows(ts)])),
+    top: new Map([...top].map(([p, ts]) => [p, ts.map((t) => <ThreadCard key={t.id} t={t} keys={[]} />)])),
+    ranged,
+    keys,
+  };
+}
+
+/** Where a thread is: its line range, "file", or "outdated". */
+export const whereText = (t: Thread) =>
+  t.file_level
+    ? "file"
+    : t.outdated || t.end == null
+      ? "outdated"
+      : t.start != null && t.start !== t.end
+        ? `L${t.start}–${t.end}`
+        : `L${t.end}`;
+
+const Avatar = ({ c, size = 20 }: { c: Pick<ThreadComment, "avatar" | "author">; size?: number }) => (
+  <img className="av" src={c.avatar} alt={c.author} width={size} height={size} />
+);
+
+function CommentView({ c }: { c: ThreadComment }) {
+  return (
+    <div className="th-c">
+      <Avatar c={c} />
+      <div className="th-b">
+        <div className="th-h">
+          <b>{c.author}</b>
+          {c.bot && <span className="th-tag">bot</span>}
+          <span className="th-t" data-tip={dateText(c.created_at)}>
+            {ago(c.created_at)}
+          </span>
+        </div>
+        <div className="th-x">
+          <Markdown text={c.body} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A thread: the first comment and the latest, with the ones between folded into "N more replies" until opened.
+ *  A resolved thread is one quiet line until opened. */
+export function ThreadCard({ t, keys }: { t: Thread; keys: string[] }) {
+  const open = useReview((s) => s.expanded.includes(t.id));
+  const expand = useReview((s) => s.expand);
+  const setHover = useUI((s) => s.setHover);
+  const hoverProps = keys.length ? { onMouseEnter: () => setHover(keys), onMouseLeave: () => setHover([]) } : {};
+  const people = [...new Map(t.comments.map((c) => [c.author, c])).values()];
+  if (t.resolved && !open)
+    return (
+      <button type="button" className="th-closed" data-thread={t.id} onClick={() => expand(t.id)} {...hoverProps}>
+        {ic(Check, 13)}
+        <span className="avs">
+          {people.slice(0, 3).map((c) => (
+            <Avatar key={c.author} c={c} size={18} />
+          ))}
+        </span>
+        <span className="th-first">
+          <Inline text={t.comments[0].body.split("\n")[0]} />
+        </span>
+        <span className="th-meta">
+          Resolved · {t.comments.length} comment{t.comments.length === 1 ? "" : "s"}
+        </span>
+      </button>
+    );
+  const cs = t.comments;
+  const folded = !open && cs.length > 3;
+  const between = cs.slice(1, -1);
+  return (
+    <div className={`th${t.resolved ? " resolved" : ""}`} data-thread={t.id} {...hoverProps}>
+      <CommentView c={cs[0]} />
+      {folded ? (
+        <>
+          <button type="button" className="th-more" onClick={() => expand(t.id)}>
+            <span className="avs">
+              {[...new Map(between.map((c) => [c.author, c])).values()].slice(0, 3).map((c) => (
+                <Avatar key={c.author} c={c} size={18} />
+              ))}
+            </span>
+            {between.length} more {between.length === 1 ? "reply" : "replies"}
+          </button>
+          <CommentView c={cs[cs.length - 1]} />
+        </>
+      ) : (
+        cs.slice(1).map((c) => <CommentView key={c.id} c={c} />)
+      )}
+      {t.resolved && (
+        <button type="button" className="th-more" onClick={() => expand(t.id, false)}>
+          {ic(Check, 13)}
+          Resolved
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ThreadRow({ t, keys }: { t: Thread; keys: string[] }) {
+  return (
+    <tr className="th-row">
+      <td colSpan={4}>
+        <ThreadCard t={t} keys={keys} />
+      </td>
+    </tr>
+  );
+}
+
+interface PopoverProps {
+  threads: Thread[];
+  viewer: string;
+  idx: HunkIndex;
+  onJump: (t: Thread, keys: string[]) => void;
+}
+
+/** Every thread on the PR, by file: open or resolved, optionally only the ones you're in. A file folds, and its
+ *  threads can be hidden on the diff. */
+export function ThreadsPopover({ threads, viewer, idx, onJump }: PopoverProps) {
+  const [tab, setTab] = useState<"open" | "resolved">("open");
+  const [mine, setMine] = useState(false);
+  const [folded, setFolded] = useState<string[]>([]);
+  const { hiddenFiles, toggleFile } = useReview();
+  const hideAll = useUI((s) => s.hideComments);
+  const toggleHideAll = useUI((s) => s.toggleHideComments);
+  const counts = {
+    open: threads.filter((t) => !t.resolved).length,
+    resolved: threads.filter((t) => t.resolved).length,
+  };
+  const byFile = useMemo(() => {
+    const out = new Map<string, Thread[]>();
+    for (const t of threads) {
+      if (t.resolved !== (tab === "resolved")) continue;
+      if (mine && !t.comments.some((c) => c.author === viewer)) continue;
+      out.set(t.path, [...(out.get(t.path) ?? []), t]);
+    }
+    return [...out];
+  }, [threads, tab, mine, viewer]);
+
+  return (
+    <div className="th-pop" role="dialog" aria-label="Comments">
+      <div className="th-pop-h">
+        <div className="seg th-seg">
+          {(["open", "resolved"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={tab === k ? "on" : ""}
+              aria-pressed={tab === k}
+              onClick={() => setTab(k)}
+            >
+              {k === "open" ? "Open" : "Resolved"} <span className="n">{counts[k]}</span>
+            </button>
+          ))}
+        </div>
+        <span className="grow" />
+        {viewer && (
+          <button
+            type="button"
+            className={`icon-btn sm${mine ? " on" : ""}`}
+            data-tip="Only mine"
+            aria-pressed={mine}
+            onClick={() => setMine(!mine)}
+          >
+            {ic(User, 15)}
+          </button>
+        )}
+        <button
+          type="button"
+          className={`icon-btn sm${hideAll ? " on" : ""}`}
+          data-tip={hideAll ? "Show comments on the diff" : "Hide comments on the diff"}
+          aria-pressed={hideAll}
+          onClick={toggleHideAll}
+        >
+          {ic(EyeOff, 15)}
+        </button>
+      </div>
+      <div className="th-pop-b">
+        {byFile.map(([path, ts]) => {
+          const shut = folded.includes(path);
+          const hidden = hiddenFiles.includes(path);
+          return (
+            <div key={path} className="tl-g">
+              <div className={`tl-f${shut ? " shut" : ""}`}>
+                <button
+                  type="button"
+                  className="tl-fold"
+                  aria-expanded={!shut}
+                  onClick={() => setFolded(shut ? folded.filter((p) => p !== path) : [...folded, path])}
+                >
+                  {ic(shut ? ChevronRight : ChevronDown, 13)}
+                  {ic(FileCode, 13)}
+                  <span className="nm" title={path}>
+                    {path.split("/").pop()}
+                  </span>
+                </button>
+                {shut && <span className="n">{ts.length}</span>}
+                <button
+                  type="button"
+                  className={`icon-btn sm tl-hide${hidden ? " on" : ""}`}
+                  data-tip={hidden ? "Show this file's comments on the diff" : "Hide this file's comments on the diff"}
+                  aria-pressed={hidden}
+                  onClick={() => toggleFile(path)}
+                >
+                  {ic(EyeOff, 14)}
+                </button>
+              </div>
+              {!shut &&
+                ts.map((t) => {
+                  const c = t.comments[0];
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className="tl-t"
+                      disabled={t.outdated}
+                      onClick={() => onJump(t, threadKeys(t, idx))}
+                    >
+                      <div className="h">
+                        <Avatar c={c} />
+                        <b>{c.author}</b>
+                        {c.bot && ic(Bot, 13)}
+                        <span className="grow" />
+                        <span className="where">
+                          {whereText(t)}
+                          {t.comments.length > 1 && ` · ${t.comments.length}`}
+                        </span>
+                      </div>
+                      <div className="x">
+                        <Inline text={c.body.split("\n").find((l) => l.trim()) ?? ""} />
+                      </div>
+                    </button>
+                  );
+                })}
+            </div>
+          );
+        })}
+        {!byFile.length && <div className="th-none">{tab === "open" ? "No open comments" : "None resolved"}</div>}
+      </div>
+    </div>
+  );
+}

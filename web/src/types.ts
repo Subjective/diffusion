@@ -165,6 +165,45 @@ export interface Reviewer {
   state: "approved" | "changes" | "commented" | "requested";
 }
 
+export interface Check {
+  name: string;
+  state: "success" | "failure" | "pending" | "skipped";
+  url: string;
+}
+
+export interface ThreadComment {
+  id: string;
+  author: string;
+  avatar: string;
+  bot: boolean;
+  body: string;
+  created_at: number;
+  url: string;
+}
+
+/** A review thread on GitHub: on lines `start`–`end` of one side of `path`, on the whole file, or outdated. */
+export interface Thread {
+  id: string;
+  path: string;
+  side: "old" | "new";
+  start: number | null;
+  end: number | null;
+  file_level: boolean;
+  resolved: boolean;
+  outdated: boolean;
+  comments: ThreadComment[];
+}
+
+/** GitHub's side of a PR. `available` is false for local targets. */
+export interface ReviewState {
+  available: boolean;
+  error?: string;
+  viewer?: string;
+  reviewers?: Reviewer[];
+  checks?: { state: "success" | "failure" | "pending" | "none"; failing: number; list: Check[] };
+  threads?: Thread[];
+}
+
 /** One of the signed-in user's open PRs on GitHub, for the home page's inbox. */
 export interface InboxPR {
   url: string;
