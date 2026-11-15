@@ -47,6 +47,7 @@ class SteeredEvent:
     """A message sent into the running turn (``AgentRequest.steer``) reached the model."""
 
     text: str
+    uuid: str | None = None  # the session's id for it, where the harness gives one (to edit it later)
 
 
 @dataclass

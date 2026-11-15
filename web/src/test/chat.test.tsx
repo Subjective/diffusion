@@ -43,7 +43,7 @@ function streamBody(chunks: string[], gate?: Promise<void>) {
       if (steered.length) {
         const qs = steered;
         steered = [];
-        c.enqueue(enc.encode(sse([["steered", { ns: qs.map((q) => q.n) }]])));
+        c.enqueue(enc.encode(sse([["steered", { ns: qs.map((q) => q.n), uuid: "s1" }]])));
         for (const q of qs) c.enqueue(enc.encode(sse([["delta", { n: q.n, text: `steered ${q.text}` }]])));
       }
       if (end > 0) c.enqueue(enc.encode(chunks[end]));
@@ -556,6 +556,8 @@ test("Steer sends a queued message into the running answer, or else stops it and
   const answers = [...document.querySelectorAll(".ans-t")].map((a) => a.textContent);
   expect(answers).toEqual(["answer 0", "steered also this?"]);
   expect(turnBodies).toHaveLength(1); // one turn answered both
+  // a steered message can be edited like any other (the session rewinds to just before it)
+  expect(document.querySelectorAll(".edit-sent")).toHaveLength(1);
 
   // a harness that can't steer: stop, then it goes as the next turn
   steerOk = false;

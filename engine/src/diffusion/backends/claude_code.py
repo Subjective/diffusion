@@ -258,7 +258,7 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                         text = user_text(m.content)
                         if text in steered:
                             steered.remove(text)
-                            yield SteeredEvent(text)
+                            yield SteeredEvent(text, m.uuid)
                         elif text == req.prompt and prompt_id is None:
                             prompt_id = m.uuid
                     elif isinstance(m, ResultMessage):

@@ -470,11 +470,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                         yield "error", {"message": "That message can't be edited (it's the first, or gone)."}
                         return
                     restore = req.rewind.uuid if req.rewind.code else None
-                    at = next(
-                        (i for i, t in enumerate(chat["turns"]) if t.get("uuid") == req.rewind.uuid), None
-                    )
-                    if at is not None:
-                        del chat["turns"][at:]
+                    cut_from(chat["turns"], req.rewind.uuid)
                 record = {
                     "at": time.time(),
                     "head_sha": sha,
@@ -531,10 +527,21 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                     said = True
                                     k = record["steers"] = record.get("steers", 0) + 1
                                     record["trace"].append({"steered": k})  # where its own work starts
-                                    for q in ev.questions:  # shown as a turn of their own
-                                        record["questions"].append({**q.model_dump(), "steered": k})
+                                    for i, q in enumerate(ev.questions):  # shown as a turn of their own
+                                        dump = {**q.model_dump(), "steered": k}
+                                        if i == 0 and ev.uuid:
+                                            dump["uuid"] = (
+                                                ev.uuid
+                                            )  # to edit it later, as a message of its own
+                                        record["questions"].append(dump)
                                         record["answers"][str(q.n)] = ""
-                                    yield "steered", {"ns": [q.n for q in ev.questions]}
+                                    yield (
+                                        "steered",
+                                        {
+                                            "ns": [q.n for q in ev.questions],
+                                            **({"uuid": ev.uuid} if ev.uuid else {}),
+                                        },
+                                    )
                                 elif isinstance(ev, ChatDelta):
                                     said = True
                                     record["answers"][str(ev.n)] += ev.text
@@ -657,6 +664,27 @@ def _sessions(chat: dict, meta: dict, harness: str) -> list[tuple[str | None, bo
     if meta.get("session") and harness in FORKABLE:
         out.append((meta["session"], True, guide_cwd))
     return [*out, (None, False, None)]
+
+
+def cut_from(turns: list[dict], uuid: str) -> None:
+    """Drop a chat's record of the message ``uuid`` and everything after it: a whole turn, or, for a message steered
+    into a turn, that part of it."""
+    for at, t in enumerate(turns):
+        if t.get("uuid") == uuid:
+            del turns[at:]
+            return
+        i = next((i for i, q in enumerate(t["questions"]) if q.get("uuid") == uuid), None)
+        if i is not None:
+            k = t["questions"][i].get("steered")
+            kept = t["questions"][:i]
+            t["questions"] = kept
+            t["answers"] = {n: a for n, a in t["answers"].items() if n in {str(q["n"]) for q in kept}}
+            if k is not None:
+                stop = next((j for j, x in enumerate(t.get("trace") or []) if x.get("steered") == k), None)
+                if stop is not None:
+                    t["trace"] = t["trace"][:stop]
+            del turns[at + 1 :]
+            return
 
 
 def _dir(path: str | None) -> Path | None:

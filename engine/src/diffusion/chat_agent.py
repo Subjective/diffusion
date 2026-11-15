@@ -211,6 +211,7 @@ class ChatSteered:
     """Questions sent into the running turn reached the model; what it writes from here answers them."""
 
     questions: list[Question]
+    uuid: str | None = None
 
 
 @dataclass
@@ -473,7 +474,7 @@ async def _events(
                     yield ChatDelta(n, t)
                 split.valid |= {q.n for q in qs}
                 split.cur = qs[0].n
-                yield ChatSteered(qs)
+                yield ChatSteered(qs, ev.uuid)
         elif isinstance(ev, TextEvent):
             for n, t in split.feed(block.feed(ev.text)):
                 yield ChatDelta(n, t)

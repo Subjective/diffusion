@@ -750,3 +750,25 @@ async def test_editing_a_sent_message_rewinds_the_session_to_just_before_it(setu
     body["rewind"] = {"uuid": "u1"}
     r = await client.post("/api/chats/guide/turn", json=body)
     assert parse_sse(r.text)[-1][0] == "error"
+
+
+def test_editing_a_steered_message_cuts_its_turn_there():
+    from diffusion.app import cut_from
+
+    turns = [
+        {
+            "uuid": "u1",
+            "questions": [
+                {"n": 0, "text": "first?"},
+                {"n": -1, "text": "and this?", "steered": 1, "uuid": "s1"},
+            ],
+            "answers": {"0": "a", "-1": "b"},
+            "trace": [{"tool": "Read a"}, {"steered": 1}, {"tool": "Read b"}],
+        },
+        {"uuid": "u2", "questions": [{"n": 0, "text": "later"}], "answers": {"0": "c"}, "trace": []},
+    ]
+    cut_from(turns, "s1")
+    assert len(turns) == 1 and [q["text"] for q in turns[0]["questions"]] == ["first?"]
+    assert turns[0]["answers"] == {"0": "a"} and turns[0]["trace"] == [{"tool": "Read a"}]
+    cut_from(turns, "u1")
+    assert turns == []

@@ -313,6 +313,9 @@ export const useChat = create<State>((set, get) => {
             patch(get().chat, turnRef.cur, (q) => (q.status === "pending" ? { status: "answered", seconds } : {}));
             turnRef.cur = [...now];
             patch(get().chat, turnRef.cur, () => ({ status: "pending" }));
+            // Its own id in the session: it can be edited later like any message.
+            if (typeof d.uuid === "string" && turnRef.cur[0])
+              patch(get().chat, [turnRef.cur[0]], () => ({ uuid: d.uuid as string }));
           } else if (event === "tool") {
             patch(get().chat, turnRef.cur, (q) =>
               q.status === "pending"
@@ -671,6 +674,7 @@ interface WireChat {
       text: string;
       anchor: (WireAnchor & { ui?: Partial<Anchor> }) | null;
       steered?: number;
+      uuid?: string;
     }[];
     answers: Record<string, string>;
     tools: string[];
@@ -734,7 +738,7 @@ export function fromWire(c: WireChat): Chat {
         tools: t.tools,
         shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
         guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
-        uuid: q === t.questions[0] ? t.uuid : undefined,
+        uuid: q.uuid ?? (q === t.questions[0] ? t.uuid : undefined),
         fromSession: t.source === "session",
         trace: traceFor(t.trace ?? t.tools.map((tool) => ({ tool })), q.steered),
         seconds: t.seconds,
