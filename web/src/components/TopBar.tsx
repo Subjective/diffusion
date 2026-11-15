@@ -119,10 +119,10 @@ function PRTarget({ pr }: { pr: PRMeta }) {
   const at = layers.findIndex((p) => p.number === pr.number);
   return (
     <div className="target">
-      <span>
+      <a className="icon-btn sm gh-link" href={pr.url} target="_blank" rel="noreferrer" data-tip="Open on GitHub">
         <GithubIcon size={15} />
-        <b>{pr.repo}</b>
-      </span>
+      </a>
+      <b>{pr.repo}</b>
       <Switcher pr={pr} layers={layers} />
       {layers.length > 0 && (
         <span className="stk" data-tip={`Stack: ${layers.length - at} of ${layers.length}`}>
@@ -130,9 +130,6 @@ function PRTarget({ pr }: { pr: PRMeta }) {
           {layers.length - at}/{layers.length}
         </span>
       )}
-      <a className="icon-btn sm" href={pr.url} target="_blank" rel="noreferrer" data-tip="Open on GitHub">
-        {ic(ArrowUpRight, 14)}
-      </a>
       {review?.checks && review.checks.state !== "none" && <ChecksChip checks={review.checks} />}
       {review?.reviewers?.length ? <Reviewers list={review.reviewers} /> : null}
     </div>

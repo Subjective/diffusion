@@ -1132,8 +1132,11 @@ tr.cmt-row.closed > td {
   font: 500 12px var(--sans);
   font-variant-numeric: tabular-nums;
 }
-.target > a.icon-btn {
+.target > a.gh-link {
   display: grid;
+  margin-left: -6px;
+}
+.target .stk {
   margin-right: 4px;
 }
 .ci-chip {
