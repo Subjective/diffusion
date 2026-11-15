@@ -24,6 +24,10 @@
   --del: rgba(239, 68, 68, 0.07);
   --add-fg: #0a7a5c;
   --del-fg: #d03b3b;
+  /* Claude Code's own mode colors (its light and dark themes) */
+  --mode-edits: rgb(135, 0, 255);
+  --mode-plan: rgb(0, 102, 102);
+  --mode-auto: rgb(150, 108, 30);
   --t-k: #7c3aed;
   --t-s: #0a7a5c;
   --t-n: #b45309;
@@ -53,6 +57,9 @@
   --del: rgba(239, 68, 68, 0.12);
   --add-fg: #4fd1a5;
   --del-fg: #f87171;
+  --mode-edits: rgb(175, 135, 255);
+  --mode-plan: rgb(72, 150, 140);
+  --mode-auto: rgb(255, 193, 7);
   --t-k: #c4a7ff;
   --t-s: #6ee7b7;
   --t-n: #fbbf24;
@@ -1437,8 +1444,14 @@ tr.ln:hover .ask-btn {
   gap: 6px;
   margin-left: -8px;
 }
-.composer .mode.m-auto {
-  color: var(--del-fg);
+.composer .mode.cc.m-acceptEdits {
+  color: var(--mode-edits);
+}
+.composer .mode.cc.m-plan {
+  color: var(--mode-plan);
+}
+.composer .mode.cc.m-auto {
+  color: var(--mode-auto);
 }
 .mode-box {
   position: relative;

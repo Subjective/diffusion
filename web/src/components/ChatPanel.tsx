@@ -671,7 +671,8 @@ function ModeMenu() {
   const guideHarness = useApp((s) => s.guide?.meta?.harness ?? null);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const modes = chat.kind === "guide" ? modesFor(chat.harness ?? guideHarness) : [];
+  const harness = chat.harness ?? guideHarness;
+  const modes = chat.kind === "guide" ? modesFor(harness) : [];
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
@@ -720,7 +721,7 @@ function ModeMenu() {
       )}
       <button
         type="button"
-        className={`mode m-${cur}`}
+        className={`mode m-${cur}${harness === "claude-code" ? " cc" : ""}`}
         title={ui.hint}
         aria-haspopup="menu"
         aria-expanded={open}
