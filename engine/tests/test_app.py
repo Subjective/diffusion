@@ -848,3 +848,31 @@ async def test_review_actions_go_to_github_and_return_fresh_state(setup):
         "/api/review", json={"url": "local:/tmp/x#main..dev", "action": {"kind": "resolve"}}
     )
     assert r.status_code == 400
+
+
+async def test_generate_runs_the_review_command_in_the_background_and_reports_progress(setup):
+    client, runners, deps, prep = setup
+    seen, release = [], asyncio.Event()
+
+    async def agent(req):
+        seen.append((req.prompt, req.cwd))
+        yield ToolEvent("Read", "Read a.ts")
+        await release.wait()
+        yield DoneEvent(turns=2, cost_usd=None, is_error=False, session_id="s1")
+
+    runners["chat"] = agent
+    deps.inbox = lambda: {"login": "jy", "prs": [{"url": URL, "title": "T"}]}
+    job = (await client.post("/api/generate", json={"url": URL})).json()
+    assert job["state"] == "running"
+    await asyncio.sleep(0)
+    assert seen == [(f"/diffusion:review {URL}", prep.checkout.worktree)]
+    # asking again while it runs doesn't start another
+    assert (await client.post("/api/generate", json={"url": URL})).json()["state"] == "running"
+    now = (await client.get("/api/generate", params={"url": URL})).json()
+    assert now["doing"] == "Read a.ts"
+    assert (await client.get("/api/inbox")).json()["prs"][0]["generating"]["state"] == "running"
+    release.set()
+    for _ in range(20):
+        await asyncio.sleep(0)
+    assert (await client.get("/api/generate", params={"url": URL})).json()["state"] == "done"
+    assert len(seen) == 1

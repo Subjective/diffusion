@@ -190,6 +190,7 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                 permission_mode="default" if req.mode == "read-only" else req.mode,
                 can_use_tool=can_use,
                 setting_sources=["user", "project", "local"],
+                env=req.env,
                 enable_file_checkpointing=True,  # so an edited message can put the code back too
             )
         else:
@@ -202,7 +203,11 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                 permission_mode="dontAsk",
                 setting_sources=[],  # don't pick up the user's hooks, CLAUDE.md, or permissions
                 hooks={"PreToolUse": [HookMatcher(matcher="Read|Grep|Glob", hooks=[guard])]},
-                env={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "ENABLE_TOOL_SEARCH": "false"},
+                env={
+                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+                    "ENABLE_TOOL_SEARCH": "false",
+                    **req.env,
+                },
             )
         async with ClaudeSDKClient(options=opts) as client:
             if req.restore_files:

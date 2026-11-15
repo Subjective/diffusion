@@ -1,6 +1,6 @@
 // GitHub's side of the open PR (review threads, reviewers, checks), and how its threads are shown.
 import { create } from "zustand";
-import { fetchInbox, fetchReview, type ReviewAct, reviewAction } from "./api";
+import { fetchInbox, fetchReview, type ReviewAct, reviewAction, startGenerate } from "./api";
 import { storage } from "./lib/storage";
 import type { Inbox, InboxPR, ReviewState } from "./types";
 
@@ -126,6 +126,8 @@ interface InboxStore {
   /** The last inbox fetched, kept so going home or opening the switcher shows it at once. */
   inbox: Inbox | null;
   load(refresh?: boolean): Promise<void>;
+  /** Write a review of a PR from here; the inbox shows its progress until it's saved. */
+  generate(url: string): Promise<void>;
 }
 
 export const useInbox = create<InboxStore>((set, get) => ({
@@ -135,6 +137,18 @@ export const useInbox = create<InboxStore>((set, get) => ({
       set({ inbox: await fetchInbox(refresh) });
     } catch (e) {
       set({ inbox: get().inbox ?? { login: "", prs: [], error: String((e as Error).message ?? e) } });
+    }
+  },
+  async generate(url) {
+    const mark = (generating: InboxPR["generating"]) => {
+      const inbox = get().inbox;
+      if (inbox) set({ inbox: { ...inbox, prs: inbox.prs.map((p) => (p.url === url ? { ...p, generating } : p)) } });
+    };
+    mark({ state: "running" });
+    try {
+      mark(await startGenerate(url));
+    } catch (e) {
+      mark({ state: "failed", error: String((e as Error).message ?? e) });
     }
   },
 }));

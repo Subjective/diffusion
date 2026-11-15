@@ -1,5 +1,5 @@
 import { errorText } from "./lib/sse";
-import type { Guide, GuideVersion, Inbox, PRPayload, ReviewState, Target } from "./types";
+import type { GenerateJob, Guide, GuideVersion, Inbox, PRPayload, ReviewState, Target } from "./types";
 
 /** The diff and a guide: version `v`, or the latest. */
 export async function fetchPR(url: string, v?: number | null): Promise<PRPayload> {
@@ -122,6 +122,23 @@ export async function reviewAction(url: string, action: ReviewAct): Promise<Revi
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url, action }),
   });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+/** Start writing a review of the PR with the reviewer's agent, in the background. */
+export async function startGenerate(url: string): Promise<GenerateJob> {
+  const res = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+export async function fetchGenerate(url: string): Promise<GenerateJob> {
+  const res = await fetch(`/api/generate?${new URLSearchParams({ url })}`);
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }

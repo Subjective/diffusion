@@ -15,6 +15,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { fetchGenerate, startGenerate } from "../api";
 import { layoutView } from "../lib/layout";
 import { readingOrder, refsOf, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { Inline } from "../lib/md";
@@ -22,10 +23,10 @@ import { GUIDE_W, startResize } from "../lib/panes";
 import { refLabel } from "../lib/refs";
 import { storage } from "../lib/storage";
 import { useApp } from "../store";
-import type { Ref, Step } from "../types";
+import type { GenerateJob, Ref, Step } from "../types";
 import { useUI } from "../ui";
 import { ConversationPane } from "./Conversation";
-import { ic, SKIP_ICON, STEP_ICON } from "./icons";
+import { HarnessMark, ic, SKIP_ICON, STEP_ICON } from "./icons";
 import { MapCanvas } from "./MapCanvas";
 
 export interface GuidePaneProps {
@@ -83,7 +84,7 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
       ) : (
         <>
           <Header />
-          <NoGuide />
+          {pr.local ? <NoGuide /> : <WriteReview url={pr.url} />}
         </>
       )}
     </aside>
@@ -181,6 +182,51 @@ function ScopeChip() {
 }
 
 /** Guides are written by the reviewer's coding agent; this page shows one as soon as it's submitted. */
+/** No review of this PR yet: write one here with your agent (or ask for one from a terminal). */
+function WriteReview({ url }: { url: string }) {
+  const [job, setJob] = useState<GenerateJob>({ state: "none" });
+  const running = job.state === "running";
+  useEffect(() => {
+    let live = true;
+    const check = () =>
+      fetchGenerate(url).then(
+        (j) => live && setJob(j),
+        () => {},
+      );
+    void check();
+    if (!running)
+      return () => {
+        live = false;
+      };
+    const t = setInterval(check, 3000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [url, running]);
+  return (
+    <div className="write-rv">
+      <button
+        type="button"
+        className="write-btn"
+        disabled={running}
+        onClick={() => {
+          setJob({ state: "running" });
+          startGenerate(url).then(setJob, (e) => setJob({ state: "failed", error: String(e.message ?? e) }));
+        }}
+      >
+        <span className={running ? "spin-slow" : ""}>
+          <HarnessMark harness="claude-code" size={15} />
+        </span>
+        {running ? "Writing a review" : "Write a review"}
+      </button>
+      {running && job.doing && <div className="write-doing">{job.doing}</div>}
+      {job.state === "failed" && <div className="write-err">{job.error}</div>}
+      <NoGuide />
+    </div>
+  );
+}
+
 export function NoGuide({ landing = false }: { landing?: boolean }) {
   const [copied, setCopied] = useState(false);
   const cmd = "/diffusion:review";

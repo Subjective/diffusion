@@ -23,6 +23,7 @@ from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, 
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
+from .generate import Jobs, generate_request
 from .github import GitHubError, PRRef, fetch_inbox, fetch_review_state, write_review
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
@@ -36,6 +37,10 @@ RunnerFor = Callable[[str], Runner]
 MAX_FILE_CHARS = 2_000_000
 REVIEW_TTL = 30  # seconds a PR's threads, reviewers and checks are reused
 INBOX_TTL = 60  # seconds the home page's PR list is reused before asking GitHub again
+
+
+class GenerateReq(BaseModel):
+    url: str
 
 
 class ReviewAction(BaseModel):
@@ -250,10 +255,36 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             inbox_cache.update(at=now, data=data, error=error)
         guides = {t["url"]: t["versions"] for t in d().store.list_targets()}
         data = inbox_cache["data"]
-        prs = [{**p, "guides": guides.get(p["url"], 0)} for p in data["prs"]]
+        prs = [
+            {**p, "guides": guides.get(p["url"], 0), "generating": jobs.get(pr_key(p["url"]))}
+            for p in data["prs"]
+        ]
         return {"login": data["login"], "prs": prs, "error": inbox_cache["error"]}
 
     review_cache: dict[str, dict] = {}
+    jobs = Jobs()
+    tasks: set[asyncio.Task] = set()
+
+    @app.post("/api/generate")
+    async def generate(req: GenerateReq) -> dict:
+        """Write a review of the PR with the reviewer's own agent, in the background. Its progress is
+        ``GET /api/generate``; the guide shows up like any submitted one."""
+        key = pr_key(req.url)
+        if jobs.running(key):
+            return jobs.get(key)
+        # Claude Code (bundled with its SDK) runs the review skill, from the reviewer's installed plugin.
+        prep = await get_prepared(req.url)
+        request = generate_request(req.url, prep.checkout.worktree)
+        runner = d().runner_for("claude-code")
+        task = asyncio.create_task(jobs.run(key, lambda: runner(request)))
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
+        await asyncio.sleep(0)  # let it register as running
+        return jobs.get(key)
+
+    @app.get("/api/generate")
+    async def generating(url: str) -> dict:
+        return jobs.get(pr_key(url))
 
     @app.get("/api/review")
     async def review(url: str, refresh: bool = False) -> dict:

@@ -3,6 +3,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
   CircleCheck,
   CircleX,
   GitPullRequest,
@@ -15,8 +16,9 @@ import {
 import { type MouseEvent, useMemo, useState } from "react";
 import { storage } from "../lib/storage";
 import { ago, dateText } from "../lib/time";
+import { useInbox } from "../review";
 import type { InboxPR, Reviewer } from "../types";
-import { GithubIcon, ic } from "./icons";
+import { GithubIcon, HarnessMark, ic } from "./icons";
 
 const GROUPS = [
   ["review", "Needs your review"],
@@ -154,9 +156,40 @@ const Age = ({ t, url }: { t: number; url?: string }) => (
   </span>
 );
 
-const GuideMark = ({ p }: { p: InboxPR }) => (
-  <span className="gd">{p.guides > 0 && <span data-tip="Review ready">{ic(BookOpen, 15)}</span>}</span>
-);
+/** A saved review's mark; else, while one is being written, the agent at work; else (on hover) a button that
+ *  writes one. */
+function GuideMark({ p }: { p: InboxPR }) {
+  const job = p.generating;
+  const stop = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  if (p.guides > 0) return <span className="gd">{<span data-tip="Review ready">{ic(BookOpen, 15)}</span>}</span>;
+  if (job?.state === "running")
+    return (
+      <span className="gd">
+        <span className="gen run" data-tip={job.doing ? `Writing a review · ${job.doing}` : "Writing a review"}>
+          <HarnessMark harness="claude-code" size={15} />
+        </span>
+      </span>
+    );
+  return (
+    <span className="gd">
+      <button
+        type="button"
+        className={`icon-btn sm gen${job?.state === "failed" ? " failed" : ""}`}
+        data-tip={job?.state === "failed" ? `Couldn't write a review: ${job.error ?? ""}`.trim() : "Write a review"}
+        aria-label="Write a review"
+        onClick={(e) => {
+          stop(e);
+          void useInbox.getState().generate(p.url);
+        }}
+      >
+        {job?.state === "failed" ? ic(CircleAlert, 15) : <HarnessMark harness="claude-code" size={15} />}
+      </button>
+    </span>
+  );
+}
 
 interface Props {
   prs: InboxPR[];
@@ -180,7 +213,7 @@ export function Inbox({ prs, q, onOpen }: Props) {
       rv: prs.some((p) => p.reviewers.length),
       ci: prs.some((p) => p.checks.state !== "none"),
       cm: prs.some((p) => p.comments > 0),
-      gd: prs.some((p) => p.guides > 0),
+      gd: prs.length > 0, // a saved review's mark, or the button that writes one
     }),
     [prs],
   );

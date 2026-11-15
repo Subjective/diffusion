@@ -132,6 +132,8 @@ class AgentRequest:
     # the files back as they were at that user message (``restore_files``), as its rewind does.
     resume_at: str | None = None
     restore_files: str | None = None
+    # Extra environment for the agent's process (and so for the commands it runs).
+    env: dict[str, str] = field(default_factory=dict)
 
     @property
     def native(self) -> bool:

@@ -254,6 +254,15 @@ export interface InboxPR {
   stack?: { id: string; index: number; size: number };
   /** Guide versions saved for it. */
   guides: number;
+  /** A review Diffusion is writing (or wrote, or failed to) for it from here. */
+  generating?: GenerateJob;
+}
+
+export interface GenerateJob {
+  state: "none" | "running" | "done" | "failed";
+  /** What the agent is doing now. */
+  doing?: string;
+  error?: string | null;
 }
 
 export interface Inbox {

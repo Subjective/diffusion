@@ -2078,3 +2078,60 @@ tr.th-row > td {
   color: var(--text);
   font: 13.5px / 1.5 var(--sans);
 }
+
+/* Writing a review from here */
+.write-rv {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 22px 4px 0;
+}
+.write-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: 500 13.5px var(--sans);
+}
+.write-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+.write-btn:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+.spin-slow,
+.ib-r .gen.run {
+  display: inline-grid;
+  animation: spin 2.4s linear infinite;
+}
+.write-doing {
+  color: var(--subtle);
+  font: 12px var(--mono);
+}
+.write-err {
+  color: var(--del-fg);
+  font-size: 12.5px;
+}
+.write-rv .no-guide {
+  margin-top: 10px;
+}
+.ib-r .gd .gen {
+  color: var(--muted);
+}
+.ib-r .gd button.gen {
+  visibility: hidden;
+}
+.ib-r:hover .gd button.gen,
+.ib-r .gd button.gen.failed {
+  visibility: visible;
+}
+.ib-r .gd button.gen.failed {
+  color: var(--del-fg);
+}

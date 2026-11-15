@@ -52,6 +52,8 @@ vi.mock("../api", () => ({
     },
   ]),
   fetchReview: vi.fn(async () => ({ available: false })),
+  fetchGenerate: vi.fn(async () => ({ state: "none" })),
+  startGenerate: vi.fn(async () => ({ state: "running", doing: "" })),
   reviewAction: vi.fn(async () => ({ available: true, viewer: "jy", threads: [] })),
   fetchInbox: vi.fn(async () => ({
     login: "jy",
@@ -173,6 +175,13 @@ test("home's pull requests: grouped like GitHub, stacks as one row, remembered, 
   fireEvent.change(screen.getByPlaceholderText("Search"), { target: { value: "" } });
   fireEvent.click(screen.getByText("Yours"));
   expect(screen.queryByText("Retry budget")).toBeNull();
+
+  // a PR without a review can have one written from here; the row shows the agent at work
+  const plan = screen.getByText("Plan mode").closest<HTMLElement>(".ib-r")!;
+  fireEvent.click(plan.querySelector('[aria-label="Write a review"]')!);
+  expect(api.startGenerate).toHaveBeenCalledWith("https://github.com/acme/web/pull/47");
+  await waitFor(() => expect(plan.querySelector(".gen.run")).toBeTruthy());
+  expect(useApp.getState().url).not.toBe("https://github.com/acme/web/pull/47"); // the row didn't open
 
   fireEvent.click(screen.getByText("Add token refresh"));
   await waitFor(() => expect(document.querySelectorAll(".step")).toHaveLength(3));
@@ -877,6 +886,13 @@ test("scope chip names what the guide covers", async () => {
 test("no guide yet: says how to get one, then shows it when it's submitted", async () => {
   await mountWith({ ...payload, guide: null, versions: [] });
   expect(document.querySelector(".no-guide code")!.textContent).toBe("/diffusion:review");
+  // or write one from here: it runs in the background, saying what the agent is doing
+  vi.mocked(api.fetchGenerate).mockResolvedValue({ state: "running", doing: "Read session.ts" });
+  fireEvent.click(screen.getByText("Write a review"));
+  expect(api.startGenerate).toHaveBeenCalledWith(payload.pr.url);
+  await waitFor(() => expect(document.querySelector(".write-doing")?.textContent).toBe("Read session.ts"));
+  expect(document.querySelector<HTMLButtonElement>(".write-btn")!.disabled).toBe(true);
+  vi.mocked(api.fetchGenerate).mockResolvedValue({ state: "none" });
   vi.mocked(api.fetchGuide).mockResolvedValueOnce({ ...payload.guide!, version: 1 });
   await useApp.getState().refresh();
   await waitFor(() => expect(document.querySelector(".tldr")).toBeTruthy());
