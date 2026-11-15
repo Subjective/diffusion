@@ -1,10 +1,23 @@
-import { Bot, Check, ChevronDown, ChevronRight, EyeOff, FileCode, User } from "lucide-react";
+import {
+  ArrowUpRight,
+  Bot,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleX,
+  EyeOff,
+  FileCode,
+  Pencil,
+  Trash2,
+  User,
+} from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
+import { autosize } from "../lib/autosize";
 import { Inline, Markdown } from "../lib/md";
 import { type HunkIndex, rowKey } from "../lib/refs";
 import { ago, dateText } from "../lib/time";
-import { useReview } from "../review";
-import type { Thread, ThreadComment } from "../types";
+import { type PendingComment, useReview } from "../review";
+import type { Check as CheckRun, Thread, ThreadComment } from "../types";
 import { useUI } from "../ui";
 import { ic } from "./icons";
 
@@ -30,6 +43,56 @@ export function threadKeys(t: Thread, idx: HunkIndex): string[] {
     }
   }
   return out;
+}
+
+export const avatarOf = (login: string) => `https://avatars.githubusercontent.com/${login}?s=64`;
+
+/** Your pending comments as threads of one comment, so they sit on the diff like the rest. */
+export function pendingThreads(pending: PendingComment[], viewer: string): Thread[] {
+  return pending.map((p) => ({
+    id: p.id,
+    path: p.path,
+    side: p.side,
+    start: p.start,
+    end: p.end,
+    file_level: false,
+    resolved: false,
+    outdated: false,
+    pending: true,
+    comments: [
+      { id: p.id, author: viewer, avatar: avatarOf(viewer), bot: false, body: p.body, created_at: 0, url: "" },
+    ],
+  }));
+}
+
+/** A failing check's notes on the code, as threads on the lines they point at. */
+export function checkThreads(checks: CheckRun[]): Thread[] {
+  return checks.flatMap((c) =>
+    c.state !== "failure"
+      ? []
+      : (c.annotations ?? []).map((a, i) => ({
+          id: `ci:${c.name}:${i}`,
+          path: a.path,
+          side: "new" as const,
+          start: a.start ?? a.end,
+          end: a.end ?? a.start,
+          file_level: a.start == null && a.end == null,
+          resolved: false,
+          outdated: false,
+          ci: { name: c.name, url: c.url },
+          comments: [
+            {
+              id: `ci:${c.name}:${i}`,
+              author: c.name,
+              avatar: "",
+              bot: true,
+              body: a.title ? `**${a.title}** ${a.message}` : a.message,
+              created_at: 0,
+              url: c.url,
+            },
+          ],
+        })),
+  );
 }
 
 export function threadLayout(threads: Thread[], idx: HunkIndex, hidden: string[]): ThreadLayout {
@@ -73,31 +136,159 @@ const Avatar = ({ c, size = 20 }: { c: Pick<ThreadComment, "avatar" | "author">;
   <img className="av" src={c.avatar} alt={c.author} width={size} height={size} />
 );
 
-function CommentView({ c }: { c: ThreadComment }) {
+/** A text box that grows with what's typed: ↵ saves, ⇧↵ is a new line, Esc cancels. */
+function Compose({
+  initial = "",
+  placeholder,
+  onSave,
+  onCancel,
+}: {
+  initial?: string;
+  placeholder: string;
+  onSave: (text: string) => Promise<boolean> | boolean;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    const ok = await onSave(text.trim());
+    setBusy(false);
+    if (ok !== false) onCancel();
+  };
+  return (
+    <div className="th-compose">
+      <textarea
+        // biome-ignore lint/a11y/noAutofocus: opened by a click on Reply or Edit
+        autoFocus
+        rows={1}
+        value={text}
+        placeholder={placeholder}
+        ref={(el) => {
+          if (el) autosize(el, 8);
+        }}
+        onFocus={(e) => e.currentTarget.setSelectionRange(text.length, text.length)}
+        onChange={(e) => {
+          setText(e.target.value);
+          autosize(e.target, 8);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            onCancel();
+          } else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            void save();
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="icon-btn sm solid"
+        data-tip="Save"
+        disabled={!text.trim() || busy}
+        onClick={save}
+      >
+        {ic(Check, 14)}
+      </button>
+    </div>
+  );
+}
+
+function CommentView({ c, t, mine }: { c: ThreadComment; t: Thread; mine: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const act = useReview((s) => s.act);
+  const editPending = useReview((s) => s.editPending);
+  const save = (body: string) => {
+    if (!t.pending) return act({ kind: "edit", comment: c.id, body });
+    editPending(c.id, body);
+    return true;
+  };
+  const remove = () => (t.pending ? editPending(c.id, "") : act({ kind: "delete", comment: c.id }));
   return (
     <div className="th-c">
-      <Avatar c={c} />
+      {t.ci ? <span className="av ci">{ic(CircleX, 13)}</span> : <Avatar c={c} />}
       <div className="th-b">
         <div className="th-h">
           <b>{c.author}</b>
-          {c.bot && <span className="th-tag">bot</span>}
-          <span className="th-t" data-tip={dateText(c.created_at)}>
-            {ago(c.created_at)}
-          </span>
+          {t.ci ? <span className="th-tag">CI</span> : c.bot && <span className="th-tag">bot</span>}
+          {t.pending && <span className="th-tag pend">Pending</span>}
+          {c.created_at > 0 && (
+            <span className="th-t" data-tip={dateText(c.created_at)}>
+              {ago(c.created_at)}
+            </span>
+          )}
+          <span className="grow" />
+          {mine && !editing && (
+            <span className="th-acts">
+              <button type="button" className="icon-btn sm" data-tip="Edit" onClick={() => setEditing(true)}>
+                {ic(Pencil, 13)}
+              </button>
+              <button type="button" className="icon-btn sm" data-tip="Delete" onClick={() => void remove()}>
+                {ic(Trash2, 13)}
+              </button>
+            </span>
+          )}
+          {t.ci?.url && (
+            <a className="icon-btn sm" href={t.ci.url} target="_blank" rel="noreferrer" data-tip="Logs">
+              {ic(ArrowUpRight, 14)}
+            </a>
+          )}
         </div>
-        <div className="th-x">
-          <Markdown text={c.body} />
-        </div>
+        {editing ? (
+          <Compose initial={c.body} placeholder="Comment" onSave={save} onCancel={() => setEditing(false)} />
+        ) : (
+          <div className="th-x">
+            <Markdown text={c.body} />
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+/** Under a GitHub thread: a reply box (opened by a click), and resolving it. */
+function ThreadFoot({ t }: { t: Thread }) {
+  const [replying, setReplying] = useState(false);
+  const act = useReview((s) => s.act);
+  const expand = useReview((s) => s.expand);
+  return (
+    <div className="th-foot">
+      {replying ? (
+        <Compose
+          placeholder="Reply"
+          onSave={(body) => act({ kind: "reply", thread: t.id, body })}
+          onCancel={() => setReplying(false)}
+        />
+      ) : (
+        <button type="button" className="th-reply" onClick={() => setReplying(true)}>
+          Reply
+        </button>
+      )}
+      <button
+        type="button"
+        className="th-res"
+        onClick={() => void act({ kind: t.resolved ? "unresolve" : "resolve", thread: t.id })}
+      >
+        {ic(Check, 13)}
+        {t.resolved ? "Unresolve" : "Resolve"}
+      </button>
+      {t.resolved && (
+        <button type="button" className="icon-btn sm" data-tip="Collapse" onClick={() => expand(t.id, false)}>
+          {ic(ChevronDown, 14)}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** A thread: the first comment and the latest, with the ones between folded into "N more replies" until opened.
- *  A resolved thread is one quiet line until opened. */
+ *  A resolved thread is one quiet line until opened. Your own comments can be edited or deleted. */
 export function ThreadCard({ t, keys }: { t: Thread; keys: string[] }) {
   const open = useReview((s) => s.expanded.includes(t.id));
   const expand = useReview((s) => s.expand);
+  const viewer = useReview((s) => s.state?.viewer ?? "");
   const setHover = useUI((s) => s.setHover);
   const hoverProps = keys.length ? { onMouseEnter: () => setHover(keys), onMouseLeave: () => setHover([]) } : {};
   const people = [...new Map(t.comments.map((c) => [c.author, c])).values()];
@@ -121,9 +312,16 @@ export function ThreadCard({ t, keys }: { t: Thread; keys: string[] }) {
   const cs = t.comments;
   const folded = !open && cs.length > 3;
   const between = cs.slice(1, -1);
+  const view = (c: ThreadComment) => (
+    <CommentView key={c.id} c={c} t={t} mine={!t.ci && !!viewer && c.author === viewer} />
+  );
   return (
-    <div className={`th${t.resolved ? " resolved" : ""}`} data-thread={t.id} {...hoverProps}>
-      <CommentView c={cs[0]} />
+    <div
+      className={`th${t.resolved ? " resolved" : ""}${t.pending ? " pending" : ""}${t.ci ? " ci" : ""}`}
+      data-thread={t.id}
+      {...hoverProps}
+    >
+      {view(cs[0])}
       {folded ? (
         <>
           <button type="button" className="th-more" onClick={() => expand(t.id)}>
@@ -134,17 +332,12 @@ export function ThreadCard({ t, keys }: { t: Thread; keys: string[] }) {
             </span>
             {between.length} more {between.length === 1 ? "reply" : "replies"}
           </button>
-          <CommentView c={cs[cs.length - 1]} />
+          {view(cs[cs.length - 1])}
         </>
       ) : (
-        cs.slice(1).map((c) => <CommentView key={c.id} c={c} />)
+        cs.slice(1).map(view)
       )}
-      {t.resolved && (
-        <button type="button" className="th-more" onClick={() => expand(t.id, false)}>
-          {ic(Check, 13)}
-          Resolved
-        </button>
-      )}
+      {!t.pending && !t.ci && <ThreadFoot t={t} />}
     </div>
   );
 }

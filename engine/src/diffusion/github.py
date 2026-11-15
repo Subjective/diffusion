@@ -361,6 +361,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       author { login }
+      mergeable baseRefName headRefOid
       reviewRequests(first: 20) {
         nodes { requestedReviewer { ... on User { login avatarUrl } ... on Team { slug avatarUrl } } }
       }
@@ -370,7 +371,12 @@ query($owner: String!, $repo: String!, $number: Int!) {
           state
           contexts(first: 100) { nodes {
             __typename
-            ... on CheckRun { name conclusion status detailsUrl }
+            ... on CheckRun {
+              name conclusion status detailsUrl
+              annotations(first: 20) {
+                nodes { path message title annotationLevel location { start { line } end { line } } }
+              }
+            }
             ... on StatusContext { context state targetUrl }
           } }
         } } }
@@ -409,7 +415,19 @@ def _check_list(node: dict) -> list[dict]:
         if c.get("__typename") == "CheckRun":
             done = c.get("status") == "COMPLETED"
             state = _CHECK_STATE.get(c.get("conclusion") or "", "pending") if done else "pending"
-            out.append({"name": c.get("name", ""), "state": state, "url": c.get("detailsUrl") or ""})
+            notes = [
+                {
+                    "path": a.get("path", ""),
+                    "start": ((a.get("location") or {}).get("start") or {}).get("line"),
+                    "end": ((a.get("location") or {}).get("end") or {}).get("line"),
+                    "message": a.get("message") or "",
+                    "title": a.get("title") or "",
+                }
+                for a in ((c.get("annotations") or {}).get("nodes") or [])
+                if a and a.get("annotationLevel") == "FAILURE" and a.get("path")
+            ]
+            check = {"name": c.get("name", ""), "state": state, "url": c.get("detailsUrl") or ""}
+            out.append({**check, "annotations": notes} if notes else check)
         elif c.get("__typename") == "StatusContext":
             s = c.get("state")
             state = {"SUCCESS": "success", "PENDING": "pending", "EXPECTED": "pending"}.get(s, "failure")
@@ -455,6 +473,11 @@ def pr_review_state(data: dict) -> dict:
     threads = [_thread(t) for t in (pr.get("reviewThreads") or {}).get("nodes") or [] if t]
     return {
         "viewer": (data.get("viewer") or {}).get("login", ""),
+        "author": author,
+        "head_sha": pr.get("headRefOid", ""),
+        "base_ref": pr.get("baseRefName", ""),
+        # MERGEABLE, CONFLICTING, or UNKNOWN while GitHub works it out
+        "mergeable": (pr.get("mergeable") or "UNKNOWN").lower(),
         "reviewers": _reviewers(pr, author),
         "checks": {"state": state, "failing": failing, "list": checks},
         "threads": [t for t in threads if t["comments"]],
@@ -465,12 +488,90 @@ def fetch_review_state(ref: PRRef, gh: str = "gh") -> dict:
     """Review threads (with every comment), reviewers and checks for one PR, in one GraphQL call through ``gh``."""
     if not (shutil.which(gh) or os.sep in gh):
         raise GitHubError("Install the GitHub CLI and run `gh auth login` to see review comments.")
-    cmd = [gh, "api", "graphql", "--hostname", ref.host, "-f", f"query={_PR_QUERY}"]
-    cmd += ["-f", f"owner={ref.owner}", "-f", f"repo={ref.repo}", "-F", f"number={ref.number}"]
+    data = _graphql(gh, ref.host, _PR_QUERY, owner=ref.owner, repo=ref.repo, number=ref.number)
+    return pr_review_state(data)
+
+
+def _gh(cmd: list[str], stdin: str | None = None) -> str:
     try:
-        out = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=60).stdout
+        return subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=60, input=stdin).stdout
     except subprocess.CalledProcessError as e:
-        raise GitHubError(f"gh api graphql failed: {e.stderr.strip() or e}") from e
+        raise GitHubError(f"GitHub said: {_gh_error(e.stdout, e.stderr)}") from e
     except subprocess.TimeoutExpired as e:
         raise GitHubError("GitHub took too long to answer.") from e
-    return pr_review_state(json.loads(out).get("data") or {})
+
+
+def _gh_error(out: str, err: str) -> str:
+    try:
+        body = json.loads(out)
+        msgs = [m.get("message", "") for m in body.get("errors") or [] if isinstance(m, dict)]
+        return "; ".join(m for m in msgs if m) or body.get("message") or err.strip()
+    except (ValueError, AttributeError):
+        return err.strip() or out.strip()
+
+
+def _graphql(gh: str, host: str, query: str, **variables: str | int | bool) -> dict:
+    """One GraphQL call through ``gh``. Strings go as -f, numbers and booleans as -F (typed)."""
+    cmd = [gh, "api", "graphql", "--hostname", host, "-f", f"query={query}"]
+    for k, v in variables.items():
+        cmd += ["-f", f"{k}={v}"] if isinstance(v, str) else ["-F", f"{k}={str(v).lower()}"]
+    out = json.loads(_gh(cmd) or "{}")
+    if out.get("errors"):
+        raise GitHubError(f"GitHub said: {_gh_error(json.dumps(out), '')}")
+    return out.get("data") or {}
+
+
+# ---------- writing: reviews, replies, resolving, editing your comments ----------
+
+_MUTATIONS = {
+    "reply": """mutation($thread: ID!, $body: String!) {
+      addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $thread, body: $body}) { comment { id } }
+    }""",
+    "resolve": """mutation($thread: ID!) { resolveReviewThread(input: {threadId: $thread}) { thread { id } } }""",
+    "unresolve": """mutation($thread: ID!) { unresolveReviewThread(input: {threadId: $thread}) { thread { id } } }""",
+    "edit": """mutation($comment: ID!, $body: String!) {
+      updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $comment, body: $body}) { pullRequestReviewComment { id } }
+    }""",
+    "delete": """mutation($comment: ID!) { deletePullRequestReviewComment(input: {id: $comment}) { clientMutationId } }""",
+}
+_EVENTS = {"comment": "COMMENT", "approve": "APPROVE", "request_changes": "REQUEST_CHANGES"}
+
+
+def review_payload(action: dict) -> dict:
+    """The REST body for submitting a review: its verdict, summary and line comments (each on one side, over one
+    line or a range). ``commit`` pins the comments to the head they were written against."""
+    comments = []
+    for c in action.get("comments") or []:
+        side = "LEFT" if c.get("side") == "old" else "RIGHT"
+        one = {"path": c["path"], "body": c["body"], "side": side}
+        if c.get("file_level"):
+            one["subject_type"] = "file"
+        else:
+            one["line"] = c["end"]
+            if c.get("start") and c["start"] != c["end"]:
+                one |= {"start_line": c["start"], "start_side": side}
+        comments.append(one)
+    body = {"event": _EVENTS[action.get("event", "comment")], "body": action.get("body") or ""}
+    if action.get("commit"):
+        body["commit_id"] = action["commit"]
+    return body | ({"comments": comments} if comments else {})
+
+
+def write_review(ref: PRRef, action: dict, gh: str = "gh") -> None:
+    """Do one thing on the PR as the signed-in user: ``submit`` a review (with pending comments), ``reply`` to a
+    thread, ``resolve``/``unresolve`` one, or ``edit``/``delete`` one of your comments."""
+    if not (shutil.which(gh) or os.sep in gh):
+        raise GitHubError("Install the GitHub CLI and run `gh auth login` to comment.")
+    kind = action.get("kind")
+    if kind == "submit":
+        path = f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}/reviews"
+        cmd = [gh, "api", "--hostname", ref.host, "--method", "POST", path, "--input", "-"]
+        _gh(cmd, json.dumps(review_payload(action)))
+    elif kind in ("reply", "resolve", "unresolve"):
+        extra = {"body": action["body"]} if kind == "reply" else {}
+        _graphql(gh, ref.host, _MUTATIONS[kind], thread=action["thread"], **extra)
+    elif kind in ("edit", "delete"):
+        extra = {"body": action["body"]} if kind == "edit" else {}
+        _graphql(gh, ref.host, _MUTATIONS[kind], comment=action["comment"], **extra)
+    else:
+        raise GitHubError(f"Unknown review action: {kind}")

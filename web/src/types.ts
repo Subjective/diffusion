@@ -169,6 +169,8 @@ export interface Check {
   name: string;
   state: "success" | "failure" | "pending" | "skipped";
   url: string;
+  /** Where a failing check points in the code. */
+  annotations?: { path: string; start: number | null; end: number | null; message: string; title: string }[];
 }
 
 export interface ThreadComment {
@@ -192,6 +194,9 @@ export interface Thread {
   resolved: boolean;
   outdated: boolean;
   comments: ThreadComment[];
+  /** Diffusion's own, not GitHub's: a comment waiting for your review, or a failing check's note on these lines. */
+  pending?: boolean;
+  ci?: { name: string; url: string };
 }
 
 /** GitHub's side of a PR. `available` is false for local targets. */
@@ -199,6 +204,11 @@ export interface ReviewState {
   available: boolean;
   error?: string;
   viewer?: string;
+  /** The PR's author (who can't approve or request changes on it). */
+  author?: string;
+  head_sha?: string;
+  base_ref?: string;
+  mergeable?: "mergeable" | "conflicting" | "unknown";
   reviewers?: Reviewer[];
   checks?: { state: "success" | "failure" | "pending" | "none"; failing: number; list: Check[] };
   threads?: Thread[];

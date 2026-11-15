@@ -1661,3 +1661,246 @@ tr.th-row > td {
 .tl-t .x code {
   font-size: 12px;
 }
+
+/* Writing on threads: reply, resolve, edit your own, pending and CI cards */
+.th-acts {
+  display: inline-flex;
+  visibility: hidden;
+  margin: -4px -6px -4px 0;
+}
+.th-c:hover .th-acts {
+  visibility: visible;
+}
+.th-h > a.icon-btn {
+  display: grid;
+  margin: -4px -6px -4px 0;
+}
+.th-tag.pend {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--hl-bar) 12%, transparent);
+  color: var(--hl-bar);
+}
+.th.pending {
+  border-style: dashed;
+}
+.av.ci {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  background: var(--del);
+  color: var(--del-fg);
+}
+.th-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+.th-reply {
+  flex: 1;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--subtle);
+  font: 13px var(--sans);
+  text-align: left;
+}
+.th-reply:hover {
+  border-color: var(--border-strong);
+}
+.th-res {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  font: 500 12.5px var(--sans);
+}
+.th-res:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.th-compose {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.th-foot .th-compose {
+  margin-top: 0;
+}
+.th-compose textarea {
+  flex: 1;
+  min-height: 30px;
+  resize: none;
+  overflow-y: hidden;
+  padding: 5px 12px;
+  border: 1px solid var(--subtle);
+  border-radius: 15px;
+  outline: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px / 18px var(--sans);
+}
+.th-compose .icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+/* The line popup's ask | comment switch */
+.ask-ctx > .seg.ask-mode {
+  margin: -2px 0;
+  padding: 2px;
+  font-family: var(--sans);
+}
+.ask-mode .icon-btn {
+  width: 26px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+/* Conflicts line in the checks popover */
+.ci-pop .sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.ci-pop .mg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.ci-pop .mg.bad {
+  color: var(--del-fg);
+}
+
+/* Your review, from the top bar */
+.rv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  margin-right: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text);
+  font: 500 13px var(--sans);
+}
+.rv-btn:hover,
+.rv-btn.on {
+  background: var(--hover);
+}
+.rv-btn .n {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--hl-bar);
+  color: #fff;
+  font: 600 10px / 16px var(--sans);
+  text-align: center;
+}
+.rv-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-family: var(--sans);
+  animation: pop 0.14s ease-out;
+}
+.rv-list {
+  max-height: 240px;
+  overflow: auto;
+  margin: -4px -4px 0;
+}
+.rv-i {
+  display: flex;
+  align-items: center;
+  border-radius: 9px;
+}
+.rv-i:hover {
+  background: var(--hover);
+}
+.rv-i .icon-btn {
+  visibility: hidden;
+  margin-right: 4px;
+}
+.rv-i:hover .icon-btn {
+  visibility: visible;
+}
+.rv-go {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 8px;
+  text-align: left;
+}
+.rv-go .where {
+  flex: none;
+  color: var(--subtle);
+  font: 12px var(--mono);
+}
+.rv-go .x {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+}
+.rv-body {
+  resize: vertical;
+  min-height: 72px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13.5px / 1.5 var(--sans);
+}
+.rv-body:focus {
+  border-color: var(--subtle);
+}
+.rv-err {
+  color: var(--del-fg);
+  font-size: 12.5px;
+}
+.rv-f {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rv-submit {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--solid);
+  color: var(--solid-fg);
+  font: 500 13px var(--sans);
+}
+.rv-submit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

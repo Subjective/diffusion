@@ -1,6 +1,6 @@
 import { CircleAlert, GitPullRequest } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
-import { type Question, useChat } from "./chat";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { type Anchor, type Question, useChat } from "./chat";
 import { AskPopup } from "./components/AskPopup";
 import { type ChatLinkProps, ChatPanel } from "./components/ChatPanel";
 import type { AskComment } from "./components/Comments";
@@ -16,6 +16,7 @@ import { refsTarget, useHunkIndex, useStepLinking } from "./lib/linking";
 import { usePaneWidths } from "./lib/panes";
 import { type HunkIndex, rowKey } from "./lib/refs";
 import { useAsk } from "./lib/useAsk";
+import { useReview } from "./review";
 import { useApp } from "./store";
 import type { Step } from "./types";
 import { useUI } from "./ui";
@@ -174,6 +175,15 @@ export function App() {
     },
     [toggleChat],
   );
+  // On a GitHub PR you can see as yourself, the line popup can also write review comments.
+  const reviewable = useReview((s) => !!s.state?.available && !s.state.error && !!s.state.viewer);
+  const toGithub = useMemo(() => {
+    const comment = (body: string, a: Anchor) => ({ path: a.file, side: a.side, start: a.start, end: a.end, body });
+    return {
+      onPending: (text: string, a: Anchor) => useReview.getState().addPending(comment(text, a)),
+      onComment: (text: string, a: Anchor) => void useReview.getState().commentNow(comment(text, a)),
+    };
+  }, []);
   return (
     <>
       <TopBar />
@@ -219,6 +229,7 @@ export function App() {
           useApp.getState().toggleChat(true);
         }}
         onEdit={(id, text) => useChat.getState().editStaged(id, text)}
+        github={reviewable ? toGithub : undefined}
       />
       {!ask && <NotePeek id={hoverQ} />}
     </>

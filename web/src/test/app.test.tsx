@@ -52,6 +52,7 @@ vi.mock("../api", () => ({
     },
   ]),
   fetchReview: vi.fn(async () => ({ available: false })),
+  reviewAction: vi.fn(async () => ({ available: true, viewer: "jy", threads: [] })),
   fetchInbox: vi.fn(async () => ({
     login: "jy",
     error: null,
@@ -108,7 +109,7 @@ const nums = (sel: string) =>
 
 beforeEach(() => {
   localStorage.clear();
-  useReview.setState({ url: "", state: null, hiddenFiles: [], expanded: [] });
+  useReview.setState({ url: "", state: null, hiddenFiles: [], expanded: [], pending: [], error: null, busy: false });
   useInbox.setState({ inbox: null });
   useUI.setState({ mode: "guide", pinStep: null, pinSub: null });
 });
@@ -524,8 +525,90 @@ test("GitHub threads sit under their lines with range bars, fold long middles, a
   vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
 });
 
+test("writing: reply, resolve, edit your own, comment from the line popup, and submit a review", async () => {
+  vi.mocked(api.fetchReview).mockResolvedValue({ ...ghState, author: "sam", head_sha: "h1" } as never);
+  vi.mocked(api.reviewAction).mockResolvedValue({ ...ghState, author: "sam", head_sha: "h1" } as never);
+  useApp.setState({ pr: null });
+  await mount();
+  const card = () => document.querySelector<HTMLElement>('[data-thread="T1"]')!;
+  await waitFor(() => expect(card()).toBeTruthy());
+  const acted = () => vi.mocked(api.reviewAction).mock.calls.map((c) => c[1]);
+
+  // reply: a click opens the box, ↵ sends it
+  fireEvent.click(card().querySelector(".th-reply")!);
+  const box = card().querySelector<HTMLTextAreaElement>(".th-compose textarea")!;
+  fireEvent.change(box, { target: { value: "Will do" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(acted()).toEqual([{ kind: "reply", thread: "T1", body: "Will do" }]));
+  fireEvent.click(card().querySelector(".th-res")!);
+  expect(acted()[1]).toEqual({ kind: "resolve", thread: "T1" });
+
+  // only your own comments can be edited
+  fireEvent.click(screen.getByText("2 more replies"));
+  const mine = [...card().querySelectorAll<HTMLElement>(".th-c")].filter((c) => c.querySelector(".th-acts"));
+  expect(mine.map((c) => c.querySelector("b")!.textContent)).toEqual(["jy"]);
+  fireEvent.click(mine[0].querySelector('[data-tip="Edit"]')!);
+  const edit = mine[0].querySelector<HTMLTextAreaElement>(".th-compose textarea")!;
+  expect(edit.value).toBe("Logout");
+  fireEvent.change(edit, { target: { value: "On logout" } });
+  fireEvent.keyDown(edit, { key: "Enter" });
+  await waitFor(() => expect(acted()[2]).toEqual({ kind: "edit", comment: "b", body: "On logout" }));
+
+  // the line popup: Tab switches to commenting, ↵ adds it to your review
+  const rows = [...document.querySelectorAll<HTMLElement>('tr.ln[data-file="src/auth/session.ts"]')];
+  Object.defineProperty(document, "elementFromPoint", { value: () => rows[2], configurable: true });
+  fireEvent.mouseDown(rows[1].querySelector(".ask-btn")!, { button: 0, clientX: 300, clientY: 100 });
+  fireEvent.mouseUp(window, { clientX: 300, clientY: 120 });
+  await waitFor(() => expect(document.querySelector(".ask-pop")).toBeTruthy());
+  const input = document.querySelector<HTMLTextAreaElement>(".ask-in textarea")!;
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input.getAttribute("placeholder")).toBe("Comment");
+  fireEvent.change(input, { target: { value: "Name this better" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  const pend = await waitFor(() => document.querySelector<HTMLElement>(".th.pending")!);
+  expect(pend.querySelector(".th-tag.pend")!.textContent).toBe("Pending");
+  expect(useReview.getState().pending.map((p) => [p.path, p.side, p.start, p.end, p.body])).toEqual([
+    ["src/auth/session.ts", "new", 2, 3, "Name this better"],
+  ]);
+
+  // the review chip counts it; submitting sends it with a verdict and the head it was written on
+  const chip = document.querySelector<HTMLElement>(".rv-btn")!;
+  expect(chip.textContent).toBe("Review1");
+  fireEvent.click(chip);
+  expect([...document.querySelectorAll(".rv-pop .th-seg button")].map((b) => b.textContent)).toEqual([
+    "Comment",
+    "Approve",
+    "Request changes",
+  ]);
+  fireEvent.change(document.querySelector(".rv-body")!, { target: { value: "Nearly there" } });
+  fireEvent.click(screen.getByText("Request changes"));
+  fireEvent.click(screen.getByText("Submit"));
+  await waitFor(() => expect(useReview.getState().pending).toEqual([]));
+  expect(acted()[3]).toEqual({
+    kind: "submit",
+    event: "request_changes",
+    body: "Nearly there",
+    commit: "h1",
+    comments: [{ path: "src/auth/session.ts", side: "new", start: 2, end: 3, body: "Name this better" }],
+  });
+  expect(document.querySelector(".rv-pop")).toBeNull();
+  vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
+  localStorage.removeItem("rv-ask-mode");
+});
+
 test("a GitHub PR's top bar: switcher with its stack, checks, reviewers", async () => {
-  vi.mocked(api.fetchReview).mockResolvedValue(ghState as never);
+  const failing = {
+    name: "test / ubuntu",
+    state: "failure",
+    url: "https://ci/1",
+    annotations: [{ path: "src/auth/session.ts", start: 5, end: 5, title: "", message: "timer leaks" }],
+  };
+  vi.mocked(api.fetchReview).mockResolvedValue({
+    ...ghState,
+    mergeable: "conflicting",
+    base_ref: "main",
+    checks: { ...ghState.checks, list: [failing, ghState.checks.list[1]] },
+  } as never);
   vi.mocked(api.fetchInbox).mockResolvedValueOnce({
     login: "jy",
     error: null,
@@ -545,6 +628,14 @@ test("a GitHub PR's top bar: switcher with its stack, checks, reviewers", async 
   expect(document.querySelector('.target .rv[data-tip="pk requested changes"]')).toBeTruthy();
   fireEvent.click(document.querySelector(".ci-chip")!);
   expect([...document.querySelectorAll(".ci-pop .r")].map((r) => r.textContent)).toEqual(["test / ubuntu", "lint"]);
+  expect(document.querySelector(".ci-pop .mg")!.textContent).toBe("Conflicts with main");
+  // a failing check's note sits on the line it points at
+  const ci = document.querySelector<HTMLElement>('[data-thread^="ci:"]')!;
+  expect([ci.querySelector(".th-tag")!.textContent, ci.querySelector(".th-x")!.textContent]).toEqual([
+    "CI",
+    "timer leaks",
+  ]);
+  expect((ci.closest("tr")!.previousElementSibling as HTMLElement).dataset.new).toBe("5");
 
   fireEvent.click(document.querySelector(".sw-btn")!);
   const sw = () => [...document.querySelectorAll(".sw-pop .sw-h, .sw-pop .sw-i")].map((e) => e.textContent);

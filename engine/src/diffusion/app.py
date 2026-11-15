@@ -23,7 +23,7 @@ from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, 
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
-from .github import GitHubError, PRRef, fetch_inbox, fetch_review_state
+from .github import GitHubError, PRRef, fetch_inbox, fetch_review_state, write_review
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
@@ -38,6 +38,11 @@ REVIEW_TTL = 30  # seconds a PR's threads, reviewers and checks are reused
 INBOX_TTL = 60  # seconds the home page's PR list is reused before asking GitHub again
 
 
+class ReviewAction(BaseModel):
+    url: str
+    action: dict
+
+
 @dataclass
 class Deps:
     cfg: Config
@@ -48,6 +53,9 @@ class Deps:
     review_state: Callable[[PRRef], dict] = field(
         default=fetch_review_state
     )  # a PR's threads, reviewers, checks
+    review_write: Callable[[PRRef, dict], None] = field(
+        default=write_review
+    )  # comment, reply, resolve, submit
 
 
 def default_deps(cfg: Config) -> Deps:
@@ -272,6 +280,22 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 }
             review_cache[ref.key] = hit
         return hit["data"]
+
+    @app.post("/api/review")
+    async def review_act(req: ReviewAction) -> dict:
+        """Act on a PR as the signed-in user (submit a review, reply, resolve, edit or delete a comment), then
+        return its fresh state. A GitHub refusal comes back as a 400 with GitHub's message."""
+        try:
+            ref = target_ref(req.url)
+        except GitHubError as e:
+            raise HTTPException(400, str(e)) from e
+        if ref.is_local:
+            raise HTTPException(400, "Local reviews aren't on GitHub.")
+        try:
+            await asyncio.to_thread(d().review_write, ref, req.action)
+        except GitHubError as e:
+            raise HTTPException(400, str(e)) from e
+        return await review(req.url, refresh=True)
 
     def versions(prep: Prepared) -> list[dict]:
         return d().store.list_guides(prep.meta.ref.key, prep.meta.head_sha)
