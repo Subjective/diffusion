@@ -149,9 +149,14 @@ test("home's pull requests: grouped like GitHub, stacks as one row, remembered, 
   // the stack (#41 yours, #42 for review) is one row in the first group either layer is in
   expect(groups()).toEqual(["Needs your review2", "Yours1", "Drafts1"]);
   const stack = document.querySelector<HTMLElement>(".ib-stack > .ib-r")!;
-  expect(stack.querySelector(".w")!.textContent).toBe("web #41 → #42 · sam");
-  fireEvent.click(stack);
+  // titled by its bottom PR, and expanded until folded
+  expect(stack.querySelector(".t > span")!.textContent).toBe("Add a Decision type");
+  expect(stack.querySelector(".w")!.textContent).toBe("web #41 → #42 · 2 PRs · sam");
   expect([...document.querySelectorAll(".kid .lvl")].map((l) => l.textContent)).toEqual(["2", "1"]);
+  fireEvent.click(stack);
+  expect(document.querySelectorAll(".kid")).toHaveLength(0);
+  expect(localStorage.getItem("rv-inbox-folded-stacks")).toBe('["s"]');
+  fireEvent.click(stack);
   expect(document.querySelector(".kid [data-tip='Review ready']")).toBeTruthy(); // #42 has a guide
   const retry = screen.getByText("Retry budget").closest(".ib-r")!;
   expect(retry.querySelector(".ci.bad")!.textContent).toBe("1");

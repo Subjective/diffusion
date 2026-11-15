@@ -167,7 +167,13 @@ interface Props {
 /** The signed-in user's open PRs, grouped as on GitHub's dashboard. */
 export function Inbox({ prs, q, onOpen }: Props) {
   const [closed, setClosed] = useState<Group[]>(() => storage.get("rv-inbox-closed", []));
-  const [open, setOpen] = useState<string[]>([]); // expanded stacks
+  // Stacks start expanded; the ones you fold stay folded.
+  const [folded, setFolded] = useState<string[]>(() => storage.get("rv-inbox-folded-stacks", []));
+  const foldStack = (id: string, on: boolean) => {
+    const next = on ? [...folded, id] : folded.filter((x) => x !== id);
+    setFolded(next);
+    storage.set("rv-inbox-folded-stacks", next);
+  };
   // A column shows only if some PR has something in it, so rows don't carry empty slots.
   const cols = useMemo(
     () => ({
@@ -230,25 +236,23 @@ export function Inbox({ prs, q, onOpen }: Props) {
               }
               const s = r.stack;
               const [top, bottom] = [s[0], s[s.length - 1]];
-              const expanded = open.includes(bottom.stack!.id);
+              const expanded = !folded.includes(bottom.stack!.id);
               return (
                 <div key={bottom.stack!.id} className="ib-stack">
                   <button
                     type="button"
                     className="home-r ib-r"
                     aria-expanded={expanded}
-                    onClick={() =>
-                      setOpen(expanded ? open.filter((x) => x !== bottom.stack!.id) : [...open, bottom.stack!.id])
-                    }
+                    onClick={() => foldStack(bottom.stack!.id, expanded)}
                   >
                     {ic(Layers2, 16)}
                     <span className="t">
-                      <span>
-                        Stack of {s.length}
+                      <span title={bottom.title}>
+                        {bottom.title}
                         <span className="chev">{ic(expanded ? ChevronDown : ChevronRight, 13)}</span>
                       </span>
                       <span className="w">
-                        {top.repo} #{bottom.number} → #{top.number}
+                        {top.repo} #{bottom.number} → #{top.number} · {s.length} PRs
                         {g === "review" && ` · ${top.author}`}
                       </span>
                     </span>
