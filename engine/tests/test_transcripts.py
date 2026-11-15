@@ -106,6 +106,35 @@ def test_codex_messages_carry_their_turn_id_to_revert_to(tmp_path):
     ]
 
 
+def test_codex_history_follows_a_reverted_thread_into_its_new_segment(tmp_path, monkeypatch):
+    def user(text):
+        return {
+            "type": "response_item",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+        }
+
+    def ctx(tid):
+        return {"type": "turn_context", "payload": {"turn_id": tid}}
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    day = tmp_path / "sessions/2026/11/14"
+    first = day / "rollout-2026-11-14T10-00-00-th_9.jsonl"
+    write(first, [{"type": "session_meta", "payload": {"id": "th_9"}}, ctx("tA"), user("A")])
+    kept = first.stat().st_size  # the revert keeps the file up to here: B goes
+    with first.open("a") as f:
+        f.write(json.dumps(ctx("tB")) + "\n" + json.dumps(user("B")) + "\n")
+    base = {"thread_id": "th_9", "end_byte_offset": kept}
+    write(day / "rollout-2026-11-14T10-05-00-th_9_seg2.jsonl", [
+        {"type": "session_meta", "payload": {"id": "th_9", "history_base": base}}, ctx("tB2"), user("B prime"),
+    ])  # fmt: skip
+    path = find_transcript("codex", "th_9")
+    assert path and path.name.endswith("_seg2.jsonl")
+    assert [(t["questions"][0]["text"], t["uuid"]) for t in read_codex(path)] == [
+        ("A", "tA"),
+        ("B prime", "tB2"),
+    ]
+
+
 def test_finds_transcripts_where_each_cli_keeps_them(tmp_path, monkeypatch):
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     monkeypatch.delenv("CODEX_HOME", raising=False)

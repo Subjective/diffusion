@@ -32,8 +32,34 @@ def find_transcript(harness: str, session: str, home: Path | None = None) -> Pat
         return next(iter(sorted(root.glob(f"*/{session}.jsonl"))), None)
     if harness == "codex":
         root = Path(os.environ.get("CODEX_HOME") or home / ".codex") / "sessions"
-        return next(iter(sorted(root.glob(f"**/rollout-*{session}.jsonl"))), None)
+        return max(_rollouts(root, session), key=lambda p: p.name, default=None)
     return None
+
+
+def _rollouts(root: Path, thread: str) -> list[Path]:
+    """A Codex thread's rollout files: the first, and a segment for each time its history was reverted."""
+    return [*root.glob(f"**/rollout-*{thread}.jsonl"), *root.glob(f"**/rollout-*{thread}_*.jsonl")]
+
+
+def _codex_entries(path: Path, limit: int | None = None) -> list[dict]:
+    """A rollout's entries, after the history it carries on from. A segment written by a revert keeps only a prefix
+    of the file before it (``history_base``: up to a byte offset), and holds just what came after."""
+    with path.open("rb") as f:
+        data = f.read(limit) if limit is not None else f.read()
+    out = []
+    for line in data.decode("utf-8", errors="replace").splitlines():
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    meta = next((e.get("payload") or {} for e in out if e.get("type") == "session_meta"), {})
+    base = meta.get("history_base") or {}
+    if base.get("thread_id") and isinstance(base.get("end_byte_offset"), int):
+        root = next((p for p in path.parents if p.name == "sessions"), path.parent)
+        earlier = [p for p in _rollouts(root, base["thread_id"]) if p.name < path.name]
+        if earlier:
+            return _codex_entries(max(earlier, key=lambda p: p.name), base["end_byte_offset"]) + out
+    return out
 
 
 def _turn(text: str) -> dict:
@@ -175,7 +201,7 @@ def rewind_point(path: Path, uuid: str) -> str | None:
 def read_codex(path: Path) -> list[dict]:
     b = _Builder()
     turn_id, given = None, set()  # the running turn; turns whose first message has its id (to revert to it)
-    for e in _lines(path):
+    for e in _codex_entries(path):
         p = e.get("payload") or {}
         if e.get("type") == "turn_context" or (
             e.get("type") == "event_msg" and p.get("type") == "task_started"
