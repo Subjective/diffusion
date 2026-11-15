@@ -8,6 +8,8 @@ import type { FileDiff as FD } from "../types";
 import { useUI } from "../ui";
 import { ic } from "./icons";
 
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
 interface Props {
   files: FD[];
   skip: Set<string>;
@@ -92,10 +94,11 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
     };
   }, [mode, url]);
 
-  // ⌘P: find a file.
+  // ⌘P (Ctrl+P off a Mac, where ⌃P moves up lists): find a file, unless something focused took the key first (⌃P moves up an open composer menu).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "p" && !e.shiftKey) {
+      if (e.defaultPrevented) return;
+      if ((MAC ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "p" && !e.shiftKey) {
         e.preventDefault();
         input.current?.focus();
         input.current?.select();
