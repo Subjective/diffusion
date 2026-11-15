@@ -266,6 +266,35 @@ button.ib-r {
 .ib-r .m {
   width: 44px;
 }
+.ib-r .age {
+  width: 36px;
+}
+/* Small styled tooltips on the inbox's marks, shown after a short hover */
+.ib-r [data-tip] {
+  position: relative;
+}
+.ib-r [data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translate(-50%, 2px);
+  z-index: 20;
+  padding: 4px 8px;
+  border-radius: 7px;
+  background: var(--solid);
+  color: var(--solid-fg);
+  font: 500 12px/16px var(--sans);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.ib-r [data-tip]:hover::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition-delay: 0.35s;
+}
 .ib-r .gd {
   flex: none;
   width: 26px;

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { type MouseEvent, useMemo, useState } from "react";
 import { storage } from "../lib/storage";
-import { ago } from "../lib/time";
+import { ago, dateText } from "../lib/time";
 import type { InboxPR, Reviewer } from "../types";
 import { ic } from "./icons";
 
@@ -29,7 +29,7 @@ const REVIEW_TITLE: Record<Reviewer["state"], string> = {
   approved: "approved",
   changes: "requested changes",
   commented: "commented",
-  requested: "review requested",
+  requested: "requested",
 };
 
 /** A row is one PR, or a stack of PRs that build on each other (top layer first). */
@@ -83,7 +83,7 @@ function Reviewers({ list }: { list: Reviewer[] }) {
   return (
     <span className="rvs">
       {list.slice(0, 3).map((r) => (
-        <span key={r.login} className="rv" title={`${r.login} · ${REVIEW_TITLE[r.state]}`}>
+        <span key={r.login} className="rv" data-tip={`${r.login} ${REVIEW_TITLE[r.state]}`}>
           <img className="av" src={r.avatar} alt={r.login} />
           {r.state === "approved" && <span className="st ok">{ic(CircleCheck, 10)}</span>}
           {r.state === "changes" && <span className="st bad">{ic(CircleX, 10)}</span>}
@@ -97,17 +97,20 @@ function Checks({ c }: { c: InboxPR["checks"] }) {
   return (
     <span className="cic">
       {c.state === "success" && (
-        <span className="ci ok" title="Checks passed">
+        <span className="ci ok" data-tip="Checks passed">
           {ic(Check, 14)}
         </span>
       )}
       {c.state === "pending" && (
-        <span className="ci wait" title="Checks running">
+        <span className="ci wait" data-tip="Checks running">
           {ic(LoaderCircle, 14)}
         </span>
       )}
       {c.state === "failure" && (
-        <span className="ci bad" title={`${c.failing || "Some"} failing`}>
+        <span
+          className="ci bad"
+          data-tip={c.failing === 1 ? "1 check failing" : `${c.failing || "Some"} checks failing`}
+        >
           {ic(X, 13)}
           {c.failing > 0 && c.failing}
         </span>
@@ -117,7 +120,7 @@ function Checks({ c }: { c: InboxPR["checks"] }) {
 }
 
 const Comments = ({ n }: { n: number }) => (
-  <span className="m" title={n ? "Comments" : undefined}>
+  <span className="m" data-tip={n ? `${n} comment${n === 1 ? "" : "s"}` : undefined}>
     {n > 0 && (
       <>
         {ic(MessageSquare, 13)}
@@ -127,8 +130,14 @@ const Comments = ({ n }: { n: number }) => (
   </span>
 );
 
+const Age = ({ t }: { t: number }) => (
+  <span className="age" data-tip={`Updated ${dateText(t)}`}>
+    {ago(t)}
+  </span>
+);
+
 const GuideMark = ({ p }: { p: InboxPR }) => (
-  <span className="gd">{p.guides > 0 && <span title="Review ready">{ic(BookOpen, 15)}</span>}</span>
+  <span className="gd">{p.guides > 0 && <span data-tip="Review ready">{ic(BookOpen, 15)}</span>}</span>
 );
 
 interface Props {
@@ -141,6 +150,16 @@ interface Props {
 export function Inbox({ prs, q, onOpen }: Props) {
   const [closed, setClosed] = useState<Group[]>(() => storage.get("rv-inbox-closed", []));
   const [open, setOpen] = useState<string[]>([]); // expanded stacks
+  // A column shows only if some PR has something in it, so rows don't carry empty slots.
+  const cols = useMemo(
+    () => ({
+      rv: prs.some((p) => p.reviewers.length),
+      ci: prs.some((p) => p.checks.state !== "none"),
+      cm: prs.some((p) => p.comments > 0),
+      gd: prs.some((p) => p.guides > 0),
+    }),
+    [prs],
+  );
   const groups = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return inboxRows(prs.filter((p) => words.every((w) => searchText(p).includes(w))));
@@ -183,11 +202,11 @@ export function Inbox({ prs, q, onOpen }: Props) {
                         {p.group === "review" && ` · ${p.author}`}
                       </span>
                     </span>
-                    <Reviewers list={p.reviewers} />
-                    <Checks c={p.checks} />
-                    <Comments n={p.comments} />
-                    <span className="age">{ago(p.updated_at)}</span>
-                    <GuideMark p={p} />
+                    {cols.rv && <Reviewers list={p.reviewers} />}
+                    {cols.ci && <Checks c={p.checks} />}
+                    {cols.cm && <Comments n={p.comments} />}
+                    <Age t={p.updated_at} />
+                    {cols.gd && <GuideMark p={p} />}
                   </a>
                 );
               }
@@ -215,11 +234,11 @@ export function Inbox({ prs, q, onOpen }: Props) {
                         {g === "review" && ` · ${top.author}`}
                       </span>
                     </span>
-                    <Reviewers list={stackReviewers(s)} />
-                    <Checks c={stackChecks(s)} />
-                    <Comments n={s.reduce((n, p) => n + p.comments, 0)} />
-                    <span className="age">{ago(Math.max(...s.map((p) => p.updated_at)))}</span>
-                    <span className="gd" />
+                    {cols.rv && <Reviewers list={stackReviewers(s)} />}
+                    {cols.ci && <Checks c={stackChecks(s)} />}
+                    {cols.cm && <Comments n={s.reduce((n, p) => n + p.comments, 0)} />}
+                    <Age t={Math.max(...s.map((p) => p.updated_at))} />
+                    {cols.gd && <span className="gd" />}
                   </button>
                   {expanded && (
                     <div className="kids">
@@ -230,11 +249,11 @@ export function Inbox({ prs, q, onOpen }: Props) {
                             <span title={p.title}>{p.title}</span>
                             <span className="w">#{p.number}</span>
                           </span>
-                          <Reviewers list={p.reviewers} />
-                          <Checks c={p.checks} />
-                          <Comments n={p.comments} />
+                          {cols.rv && <Reviewers list={p.reviewers} />}
+                          {cols.ci && <Checks c={p.checks} />}
+                          {cols.cm && <Comments n={p.comments} />}
                           <span className="age" />
-                          <GuideMark p={p} />
+                          {cols.gd && <GuideMark p={p} />}
                         </a>
                       ))}
                     </div>

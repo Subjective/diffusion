@@ -152,10 +152,11 @@ test("home's pull requests: grouped like GitHub, stacks as one row, remembered, 
   expect(stack.querySelector(".w")!.textContent).toBe("web #41 → #42 · sam");
   fireEvent.click(stack);
   expect([...document.querySelectorAll(".kid .lvl")].map((l) => l.textContent)).toEqual(["2", "1"]);
-  expect(document.querySelector(".kid [title='Review ready']")).toBeTruthy(); // #42 has a guide
+  expect(document.querySelector(".kid [data-tip='Review ready']")).toBeTruthy(); // #42 has a guide
   const retry = screen.getByText("Retry budget").closest(".ib-r")!;
   expect(retry.querySelector(".ci.bad")!.textContent).toBe("1");
-  expect(retry.querySelector(".rv")!.getAttribute("title")).toBe("pk · approved");
+  expect(retry.querySelector(".rv")!.getAttribute("data-tip")).toBe("pk approved");
+  expect(retry.querySelector(".ci")!.getAttribute("data-tip")).toBe("1 check failing");
   // search covers PRs too; a group folds
   fireEvent.change(screen.getByPlaceholderText("Search"), { target: { value: "plan" } });
   expect(groups()).toEqual(["Drafts1"]);
