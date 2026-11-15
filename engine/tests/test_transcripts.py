@@ -165,6 +165,22 @@ def test_merge_keeps_diffusions_own_record_of_its_turns():
     assert merge(None, stored, lambda _: False) == stored
 
 
+def test_merge_matches_an_edited_message_by_id_not_an_older_one_with_the_same_text():
+    def t(text, uuid=None):
+        return {
+            "questions": [{"n": 1, "text": text}],
+            "answers": {},
+            "trace": [],
+            **({"uuid": uuid} if uuid else {}),
+        }
+
+    # Older records kept no ids. The first message was edited to "Hi" again: the session's branch now has only it.
+    stored = [t("Hi"), t("Hey"), t("Wassup"), t("Hi", "u-new")]
+    session = [t("terminal"), t(f"Hi\n\n{SHOW_REMINDER}", "u-new")]
+    out = merge(session, stored, lambda text: text.endswith(SHOW_REMINDER))
+    assert [(x["questions"][0]["text"], x.get("uuid")) for x in out] == [("terminal", None), ("Hi", "u-new")]
+
+
 def test_a_slash_command_shows_as_typed():
     from diffusion.transcripts import _user_text
 

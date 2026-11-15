@@ -268,16 +268,22 @@ def merge(session: list[dict] | None, stored: list[dict], asked_here) -> list[di
         if not asked_here(text):
             out.append(t)
             continue
-        # Messages steered into a turn reach the transcript as prompts of their own: the turn they joined has them.
-        i = next(
-            (
-                i
-                for i, (_, s) in enumerate(rest)
-                if (s.get("uuid") == t.get("uuid") if s.get("uuid") and t.get("uuid") else True)
-                and all(q["text"].strip() in text for q in s["questions"] if not q.get("steered"))
-            ),
-            None,
-        )
+        # The record with the same id, else one kept without ids whose text matches. (Messages steered into a turn
+        # reach the transcript as prompts of their own: the turn they joined has them.) An id match must win over an
+        # earlier record that only shares its text, or an edited "Hi" would be taken for the first "Hi" ever sent
+        # and bring back every turn after it.
+        uuid = t.get("uuid")
+        i = next((i for i, (_, s) in enumerate(rest) if uuid and s.get("uuid") == uuid), None)
+        if i is None:
+            i = next(
+                (
+                    i
+                    for i, (_, s) in enumerate(rest)
+                    if (s.get("uuid") == uuid if s.get("uuid") and uuid else True)
+                    and all(q["text"].strip() in text for q in s["questions"] if not q.get("steered"))
+                ),
+                None,
+            )
         if i is not None:
             # Diffusion's record, with the transcript's account of what the agent did (it marks failed calls),
             # unless something was steered into it: the transcript splits that turn, so keep the record's own.
