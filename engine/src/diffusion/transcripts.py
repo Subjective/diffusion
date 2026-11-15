@@ -174,15 +174,26 @@ def rewind_point(path: Path, uuid: str) -> str | None:
 
 def read_codex(path: Path) -> list[dict]:
     b = _Builder()
+    turn_id, given = None, set()  # the running turn; turns whose first message has its id (to revert to it)
     for e in _lines(path):
+        p = e.get("payload") or {}
+        if e.get("type") == "turn_context" or (
+            e.get("type") == "event_msg" and p.get("type") == "task_started"
+        ):
+            turn_id = p.get("turn_id") or turn_id
         if e.get("type") != "response_item":
             continue
-        p = e.get("payload") or {}
         kind = p.get("type")
         if kind == "message":
             text = "\n".join(c.get("text", "") for c in p.get("content") or [] if isinstance(c, dict))
             if p.get("role") == "user":
-                b.ask(_user_text(text))
+                q = _user_text(text)
+                tid = (p.get("internal_chat_message_metadata_passthrough") or {}).get("turn_id") or turn_id
+                # A message steered into a running turn shares its id, and can't be reverted to on its own.
+                uuid = tid if isinstance(q, str) and tid not in given else None
+                if uuid:
+                    given.add(uuid)
+                b.ask(q, uuid)
             elif p.get("role") == "assistant":
                 b.say(text)
         elif kind == "reasoning":

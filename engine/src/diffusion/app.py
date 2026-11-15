@@ -460,16 +460,24 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 if req.rewind:
                     # Edit an earlier message, as Claude Code's rewind does: the session picks up from just before
                     # it, and it and what followed drop out (of the session, and of this chat's own record).
-                    if harness != "claude-code":
-                        yield "error", {"message": "Editing a sent message needs a Claude Code session."}
+                    # Claude Code resumes at the entry before it and can put files back; Codex reverts its thread to
+                    # before that turn, the conversation only.
+                    if harness not in ("claude-code", "codex"):
+                        yield (
+                            "error",
+                            {"message": "Editing a sent message needs a Claude Code or Codex session."},
+                        )
                         return
-                    resume = _sessions(chat, meta, harness)[0][0]
-                    path = find_transcript(harness, resume) if resume else None
-                    resume_at = rewind_point(path, req.rewind.uuid) if path else None
+                    if harness == "codex":
+                        resume_at = req.rewind.uuid
+                    else:
+                        resume = _sessions(chat, meta, harness)[0][0]
+                        path = find_transcript(harness, resume) if resume else None
+                        resume_at = rewind_point(path, req.rewind.uuid) if path else None
+                        restore = req.rewind.uuid if req.rewind.code else None
                     if not resume_at:
                         yield "error", {"message": "That message can't be edited (it's the first, or gone)."}
                         return
-                    restore = req.rewind.uuid if req.rewind.code else None
                     cut_from(chat["turns"], req.rewind.uuid)
                 record = {
                     "at": time.time(),

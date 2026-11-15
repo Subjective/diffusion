@@ -113,7 +113,7 @@ for line in sys.stdin:
             note("item/started", turnId="tu_1", item={"type": "userMessage", "id": "u2", "content": [{"type": "text", "text": text}]})
             for n in script["steer"]:
                 send(n)
-    elif method == "turn/interrupt":
+    elif method in ("turn/interrupt", "thread/revert"):
         send({"id": rid, "result": {}})
 """
 
@@ -207,6 +207,19 @@ async def test_codex_takes_a_steered_message_into_the_running_turn(tmp_path, rep
     assert isinstance(evs[1], SteeredEvent) and not evs[-1].is_error
     sent = next(c for c in calls(tmp_path) if c["method"] == "turn/steer")["params"]
     assert sent["expectedTurnId"] == "tu_1"
+
+
+async def test_codex_edits_a_message_by_reverting_to_before_its_turn(tmp_path, repo):
+    exe = fake_app_server(
+        tmp_path, [{"method": "turn/completed", "params": {"turn": {"id": "tu_1", "status": "completed"}}}]
+    )
+    req = AgentRequest("s", "edited", "", repo, resume="th_1", resume_at="tu_old")
+    evs = await collect(codex_runner(str(exe))(req))
+    assert evs[-1].prompt_id == "tu_1"  # the new message's turn, to edit it later
+    order = [c["method"] for c in calls(tmp_path) if c.get("id")]
+    assert order[1:4] == ["thread/resume", "thread/revert", "turn/start"]
+    revert = next(c for c in calls(tmp_path) if c["method"] == "thread/revert")["params"]
+    assert revert == {"threadId": "th_1", "beforeTurnId": "tu_old"}
 
 
 # ---------- cursor backend ----------

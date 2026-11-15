@@ -83,6 +83,29 @@ def test_reads_a_codex_session_as_turns(tmp_path):
     assert t["trace"] == [{"think": "**Reading**"}, {"tool": "Ran rg foo", "id": "c1"}]
 
 
+def test_codex_messages_carry_their_turn_id_to_revert_to(tmp_path):
+    def item(text):
+        return {
+            "type": "response_item",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+        }
+
+    def ctx(tid):
+        return {"type": "turn_context", "payload": {"turn_id": tid}}
+
+    p = tmp_path / "rollout-x-th_9.jsonl"
+    write(p, [
+        {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "t1"}},
+        item("<environment_context>x"), ctx("t1"), item("first"), item("steered in"),
+        ctx("t2"), item("second"),
+    ])  # fmt: skip
+    assert [(t["questions"][0]["text"], t.get("uuid")) for t in read_codex(p)] == [
+        ("first", "t1"),
+        ("steered in", None),  # it joined t1, so only reverting all of t1 would drop it
+        ("second", "t2"),
+    ]
+
+
 def test_finds_transcripts_where_each_cli_keeps_them(tmp_path, monkeypatch):
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     monkeypatch.delenv("CODEX_HOME", raising=False)

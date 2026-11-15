@@ -123,6 +123,9 @@ def codex_runner(cli_path: str | None = None) -> Runner:
                 else:
                     res = await srv.request("thread/start", params)
                 thread_id = (res.get("thread") or {}).get("id") or thread_id
+                if req.resume_at and not req.fork:
+                    # Editing an earlier message: drop that turn and every later one (the conversation only).
+                    await srv.request("thread/revert", {"threadId": thread_id, "beforeTurnId": req.resume_at})
                 turn = await srv.request(
                     "turn/start",
                     {"threadId": thread_id, "input": await skill_inputs(srv, req, compose_prompt(req))},
@@ -130,7 +133,7 @@ def codex_runner(cli_path: str | None = None) -> Runner:
             except AppServerError as e:
                 yield DoneEvent(1, None, True, thread_id, str(e))
                 return
-            turn_id = (turn.get("turn") or {}).get("id")
+            turn_id = first_turn = (turn.get("turn") or {}).get("id")
             steered: list[str] = []  # sent into the turn, not yet seen in it
             over = False
 
@@ -204,8 +207,6 @@ def codex_runner(cli_path: str | None = None) -> Runner:
                             break
                         # Steered as the turn ended, before it got to it: answer it as one more turn.
                         late, steered[:] = list(steered), []
-                        for text in late:
-                            yield SteeredEvent(text)
                         try:
                             nxt = await srv.request(
                                 "turn/start",
@@ -215,6 +216,9 @@ def codex_runner(cli_path: str | None = None) -> Runner:
                             error, ended = str(e), True
                             break
                         turn_id = (nxt.get("turn") or {}).get("id")
+                        # A turn of its own, so it can be edited (reverted to) like any other message.
+                        for i, text in enumerate(late):
+                            yield SteeredEvent(text, turn_id if i == 0 else None)
             finally:
                 over = True
                 if pump:
@@ -227,6 +231,6 @@ def codex_runner(cli_path: str | None = None) -> Runner:
                         await asyncio.wait_for(
                             srv.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id}), 3
                         )
-        yield DoneEvent(max(turns, 1), None, error is not None, thread_id, error or last_text)
+        yield DoneEvent(max(turns, 1), None, error is not None, thread_id, error or last_text, first_turn)
 
     return run

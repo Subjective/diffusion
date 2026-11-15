@@ -127,8 +127,9 @@ class AgentRequest:
     # Messages to slip into the running turn, as (text, accepted): the runner sets accepted True once it has sent
     # the text on, or False when the turn is already over. Only runners that can steer read it.
     steer: asyncio.Queue[tuple[str, asyncio.Future[bool]]] | None = None
-    # Rewinding (editing an earlier message): resume the session only up to this message id, and first put the
-    # files back as they were at that user message (``restore_files``), as Claude Code's rewind does.
+    # Rewinding (editing an earlier message): resume the session only up to this point (Claude Code: the entry
+    # before the message; Codex: the message's turn, reverted with what followed), and, for Claude Code, first put
+    # the files back as they were at that user message (``restore_files``), as its rewind does.
     resume_at: str | None = None
     restore_files: str | None = None
 

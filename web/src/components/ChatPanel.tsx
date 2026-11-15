@@ -469,16 +469,14 @@ function CtxCard({ a }: { a: Anchor }) {
 export const Qn = ({ q }: { q: Question }) =>
   q.n ? <span className={`qn${q.status === "staged" ? " staged" : ""}`}>{q.n}</span> : null;
 
+const REWINDS = ["claude-code", "codex"];
+const harnessOf = (chat: { harness?: string | null }) =>
+  chat.harness ?? useApp.getState().guide?.meta?.harness ?? "claude-code";
+
 function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first: boolean }) {
   const multi = qs.length > 1 || qs.some((q) => q.n);
-  // A sent message can be edited where the session can rewind to before it (Claude Code), as in the terminal.
-  const editable = useChat(
-    (s) =>
-      !first &&
-      !!qs[0].uuid &&
-      !s.chat.busy &&
-      (s.chat.harness ?? useApp.getState().guide?.meta?.harness ?? "claude-code") === "claude-code",
-  );
+  // A sent message can be edited where the session can rewind to before it (Claude Code, Codex), as in the terminal.
+  const editable = useChat((s) => !first && !!qs[0].uuid && !s.chat.busy && REWINDS.includes(harnessOf(s.chat)));
   const rewriting = useChat((s) => s.rewriting);
   const pending = qs.some((q) => q.status === "pending");
   const linked = (q: Question) =>
@@ -1063,7 +1061,12 @@ function Composer({ link }: { link: ChatLinkProps }) {
   const rewriting = useChat((s) => (s.rewriting ? s.chat.questions.find((q) => q.id === s.rewriting) : undefined));
   const touchedFiles = useChat((s) => {
     const q = s.rewriting && s.chat.questions.find((x) => x.id === s.rewriting);
-    return !!q && s.chat.questions.some((x) => x.turn! >= q.turn! && x.trace?.some(isEdit));
+    // Only Claude Code checkpoints files; Codex rewinds the conversation alone.
+    return (
+      !!q &&
+      harnessOf(s.chat) === "claude-code" &&
+      s.chat.questions.some((x) => x.turn! >= q.turn! && x.trace?.some(isEdit))
+    );
   });
   const [restoreCode, setRestoreCode] = useState(false);
   const rewritingId = rewriting?.id;
