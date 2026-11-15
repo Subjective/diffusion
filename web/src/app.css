@@ -375,6 +375,10 @@ button.ib-r {
 .ib-r.kid .t > span:first-child {
   font-size: 13.5px;
 }
+/* A long title gives way; the layer's number never does */
+.ib-r.kid .t > .w {
+  flex: none;
+}
 .ib-r .lvl {
   flex: none;
   width: 20px;
