@@ -374,14 +374,29 @@ interface RowProps {
   after?: ReactNode;
   file: string;
   pos: number;
+  /** Lines were deleted just above this one (a file tab marks where, without showing them). */
+  cut?: boolean;
 }
 
-const DiffRow = memo(function DiffRow({ rk, type, old, nw, text, tokens, dots, extra, after, file, pos }: RowProps) {
+export const DiffRow = memo(function DiffRow({
+  rk,
+  type,
+  old,
+  nw,
+  text,
+  tokens,
+  dots,
+  extra,
+  after,
+  file,
+  pos,
+  cut,
+}: RowProps) {
   const hl = useUI((s) => s.hoverRows.has(rk));
   const pin = useUI((s) => s.pinRows.has(rk));
   const flashN = useUI((s) => (s.flash.keys.has(rk) ? s.flash.n : 0));
   const peek = useUI((s) => (s.peek?.rk === rk ? s.peek : null));
-  const cls = ["ln", type, extra && "qd", hl && "hl", pin && "pin", flashN && `flash f${flashN % 2}`]
+  const cls = ["ln", type, extra && "qd", cut && "cut", hl && "hl", pin && "pin", flashN && `flash f${flashN % 2}`]
     .filter(Boolean)
     .join(" ");
   const sign = type === "add" ? "+" : type === "del" ? "−" : "";

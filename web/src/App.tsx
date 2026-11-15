@@ -9,6 +9,7 @@ import { GuidePane } from "./components/GuidePane";
 import { Home } from "./components/Home";
 import { ic } from "./components/icons";
 import { MapPane } from "./components/MapPane";
+import { NotePeek } from "./components/NotePeek";
 import { useQuestionBadges } from "./components/QuestionBadges";
 import { TopBar } from "./components/TopBar";
 import { refsTarget, useHunkIndex, useStepLinking } from "./lib/linking";
@@ -27,9 +28,13 @@ export function questionRows(q: Question, idx: HunkIndex): { keys: string[]; fil
   if (!a) return { keys: [], files: [] };
   if (a.refs?.length) return refsTarget(a.refs, idx);
   if (a.pfrom == null || a.pto == null) return { keys: [], files: [a.file] };
-  const keys: string[] = [];
+  // The diff's rows in the range, and every line in it: notes on expanded context or in a file tab are on lines
+  // the hunks don't have.
+  const pos = new Set<number>();
   for (const rows of idx.rows.values())
-    for (const r of rows) if (r.file === a.file && r.pos >= a.pfrom && r.pos <= a.pto) keys.push(rowKey(r.file, r.pos));
+    for (const r of rows) if (r.file === a.file && r.pos >= a.pfrom && r.pos <= a.pto) pos.add(r.pos);
+  for (let n = Math.ceil(a.pfrom); n <= a.pto; n++) pos.add(n);
+  const keys = [...pos].sort((x, y) => x - y).map((n) => rowKey(a.file, n));
   return { keys, files: [a.file] };
 }
 
@@ -114,8 +119,22 @@ export function App() {
     },
     [idx],
   );
+  const { ask, close, open, edit } = useAsk();
+  /** A line note waiting to be sent reopens in the popup it was written in, to edit. */
+  const editQ = useCallback(
+    (id: string, el: Element | null) => {
+      const q = useChat.getState().chat.questions.find((x) => x.id === id);
+      if (!q?.anchor || q.status !== "staged") return false;
+      const r = (el ?? document.querySelector(`[data-q="${id}"]`))?.getBoundingClientRect();
+      setHoverQ(null);
+      edit(q.id, q.text, q.anchor, questionRows(q, idx).keys, r?.left ?? innerWidth / 2, r?.bottom ?? innerHeight / 2);
+      return true;
+    },
+    [edit, idx],
+  );
   const revealQ = useCallback(
     (id: string) => {
+      if (editQ(id, document.querySelector(`.qb[data-q="${id}"]`))) return;
       toggleChat(true);
       setFlashQ((f) => ({ id, n: (f?.n ?? 0) + 1 }));
       requestAnimationFrame(() =>
@@ -124,11 +143,10 @@ export function App() {
           ?.scrollIntoView({ block: "center", behavior: "smooth" }),
       );
     },
-    [toggleChat],
+    [toggleChat, editQ],
   );
-  const chatLink: ChatLinkProps = { onHoverQ, onFocusQ, hoverQ, flashQ };
+  const chatLink: ChatLinkProps = { onHoverQ, onFocusQ, onEditQ: editQ, hoverQ, flashQ };
   const badges = useQuestionBadges(hoverQ, onHoverQ, revealQ);
-  const { ask, close, open } = useAsk();
   const askComment: AskComment = useCallback(
     (c, keys, at) => {
       const rows = keys
@@ -200,7 +218,9 @@ export function App() {
           useChat.getState().stage(text, a);
           useApp.getState().toggleChat(true);
         }}
+        onEdit={(id, text) => useChat.getState().editStaged(id, text)}
       />
+      {!ask && <NotePeek id={hoverQ} />}
     </>
   );
 }

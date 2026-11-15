@@ -1,8 +1,9 @@
-import { FileCode, LoaderCircle, X } from "lucide-react";
+import { FileCode, LoaderCircle, SquareArrowOutUpRight, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type DefinitionMatch, fetchAround, fetchDefinition, fetchReferences, type ReferenceMatch } from "../api";
 import { backStack } from "../lib/definition";
 import { highlightLines, type LineTokens, langFor } from "../lib/highlight";
+import { listStep } from "../lib/listKeys";
 import { rowKey } from "../lib/refs";
 import { useApp } from "../store";
 import { type Peek, useUI } from "../ui";
@@ -21,14 +22,20 @@ interface Hit {
 
 const CONTEXT = 6;
 
-/** Go to a result if the diff shows its line, remembering where we were (⌘[). */
-function jump(h: Hit) {
+/** Go to a result: in the diff if it shows the line (remembering where we were, for ⌘[), else in a file tab.
+ *  `tab` always opens a tab, kept rather than a preview. */
+const inDiff = (h: Hit) => !!document.querySelector(`.diff-scroll tr[data-rk="${CSS.escape(rowKey(h.path, h.line))}"]`);
+
+function jump(h: Hit, tab = false) {
   const key = rowKey(h.path, h.line);
   const pane = document.querySelector<HTMLElement>(".diff-scroll");
-  if (!pane?.querySelector(`tr[data-rk="${CSS.escape(key)}"]`)) return;
-  backStack.push(pane.scrollTop);
-  useUI.getState().setPeek(null);
-  useUI.getState().focus([key], [h.path]);
+  if (!tab && pane && inDiff(h)) {
+    backStack.push(pane.scrollTop);
+    useUI.getState().setPeek(null);
+    useUI.getState().focus([key], [h.path]);
+    return;
+  }
+  useUI.getState().openFile(h.path, { line: h.line, end: h.end }, tab);
 }
 const cache = new Map<string, Promise<{ first: number; text: string }>>();
 const aroundOf = (url: string, h: Hit) => {
@@ -122,11 +129,15 @@ export function PeekRow({ peek }: { peek: Peek }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") useUI.getState().setPeek(null);
       if (!hits?.length) return;
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const step = listStep(e);
+      if (step) {
         e.preventDefault();
-        setSel((s) => (s + (e.key === "ArrowDown" ? 1 : hits.length - 1)) % hits.length);
+        setSel((s) => (s + step + hits.length) % hits.length);
       }
-      if (e.key === "Enter" && hits[sel]) jump(hits[sel]);
+      if (e.key === "Enter" && hits[sel]) {
+        e.preventDefault();
+        jump(hits[sel], e.metaKey || e.ctrlKey);
+      }
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
@@ -149,10 +160,15 @@ export function PeekRow({ peek }: { peek: Peek }) {
             {h ? (
               <>
                 {ic(FileCode, 14)}
-                <span className="path" title={h.path}>
+                <button
+                  type="button"
+                  className="path go"
+                  title={`Go to ${h.path}:${h.line} (↵)`}
+                  onClick={(e) => jump(h, e.metaKey || e.ctrlKey)}
+                >
                   <span className="dir">{h.path.slice(0, h.path.lastIndexOf("/") + 1)}</span>
                   {h.path.slice(h.path.lastIndexOf("/") + 1)}
-                </span>
+                </button>
                 <span className="ln">{h.line}</span>
               </>
             ) : (
@@ -179,6 +195,11 @@ export function PeekRow({ peek }: { peek: Peek }) {
                 References<span className="cnt">{refs ? (refs.length >= 300 ? "300+" : refs.length) : ""}</span>
               </button>
             </span>
+            {h && (
+              <button type="button" className="icon-btn sm" title="Open in a tab (⌘↵)" onClick={() => jump(h, true)}>
+                {ic(SquareArrowOutUpRight, 14)}
+              </button>
+            )}
             <button type="button" className="icon-btn sm" title="Close" onClick={close}>
               {ic(X, 14)}
             </button>
@@ -203,6 +224,27 @@ export function PeekRow({ peek }: { peek: Peek }) {
               )}
             </div>
           )}
+          {h && (
+            <div className="peek-f">
+              <span>
+                <kbd>↵</kbd> {inDiff(h) ? "go to it in the diff" : "open in a tab"}
+              </span>
+              <span>
+                <kbd>⌘</kbd>
+                <kbd>↵</kbd> open in a tab
+              </span>
+              {(hits?.length ?? 0) > 1 && (
+                <span>
+                  <kbd>↑</kbd>
+                  <kbd>↓</kbd> pick
+                </span>
+              )}
+              <span className="grow" />
+              <span>
+                <kbd>esc</kbd> close
+              </span>
+            </div>
+          )}
         </div>
       </td>
     </tr>
@@ -221,7 +263,7 @@ function HitList({
   sel: number;
   symbol: string;
   onPick: (i: number) => void;
-  onJump: (h: Hit) => void;
+  onJump: (h: Hit, tab?: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: follow the selection
@@ -249,7 +291,7 @@ function HitList({
               key={i}
               className={`hit${i === sel ? " on" : ""}`}
               onClick={() => onPick(i)}
-              onDoubleClick={() => onJump(h)}
+              onDoubleClick={(e) => onJump(h, e.metaKey || e.ctrlKey)}
             >
               <span className="no">{h.line}</span>
               <span className="txt">

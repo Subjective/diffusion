@@ -1,12 +1,16 @@
-import { Check, GitBranch, History, ListOrdered, Map as MapIcon, Moon, PanelRight, Sun } from "lucide-react";
+import { Check, GitBranch, History, ListOrdered, Map as MapIcon, Moon, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useChat } from "../chat";
 import { ago } from "../lib/time";
 import { useApp } from "../store";
 import { useUI } from "../ui";
-import { GithubIcon, ic, Logo } from "./icons";
+import { GithubIcon, HarnessMark, harnessName, ic, Logo } from "./icons";
 
 export function TopBar() {
   const { theme, toggleTheme, chatOpen, toggleChat, url, home } = useApp();
+  const chatHarness = useChat((s) => s.chat.harness);
+  const guideHarness = useApp((s) => s.guide?.meta?.harness);
+  const harness = chatHarness ?? guideHarness ?? null;
   return (
     <header className="top">
       {url ? (
@@ -25,8 +29,13 @@ export function TopBar() {
         <button type="button" className="icon-btn" title="Theme" onClick={toggleTheme}>
           {ic(theme === "dark" ? Sun : Moon, 17)}
         </button>
-        <button type="button" className={`icon-btn${chatOpen ? " on" : ""}`} title="Chat" onClick={() => toggleChat()}>
-          {ic(PanelRight, 16)}
+        <button
+          type="button"
+          className={`icon-btn${chatOpen ? " on" : ""}`}
+          title={harnessName(harness)}
+          onClick={() => toggleChat()}
+        >
+          <HarnessMark harness={harness} size={16} />
         </button>
       </div>
     </header>

@@ -40,6 +40,14 @@ interface UI {
   refAt: number | null;
   /** Go-to-definition preview under a row. */
   peek: Peek | null;
+  /** Files open in tabs beside the diff. One unpinned tab is a preview: the next file opened replaces it. */
+  tabs: FileTab[];
+  /** The tab in front: a file's path, or null for the diff. */
+  tab: string | null;
+  /** Lines to scroll to and flash in a file tab. */
+  fileAt: { path: string; line: number; end: number; n: number } | null;
+  /** What the file navigator lists: the changed files, or every file at the head. */
+  railMode: RailMode;
 
   init(prKey: string, defaultsCollapsed: Record<string, boolean>): void;
   toggleCollapsed(path: string, value?: boolean): void;
@@ -63,7 +71,20 @@ interface UI {
   /** Scroll to and flash one of the pinned item's refs, keeping the pin. */
   showRef(i: number, keys: string[], files: string[]): void;
   setPeek(p: Peek | null): void;
+  /** Open a file in a tab (a preview unless pinned), optionally at some lines. */
+  openFile(path: string, at?: { line: number; end?: number }, pin?: boolean): void;
+  closeTab(path: string): void;
+  pinTab(path: string): void;
+  /** Bring a tab to the front, or the diff with null. */
+  showTab(path: string | null): void;
+  setRailMode(m: RailMode): void;
 }
+
+export interface FileTab {
+  path: string;
+  pinned: boolean;
+}
+export type RailMode = "diff" | "all";
 
 export interface Peek {
   rk: string;
@@ -98,6 +119,10 @@ export const useUI = create<UI>((set, get) => ({
   pinSub: null,
   refAt: null,
   peek: null,
+  tabs: [],
+  tab: null,
+  fileAt: null,
+  railMode: storage.get<RailMode>("rv-rail-mode", "diff"),
 
   init(prKey, defaultsCollapsed) {
     const saved = { viewed: {}, readSteps: {}, resolved: {}, ...storage.get(`rv-ui:${prKey}`, {}) };
@@ -113,6 +138,8 @@ export const useUI = create<UI>((set, get) => ({
       pinStep: null,
       pinSub: null,
       refAt: null,
+      tabs: prKey === get().prKey ? get().tabs : [],
+      tab: prKey === get().prKey ? get().tab : null,
     });
   },
   toggleCollapsed(path, value) {
@@ -192,6 +219,7 @@ export const useUI = create<UI>((set, get) => ({
         hideSkip: false,
         // Going to lines opens the diff; the map's scenes (which pin) don't, so the map can stay full size.
         diffOpen: s.diffOpen || !pin,
+        tab: pin ? s.tab : null,
         pinStep,
         pinSub: same ? null : sub,
         refAt: step == null && !pin ? s.refAt : null,
@@ -211,6 +239,7 @@ export const useUI = create<UI>((set, get) => ({
         collapsed,
         hideSkip: false,
         diffOpen: true,
+        tab: null,
         refAt: i,
         flash: { keys: new Set(keys), n: s.flash.n + 1 },
         scrollTo: { keys, n: (s.scrollTo?.n ?? 0) + 1 },
@@ -218,4 +247,40 @@ export const useUI = create<UI>((set, get) => ({
     });
   },
   setPeek: (peek) => set({ peek }),
+  openFile(path, at, pin = false) {
+    set((s) => {
+      const open = s.tabs.find((t) => t.path === path);
+      let tabs: FileTab[];
+      if (open) tabs = s.tabs.map((t) => (t.path === path ? { ...t, pinned: t.pinned || pin } : t));
+      else {
+        // The preview tab gives its place to the next preview, so browsing doesn't pile up tabs.
+        const i = pin ? -1 : s.tabs.findIndex((t) => !t.pinned);
+        const tab = { path, pinned: pin };
+        tabs = i < 0 ? [...s.tabs, tab] : s.tabs.map((t, j) => (j === i ? tab : t));
+      }
+      const line = at?.line ?? 0;
+      return {
+        tabs,
+        tab: path,
+        diffOpen: true,
+        peek: null,
+        fileAt: line ? { path, line, end: at?.end ?? line, n: (s.fileAt?.n ?? 0) + 1 } : s.fileAt,
+      };
+    });
+  },
+  closeTab(path) {
+    set((s) => {
+      const i = s.tabs.findIndex((t) => t.path === path);
+      const tabs = s.tabs.filter((t) => t.path !== path);
+      // Closing the tab in front shows its neighbour, else the diff.
+      const tab = s.tab !== path ? s.tab : (tabs[Math.min(i, tabs.length - 1)]?.path ?? null);
+      return { tabs, tab };
+    });
+  },
+  pinTab: (path) => set((s) => ({ tabs: s.tabs.map((t) => (t.path === path ? { ...t, pinned: true } : t)) })),
+  showTab: (tab) => set({ tab, peek: null }),
+  setRailMode(railMode) {
+    storage.set("rv-rail-mode", railMode);
+    set({ railMode });
+  },
 }));

@@ -52,6 +52,11 @@ class Checkout:
             f"{self.merge_base}..{self.head_sha}", cwd=self.worktree,
         )  # fmt: skip
 
+    def files_at_head(self) -> list[str]:
+        """Every file tracked at the head commit, for browsing beyond the diff."""
+        out = git("ls-tree", "-r", "-z", "--name-only", self.head_sha, cwd=self.worktree)
+        return [p for p in out.split("\0") if p]
+
     def file_at_head(self, path: str) -> str | None:
         try:
             return git("show", f"{self.head_sha}:{path}", cwd=self.worktree)

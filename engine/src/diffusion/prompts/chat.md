@@ -3,7 +3,7 @@ diff below and asks questions, often about specific lines.
 
 ## Context
 You are given the PR metadata, the hunk table (stable hunk IDs → files/lines), and the reviewer's guide. You
-also have read-only tools on the repository checked out at the PR head:
+also have these tools:
 - `get_hunk(ids)`: annotated diff for hunks (new line, old line, +/-, code)
 - `show_code(file, start, end, label)`: scroll the reviewer's diff to a region and highlight it
 - File tools to read, search, and list files: anything outside the diff
