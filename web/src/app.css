@@ -267,7 +267,54 @@ button.ib-r {
   width: 44px;
 }
 .ib-r .age {
+  position: relative;
   width: 36px;
+}
+.ib-r .age .on-gh {
+  position: absolute;
+  right: -4px;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  margin-top: -13px;
+  padding: 0;
+  display: none;
+  place-items: center;
+  overflow: visible;
+}
+.ib-r:hover > .age .ago {
+  visibility: hidden;
+}
+.ib-r:hover > .age .on-gh {
+  display: grid;
+}
+/* Loading rows: the inbox's shape in grey, pulsing */
+.ib-skel .sk {
+  display: block;
+  flex: none;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--chip);
+  animation: sk-pulse 1.4s ease-in-out infinite;
+}
+.ib-skel .t .sk {
+  height: 13px;
+}
+.ib-skel .t .sk.sm {
+  height: 10px;
+}
+.ib-skel .sk.dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+.ib-skel .t {
+  gap: 9px;
+}
+@keyframes sk-pulse {
+  50% {
+    opacity: 0.45;
+  }
 }
 /* Small styled tooltips on the inbox's marks, shown after a short hover */
 .ib-r [data-tip] {
@@ -284,11 +331,13 @@ button.ib-r {
   border-radius: 7px;
   background: var(--solid);
   color: var(--solid-fg);
-  font: 500 12px/16px var(--sans);
+  font: 500 12px / 16px var(--sans);
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.12s, transform 0.12s;
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
 }
 .ib-r [data-tip]:hover::after {
   opacity: 1;

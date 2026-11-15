@@ -6,7 +6,7 @@ import { ago } from "../lib/time";
 import { useApp } from "../store";
 import type { Inbox as InboxData, Target } from "../types";
 import { NoGuide } from "./GuidePane";
-import { Inbox } from "./Inbox";
+import { Inbox, InboxSkeleton } from "./Inbox";
 import { GithubIcon, ic } from "./icons";
 import { localName } from "./TopBar";
 
@@ -28,11 +28,15 @@ const title = (t: Target) => t.title || t.label;
 
 type View = "guides" | "prs";
 
+// The last lists fetched, so coming back home shows them at once while fresh ones load.
+let lastTargets: Target[] | null = null;
+let lastInbox: InboxData | null = null;
+
 /** Past reviews, newest first, or your open PRs on GitHub, when no review is open. */
 export function Home() {
   const open = useApp((s) => s.open);
-  const [targets, setTargets] = useState<Target[] | null>(null);
-  const [inbox, setInbox] = useState<InboxData | null>(null);
+  const [targets, setTargets] = useState<Target[] | null>(lastTargets);
+  const [inbox, setInbox] = useState<InboxData | null>(lastInbox);
   const [view, setView] = useState<View>(() => storage.get<View>("rv-home-view", "guides"));
   const [q, setQ] = useState("");
   const input = useRef<HTMLInputElement>(null);
@@ -51,12 +55,20 @@ export function Home() {
   }, []);
 
   useEffect(() => {
+    const keepTargets = (t: Target[]) => {
+      lastTargets = t;
+      setTargets(t);
+    };
+    const keepInbox = (i: InboxData) => {
+      lastInbox = i;
+      setInbox(i);
+    };
     fetchTargets()
-      .then(setTargets)
-      .catch(() => setTargets([]));
+      .then(keepTargets)
+      .catch(() => keepTargets(lastTargets ?? []));
     fetchInbox()
-      .then(setInbox)
-      .catch((e) => setInbox({ login: "", prs: [], error: String(e.message ?? e) }));
+      .then(keepInbox)
+      .catch((e) => keepInbox(lastInbox ?? { login: "", prs: [], error: String(e.message ?? e) }));
   }, []);
 
   const show = (v: View) => {
@@ -80,9 +92,9 @@ export function Home() {
   const anyChats = targets?.some((t) => t.chats > 0);
   const anyVersions = targets?.some((t) => t.versions > 1);
 
-  if (!targets || !inbox) return <main className="landing" />;
+  if (!targets) return <main className="landing" />;
   // Nothing reviewed and no PRs to show: just how to start one.
-  if (!targets.length && !inbox.prs.length)
+  if (!targets.length && inbox && !inbox.prs.length)
     return (
       <main className="landing">
         <NoGuide landing />
@@ -130,7 +142,9 @@ export function Home() {
           </label>
         </div>
         {view === "prs" ? (
-          inbox.error && !inbox.prs.length ? (
+          !inbox ? (
+            <InboxSkeleton />
+          ) : inbox.error && !inbox.prs.length ? (
             <div className="home-empty">{inbox.error}</div>
           ) : (
             <Inbox prs={inbox.prs} q={q} onOpen={open} />

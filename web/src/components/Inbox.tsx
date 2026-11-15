@@ -16,7 +16,7 @@ import { type MouseEvent, useMemo, useState } from "react";
 import { storage } from "../lib/storage";
 import { ago, dateText } from "../lib/time";
 import type { InboxPR, Reviewer } from "../types";
-import { ic } from "./icons";
+import { GithubIcon, ic } from "./icons";
 
 const GROUPS = [
   ["review", "Needs your review"],
@@ -130,9 +130,27 @@ const Comments = ({ n }: { n: number }) => (
   </span>
 );
 
-const Age = ({ t }: { t: number }) => (
-  <span className="age" data-tip={`Updated ${dateText(t)}`}>
-    {ago(t)}
+/** The age, and in its place on hover a button that opens the PR on GitHub (so it costs the row no room). */
+const Age = ({ t, url }: { t: number; url?: string }) => (
+  <span className="age">
+    <span className="ago" data-tip={`Updated ${dateText(t)}`}>
+      {t ? ago(t) : ""}
+    </span>
+    {url && (
+      <button
+        type="button"
+        className="icon-btn sm on-gh"
+        data-tip="Open on GitHub"
+        aria-label="Open on GitHub"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.open(url, "_blank", "noopener");
+        }}
+      >
+        <GithubIcon size={14} />
+      </button>
+    )}
   </span>
 );
 
@@ -205,7 +223,7 @@ export function Inbox({ prs, q, onOpen }: Props) {
                     {cols.rv && <Reviewers list={p.reviewers} />}
                     {cols.ci && <Checks c={p.checks} />}
                     {cols.cm && <Comments n={p.comments} />}
-                    <Age t={p.updated_at} />
+                    <Age t={p.updated_at} url={p.url} />
                     {cols.gd && <GuideMark p={p} />}
                   </a>
                 );
@@ -252,7 +270,7 @@ export function Inbox({ prs, q, onOpen }: Props) {
                           {cols.rv && <Reviewers list={p.reviewers} />}
                           {cols.ci && <Checks c={p.checks} />}
                           {cols.cm && <Comments n={p.comments} />}
-                          <span className="age" />
+                          <Age t={0} url={p.url} />
                           {cols.gd && <GuideMark p={p} />}
                         </a>
                       ))}
@@ -264,5 +282,27 @@ export function Inbox({ prs, q, onOpen }: Props) {
         </section>
       ))}
     </>
+  );
+}
+
+/** Placeholder rows while GitHub answers (the first load can take a few seconds). */
+export function InboxSkeleton() {
+  return (
+    <section className="ib-skel" aria-busy="true" aria-label="Loading pull requests">
+      <div className="home-g">
+        <span className="sk" style={{ width: 110 }} />
+      </div>
+      {[62, 48, 70, 54].map((w) => (
+        <div key={w} className="home-r">
+          <span className="sk dot" />
+          <span className="t">
+            <span className="sk" style={{ width: `${w}%` }} />
+            <span className="sk sm" style={{ width: 90 }} />
+          </span>
+          <span className="sk" style={{ width: 40 }} />
+          <span className="sk" style={{ width: 28 }} />
+        </div>
+      ))}
+    </section>
   );
 }
