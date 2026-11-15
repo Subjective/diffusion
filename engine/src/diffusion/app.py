@@ -9,7 +9,7 @@ import os
 import time
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -23,7 +23,7 @@ from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, 
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
-from .github import GitHubError
+from .github import GitHubError, fetch_inbox
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
@@ -34,6 +34,7 @@ from .validate import DraftError, check
 PrepareFn = Callable[[Config, str], Prepared]
 RunnerFor = Callable[[str], Runner]
 MAX_FILE_CHARS = 2_000_000
+INBOX_TTL = 60  # seconds the home page's PR list is reused before asking GitHub again
 
 
 @dataclass
@@ -42,6 +43,7 @@ class Deps:
     runner_for: RunnerFor  # agent name → its runner
     prepare: PrepareFn
     store: Store
+    inbox: Callable[[], dict] = field(default=fetch_inbox)  # the signed-in user's open PRs
 
 
 def default_deps(cfg: Config) -> Deps:
@@ -220,6 +222,24 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     async def targets() -> list[dict]:
         """Everything reviewed so far, for the home page."""
         return d().store.list_targets()
+
+    inbox_cache: dict = {}
+
+    @app.get("/api/inbox")
+    async def inbox(refresh: bool = False) -> dict:
+        """The signed-in user's open PRs, each with the number of guide versions saved for it. Cached for a minute;
+        ``refresh`` asks GitHub again. A missing or signed-out ``gh`` comes back as ``error``, not a failure."""
+        now = time.time()
+        if refresh or not inbox_cache or now - inbox_cache["at"] > INBOX_TTL:
+            try:
+                data, error = await asyncio.to_thread(d().inbox), None
+            except GitHubError as e:
+                data, error = {"login": "", "prs": []}, str(e)
+            inbox_cache.update(at=now, data=data, error=error)
+        guides = {t["url"]: t["versions"] for t in d().store.list_targets()}
+        data = inbox_cache["data"]
+        prs = [{**p, "guides": guides.get(p["url"], 0)} for p in data["prs"]]
+        return {"login": data["login"], "prs": prs, "error": inbox_cache["error"]}
 
     def versions(prep: Prepared) -> list[dict]:
         return d().store.list_guides(prep.meta.ref.key, prep.meta.head_sha)

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime
 from urllib.parse import urlsplit
 
 import httpx
@@ -210,3 +211,143 @@ def _fetch_meta_gh(ref: PRRef, gh: str) -> PRMeta:
     except subprocess.CalledProcessError as e:
         raise GitHubError(f"gh pr view failed: {e.stderr.strip() or e}") from e
     return meta_from_json(ref, json.loads(out))
+
+
+# ---------- inbox: the signed-in user's open PRs, for the home page ----------
+
+_INBOX_SEARCHES = {
+    "review": "is:pr is:open archived:false review-requested:@me",
+    "yours": "is:pr is:open archived:false author:@me",
+}
+_INBOX_QUERY = """
+query($review: String!, $yours: String!) {
+  viewer { login }
+  review: search(query: $review, type: ISSUE, first: 50) { nodes { ...pr } }
+  yours: search(query: $yours, type: ISSUE, first: 50) { nodes { ...pr } }
+}
+fragment pr on PullRequest {
+  number title url isDraft updatedAt baseRefName headRefName
+  repository { nameWithOwner }
+  author { login avatarUrl }
+  comments { totalCount }
+  reviewThreads { totalCount }
+  reviewRequests(first: 10) {
+    nodes { requestedReviewer { ... on User { login avatarUrl } ... on Team { slug avatarUrl } } }
+  }
+  latestOpinionatedReviews(first: 10) { nodes { state author { login avatarUrl } } }
+  commits(last: 1) {
+    nodes { commit { statusCheckRollup {
+      state
+      contexts(first: 1) { checkRunCountsByState { state count } statusContextCountsByState { state count } }
+    } } }
+  }
+}
+"""
+_REVIEW_STATES = {"APPROVED": "approved", "CHANGES_REQUESTED": "changes", "COMMENTED": "commented"}
+_FAILING = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
+
+
+def _epoch(iso: str) -> float:
+    return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() if iso else 0.0
+
+
+def _checks(node: dict) -> dict:
+    commits = (node.get("commits") or {}).get("nodes") or []
+    rollup = (commits[0].get("commit") or {}).get("statusCheckRollup") if commits else None
+    if not rollup:
+        return {"state": "none", "failing": 0}
+    ctx = rollup.get("contexts") or {}
+    counts = (ctx.get("checkRunCountsByState") or []) + (ctx.get("statusContextCountsByState") or [])
+    failing = sum(c.get("count", 0) for c in counts if c.get("state") in _FAILING)
+    state = {"SUCCESS": "success", "FAILURE": "failure", "ERROR": "failure"}.get(
+        rollup.get("state"), "pending"
+    )
+    return {"state": state, "failing": failing}
+
+
+def _reviewers(node: dict, author: str) -> list[dict]:
+    """Who reviewed (their latest approve / request changes / comment) and who is still requested."""
+    out: dict[str, dict] = {}
+    for r in (node.get("latestOpinionatedReviews") or {}).get("nodes") or []:
+        a = r.get("author") or {}
+        if a.get("login") and a["login"] != author:
+            out[a["login"]] = {
+                "login": a["login"],
+                "avatar": a.get("avatarUrl", ""),
+                "state": _REVIEW_STATES.get(r.get("state"), "commented"),
+            }
+    for r in (node.get("reviewRequests") or {}).get("nodes") or []:
+        who = r.get("requestedReviewer") or {}
+        login = who.get("login") or who.get("slug")
+        if login:  # a re-request after a review means it's their turn again
+            out[login] = {"login": login, "avatar": who.get("avatarUrl", ""), "state": "requested"}
+    return list(out.values())
+
+
+def inbox_pr(node: dict, group: str) -> dict:
+    owner, _, repo = (node.get("repository") or {}).get("nameWithOwner", "/").partition("/")
+    author = (node.get("author") or {}).get("login", "")
+    return {
+        "url": node["url"],
+        "owner": owner,
+        "repo": repo,
+        "number": node["number"],
+        "title": node.get("title") or "",
+        "draft": bool(node.get("isDraft")),
+        "group": "drafts" if group == "yours" and node.get("isDraft") else group,
+        "author": author,
+        "author_avatar": (node.get("author") or {}).get("avatarUrl", ""),
+        "base_ref": node.get("baseRefName", ""),
+        "head_ref": node.get("headRefName", ""),
+        "updated_at": _epoch(node.get("updatedAt", "")),
+        "comments": (node.get("comments") or {}).get("totalCount", 0)
+        + (node.get("reviewThreads") or {}).get("totalCount", 0),
+        "reviewers": _reviewers(node, author),
+        "checks": _checks(node),
+    }
+
+
+def link_stacks(prs: list[dict]) -> None:
+    """Mark PRs that stack: one whose base branch is another open PR's head branch in the same repo sits on top of
+    it. Each PR in a chain of two or more gets ``stack = {"id": <bottom PR's url>, "index": 1-based from the
+    bottom, "size": n}``. Only PRs in ``prs`` are seen, so a layer that isn't in the inbox splits the chain."""
+    by_head = {(p["owner"], p["repo"], p["head_ref"]): p for p in prs}
+    below = {p["url"]: by_head.get((p["owner"], p["repo"], p["base_ref"])) for p in prs}
+    above: dict[str, dict] = {}
+    for p in prs:
+        if (b := below[p["url"]]) and b is not p:
+            above.setdefault(b["url"], p)  # the first one wins if two PRs build on the same branch
+    for p in prs:
+        if below[p["url"]] or p["url"] not in above:
+            continue  # not the bottom of a chain
+        chain, seen = [p], {p["url"]}
+        while (nxt := above.get(chain[-1]["url"])) and nxt["url"] not in seen:
+            chain.append(nxt)
+            seen.add(nxt["url"])
+        for i, q in enumerate(chain, 1):
+            q["stack"] = {"id": p["url"], "index": i, "size": len(chain)}
+
+
+def fetch_inbox(gh: str = "gh") -> dict:
+    """The signed-in user's open PRs, from one GraphQL call through ``gh``: review requests first, then their own
+    (drafts apart). A PR in both lists shows once, as a review request."""
+    if not (shutil.which(gh) or os.sep in gh):
+        raise GitHubError("Install the GitHub CLI and run `gh auth login` to see your pull requests.")
+    cmd = [gh, "api", "graphql", "-f", f"query={_INBOX_QUERY}"]
+    for k, q in _INBOX_SEARCHES.items():
+        cmd += ["-f", f"{k}={q}"]
+    try:
+        out = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=60).stdout
+    except subprocess.CalledProcessError as e:
+        raise GitHubError(f"gh api graphql failed: {e.stderr.strip() or e}") from e
+    except subprocess.TimeoutExpired as e:
+        raise GitHubError("GitHub took too long to answer.") from e
+    data = json.loads(out).get("data") or {}
+    prs: dict[str, dict] = {}
+    for group in ("review", "yours"):
+        for node in (data.get(group) or {}).get("nodes") or []:
+            if node and node.get("url") and node["url"] not in prs:
+                prs[node["url"]] = inbox_pr(node, group)
+    items = sorted(prs.values(), key=lambda p: p["updated_at"], reverse=True)
+    link_stacks(items)
+    return {"login": (data.get("viewer") or {}).get("login", ""), "prs": items}

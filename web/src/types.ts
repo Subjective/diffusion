@@ -159,6 +159,41 @@ export interface PRPayload {
 }
 
 /** A past review on the home page. */
+export interface Reviewer {
+  login: string;
+  avatar: string;
+  state: "approved" | "changes" | "commented" | "requested";
+}
+
+/** One of the signed-in user's open PRs on GitHub, for the home page's inbox. */
+export interface InboxPR {
+  url: string;
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  draft: boolean;
+  group: "review" | "yours" | "drafts";
+  author: string;
+  author_avatar: string;
+  base_ref: string;
+  head_ref: string;
+  updated_at: number;
+  comments: number;
+  reviewers: Reviewer[];
+  checks: { state: "success" | "failure" | "pending" | "none"; failing: number };
+  /** Set when the PR builds on another open PR's branch: the bottom PR's url, its layer (1 = bottom) and the size. */
+  stack?: { id: string; index: number; size: number };
+  /** Guide versions saved for it. */
+  guides: number;
+}
+
+export interface Inbox {
+  login: string;
+  prs: InboxPR[];
+  error: string | null;
+}
+
 export interface Target {
   url: string;
   owner: string;
