@@ -7,6 +7,7 @@ import {
   CircleX,
   GitBranch,
   GitMerge,
+  GitPullRequest,
   History,
   Layers2,
   ListOrdered,
@@ -65,31 +66,29 @@ export function TopBar() {
   );
 }
 
-/** Steps or map in the left pane; shown once the guide has a view to map. */
+/** The left pane: the PR's conversation (on GitHub PRs), the steps, or the map (once the guide has one). */
 function ModeToggle() {
   const hasMap = useApp((s) => !!s.guide?.views?.length);
+  const hasPR = useReview((s) => !!s.state?.available && !s.state.error);
   const { mode, setMode } = useUI();
-  if (!hasMap) return null;
+  if (!hasMap && !hasPR) return null;
+  const shown = mode === "map" && !hasMap ? "guide" : mode === "pr" && !hasPR ? "guide" : mode;
+  const btn = (m: typeof mode, title: string, icon: Parameters<typeof ic>[0]) => (
+    <button
+      type="button"
+      className={`icon-btn${shown === m ? " on" : ""}`}
+      title={title}
+      aria-pressed={shown === m}
+      onClick={() => setMode(m)}
+    >
+      {ic(icon, 16)}
+    </button>
+  );
   return (
     <div className="seg">
-      <button
-        type="button"
-        className={`icon-btn${mode !== "map" ? " on" : ""}`}
-        title="Steps"
-        aria-pressed={mode !== "map"}
-        onClick={() => setMode("guide")}
-      >
-        {ic(ListOrdered, 16)}
-      </button>
-      <button
-        type="button"
-        className={`icon-btn${mode === "map" ? " on" : ""}`}
-        title="Map"
-        aria-pressed={mode === "map"}
-        onClick={() => setMode("map")}
-      >
-        {ic(MapIcon, 16)}
-      </button>
+      {hasPR && btn("pr", "Conversation", GitPullRequest)}
+      {btn("guide", "Steps", ListOrdered)}
+      {hasMap && btn("map", "Map", MapIcon)}
     </div>
   );
 }

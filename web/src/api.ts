@@ -109,6 +109,7 @@ export type ReviewAct =
       commit?: string;
       comments: { path: string; side: "old" | "new"; start: number | null; end: number | null; body: string }[];
     }
+  | { kind: "comment"; pr: string; body: string }
   | { kind: "reply"; thread: string; body: string }
   | { kind: "resolve" | "unresolve"; thread: string }
   | { kind: "edit"; comment: string; body: string }

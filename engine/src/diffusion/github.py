@@ -360,8 +360,19 @@ query($owner: String!, $repo: String!, $number: Int!) {
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
+      id
       author { login }
       mergeable baseRefName headRefOid
+      timelineItems(last: 100, itemTypes: [ISSUE_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_COMMIT]) {
+        nodes {
+          __typename
+          ... on IssueComment { id body createdAt url author { __typename login avatarUrl } }
+          ... on PullRequestReview { id state body submittedAt url author { __typename login avatarUrl } }
+          ... on PullRequestCommit {
+            commit { oid messageHeadline committedDate author { name user { login avatarUrl } } }
+          }
+        }
+      }
       reviewRequests(first: 20) {
         nodes { requestedReviewer { ... on User { login avatarUrl } ... on Team { slug avatarUrl } } }
       }
@@ -385,7 +396,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
         nodes {
           id isResolved isOutdated path line startLine diffSide startDiffSide subjectType
           comments(first: 50) {
-            nodes { id body createdAt url author { __typename login avatarUrl } }
+            nodes { id body createdAt url pullRequestReview { id } author { __typename login avatarUrl } }
           }
         }
       }
@@ -446,6 +457,7 @@ def _thread(t: dict) -> dict:
             "body": c.get("body") or "",
             "created_at": _epoch(c.get("createdAt", "")),
             "url": c.get("url", ""),
+            "review": (c.get("pullRequestReview") or {}).get("id"),
         }
         for c in (t.get("comments") or {}).get("nodes") or []
     ]
@@ -463,6 +475,51 @@ def _thread(t: dict) -> dict:
     }
 
 
+_REVIEW_STATE = {
+    "APPROVED": "approved",
+    "CHANGES_REQUESTED": "changes",
+    "COMMENTED": "commented",
+    "DISMISSED": "dismissed",
+}
+
+
+def _who(a: dict | None) -> dict:
+    a = a or {}
+    return {
+        "author": a.get("login") or "ghost",
+        "avatar": a.get("avatarUrl", ""),
+        "bot": a.get("__typename") == "Bot",
+    }
+
+
+def _timeline(pr: dict) -> list[dict]:
+    """The PR's conversation, oldest first: comments, reviews (pending ones are only yours, so left out) and
+    commits."""
+    out = []
+    for n in (pr.get("timelineItems") or {}).get("nodes") or []:
+        kind = (n or {}).get("__typename")
+        if kind == "IssueComment":
+            out.append(
+                {"kind": "comment", "id": n["id"], **_who(n.get("author")), "body": n.get("body") or "",
+                 "created_at": _epoch(n.get("createdAt", "")), "url": n.get("url", "")}
+            )  # fmt: skip
+        elif kind == "PullRequestReview" and n.get("state") in _REVIEW_STATE:
+            out.append(
+                {"kind": "review", "id": n["id"], **_who(n.get("author")), "state": _REVIEW_STATE[n["state"]],
+                 "body": n.get("body") or "", "created_at": _epoch(n.get("submittedAt") or ""), "url": n.get("url", "")}
+            )  # fmt: skip
+        elif kind == "PullRequestCommit":
+            c = n.get("commit") or {}
+            user = (c.get("author") or {}).get("user") or {}
+            out.append(
+                {"kind": "commit", "id": c.get("oid", ""), "sha": c.get("oid", ""),
+                 "author": user.get("login") or (c.get("author") or {}).get("name") or "",
+                 "avatar": user.get("avatarUrl", ""), "body": c.get("messageHeadline", ""),
+                 "created_at": _epoch(c.get("committedDate", ""))}
+            )  # fmt: skip
+    return out
+
+
 def pr_review_state(data: dict) -> dict:
     pr = ((data.get("repository") or {}).get("pullRequest")) or {}
     author = (pr.get("author") or {}).get("login", "")
@@ -473,7 +530,9 @@ def pr_review_state(data: dict) -> dict:
     threads = [_thread(t) for t in (pr.get("reviewThreads") or {}).get("nodes") or [] if t]
     return {
         "viewer": (data.get("viewer") or {}).get("login", ""),
+        "id": pr.get("id", ""),
         "author": author,
+        "timeline": _timeline(pr),
         "head_sha": pr.get("headRefOid", ""),
         "base_ref": pr.get("baseRefName", ""),
         # MERGEABLE, CONFLICTING, or UNKNOWN while GitHub works it out
@@ -533,6 +592,9 @@ _MUTATIONS = {
       updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $comment, body: $body}) { pullRequestReviewComment { id } }
     }""",
     "delete": """mutation($comment: ID!) { deletePullRequestReviewComment(input: {id: $comment}) { clientMutationId } }""",
+    "comment": """mutation($pr: ID!, $body: String!) {
+      addComment(input: {subjectId: $pr, body: $body}) { commentEdge { node { id } } }
+    }""",
 }
 _EVENTS = {"comment": "COMMENT", "approve": "APPROVE", "request_changes": "REQUEST_CHANGES"}
 
@@ -558,8 +620,9 @@ def review_payload(action: dict) -> dict:
 
 
 def write_review(ref: PRRef, action: dict, gh: str = "gh") -> None:
-    """Do one thing on the PR as the signed-in user: ``submit`` a review (with pending comments), ``reply`` to a
-    thread, ``resolve``/``unresolve`` one, or ``edit``/``delete`` one of your comments."""
+    """Do one thing on the PR as the signed-in user: ``submit`` a review (with pending comments), ``comment`` on
+    the conversation, ``reply`` to a thread, ``resolve``/``unresolve`` one, or ``edit``/``delete`` one of your
+    review comments."""
     if not (shutil.which(gh) or os.sep in gh):
         raise GitHubError("Install the GitHub CLI and run `gh auth login` to comment.")
     kind = action.get("kind")
@@ -570,6 +633,8 @@ def write_review(ref: PRRef, action: dict, gh: str = "gh") -> None:
     elif kind in ("reply", "resolve", "unresolve"):
         extra = {"body": action["body"]} if kind == "reply" else {}
         _graphql(gh, ref.host, _MUTATIONS[kind], thread=action["thread"], **extra)
+    elif kind == "comment":
+        _graphql(gh, ref.host, _MUTATIONS[kind], pr=action["pr"], body=action["body"])
     elif kind in ("edit", "delete"):
         extra = {"body": action["body"]} if kind == "edit" else {}
         _graphql(gh, ref.host, _MUTATIONS[kind], comment=action["comment"], **extra)

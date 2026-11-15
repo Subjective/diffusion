@@ -500,3 +500,30 @@ def test_write_review_surfaces_githubs_message(tmp_path):
         write_review(
             PRRef("github.com", "acme", "web", 42), {"kind": "submit", "event": "approve"}, gh=str(fake)
         )
+
+
+def test_pr_review_state_reads_the_conversation():
+    data = _review_payload()
+    who = {"__typename": "User", "login": "pk", "avatarUrl": "https://a/pk"}
+    data["repository"]["pullRequest"] |= {
+        "id": "PR_1",
+        "timelineItems": {
+            "nodes": [
+                {"__typename": "PullRequestCommit", "commit": {"oid": "abc", "messageHeadline": "Start",
+                 "committedDate": "2026-11-15T09:00:00Z", "author": {"name": "Sam", "user": None}}},
+                {"__typename": "PullRequestReview", "id": "R1", "state": "CHANGES_REQUESTED", "body": "One thing",
+                 "submittedAt": "2026-11-15T10:00:00Z", "url": "u", "author": who},
+                {"__typename": "PullRequestReview", "id": "R2", "state": "PENDING", "body": "", "author": who},
+                {"__typename": "IssueComment", "id": "C1", "body": "Thanks", "createdAt": "2026-11-15T11:00:00Z",
+                 "url": "u2", "author": {**who, "__typename": "Bot", "login": "ci-bot"}},
+            ]
+        },
+    }  # fmt: skip
+    st = pr_review_state(data)
+    assert st["id"] == "PR_1"
+    assert [(t["kind"], t["author"], t.get("state")) for t in st["timeline"]] == [
+        ("commit", "Sam", None),
+        ("review", "pk", "changes"),
+        ("comment", "ci-bot", None),
+    ]
+    assert st["timeline"][2]["bot"] and st["timeline"][0]["body"] == "Start"

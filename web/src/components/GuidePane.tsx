@@ -24,18 +24,21 @@ import { storage } from "../lib/storage";
 import { useApp } from "../store";
 import type { Ref, Step } from "../types";
 import { useUI } from "../ui";
+import { ConversationPane } from "./Conversation";
 import { ic, SKIP_ICON, STEP_ICON } from "./icons";
 import { MapCanvas } from "./MapCanvas";
 
 export interface GuidePaneProps {
   onAskStep?: (step: Step) => void;
   onWidth?: (w: number) => void;
+  /** Show the PR's conversation on GitHub instead of the guide. */
+  conversation?: boolean;
 }
 
-export function GuidePane({ onAskStep, onWidth }: GuidePaneProps) {
+export function GuidePane({ onAskStep, onWidth, conversation }: GuidePaneProps) {
   return (
     <div className="guide-wrap">
-      <GuideBody onAskStep={onAskStep} />
+      {conversation ? <ConversationPane /> : <GuideBody onAskStep={onAskStep} />}
       {onWidth && (
         <div
           className="resizer right"
@@ -130,7 +133,7 @@ function MiniMap() {
 }
 
 /** Things a reviewer should know that the diff doesn't show. Risks first; items with refs link to code. */
-function Header() {
+export function Header() {
   const pr = useApp((s) => s.pr)!;
   return (
     <div className="pr">

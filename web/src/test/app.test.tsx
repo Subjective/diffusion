@@ -596,6 +596,65 @@ test("writing: reply, resolve, edit your own, comment from the line popup, and s
   localStorage.removeItem("rv-ask-mode");
 });
 
+test("the conversation: description, reviews with the threads they started, commits run together, and commenting", async () => {
+  const at = Date.now() / 1000;
+  const item = (kind: string, id: string, author: string, ago: number, extra = {}) => ({
+    kind,
+    id,
+    author,
+    avatar: "",
+    body: "",
+    created_at: at - ago,
+    ...extra,
+  });
+  const state = {
+    ...ghState,
+    id: "PR_7",
+    threads: ghState.threads.map((t) =>
+      t.id === "T1" ? { ...t, comments: t.comments.map((c, i) => (i ? c : { ...c, review: "R1" })) } : t,
+    ),
+    timeline: [
+      item("commit", "c1", "sam", 500, { sha: "aaaaaaa1", body: "Start" }),
+      item("commit", "c2", "sam", 400, { sha: "bbbbbbb2", body: "More" }),
+      item("review", "R1", "pk", 300, { state: "changes", body: "One problem" }),
+      item("comment", "C1", "jy", 200, { body: "On it" }),
+    ],
+  };
+  vi.mocked(api.fetchReview).mockResolvedValue(state as never);
+  vi.mocked(api.reviewAction).mockResolvedValue(state as never);
+  useApp.setState({ pr: null });
+  await mount();
+  await waitFor(() => expect(screen.getByTitle("Conversation")).toBeTruthy());
+  fireEvent.click(screen.getByTitle("Conversation"));
+  const tl = () => [...document.querySelectorAll<HTMLElement>(".conv-tl > *")];
+  // the saved review (v1) is older than the PR's events here
+  expect(tl().map((e) => e.querySelector("b, span")!.textContent)).toEqual([
+    "Review v1",
+    "sam pushed 2 commitsaaaaaaa Startbbbbbbb More",
+    "pk",
+    "jy",
+  ]);
+  expect(tl()[2].querySelector(".conv-state")!.textContent).toBe("Changes requested");
+  // a review's threads link to their lines
+  const th = tl()[2].querySelector<HTMLElement>(".conv-th")!;
+  expect(th.querySelector(".where")!.textContent).toBe("session.ts L6–7");
+  fireEvent.click(th);
+  expect(useUI.getState().flash.keys.size).toBeGreaterThan(0);
+  // ⌘↵ comments on the PR
+  const box = document.querySelector<HTMLTextAreaElement>(".conv-box textarea")!;
+  fireEvent.change(box, { target: { value: "Thanks all" } });
+  fireEvent.keyDown(box, { key: "Enter", metaKey: true });
+  await waitFor(() =>
+    expect(vi.mocked(api.reviewAction).mock.calls.at(-1)![1]).toEqual({
+      kind: "comment",
+      pr: "PR_7",
+      body: "Thanks all",
+    }),
+  );
+  useUI.getState().setMode("guide");
+  vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
+});
+
 test("a GitHub PR's top bar: switcher with its stack, checks, reviewers", async () => {
   const failing = {
     name: "test / ubuntu",

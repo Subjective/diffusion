@@ -43,6 +43,8 @@ export function App() {
   const { theme, chatOpen, pr, error, loading, url, load, toggleChat } = useApp();
   const hasMap = useApp((s) => !!s.guide?.views?.length);
   const map = useUI((s) => s.mode === "map") && hasMap;
+  const onGitHub = useReview((s) => !!s.state?.available && !s.state.error);
+  const conv = useUI((s) => s.mode === "pr") && onGitHub;
   const noDiff = useUI((s) => !s.diffOpen);
   const panes = usePaneWidths(chatOpen, map);
 
@@ -211,7 +213,11 @@ export function App() {
           onMouseOver={onOver}
           onClickCapture={onClick}
         >
-          {map ? <MapPane onWidth={panes.setGuide} /> : <GuidePane onAskStep={askStep} onWidth={panes.setGuide} />}
+          {map ? (
+            <MapPane onWidth={panes.setGuide} />
+          ) : (
+            <GuidePane onAskStep={askStep} onWidth={panes.setGuide} conversation={conv} />
+          )}
           <DiffPane extras={badges} onAskComment={askComment} />
           {noDiff && <DiffRail />}
           {chatOpen ? <ChatPanel onWidth={panes.setChat} link={chatLink} /> : <aside className="chat" />}

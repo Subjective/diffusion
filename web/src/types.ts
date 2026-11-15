@@ -181,6 +181,22 @@ export interface ThreadComment {
   body: string;
   created_at: number;
   url: string;
+  /** The review it was posted with. */
+  review?: string | null;
+}
+
+/** One entry in a PR's conversation: a comment, a submitted review, or a pushed commit. */
+export interface TimelineItem {
+  kind: "comment" | "review" | "commit";
+  id: string;
+  author: string;
+  avatar: string;
+  bot?: boolean;
+  body: string;
+  created_at: number;
+  url?: string;
+  state?: "approved" | "changes" | "commented" | "dismissed";
+  sha?: string;
 }
 
 /** A review thread on GitHub: on lines `start`–`end` of one side of `path`, on the whole file, or outdated. */
@@ -204,6 +220,9 @@ export interface ReviewState {
   available: boolean;
   error?: string;
   viewer?: string;
+  /** The PR's GitHub node id (for commenting on it). */
+  id?: string;
+  timeline?: TimelineItem[];
   /** The PR's author (who can't approve or request changes on it). */
   author?: string;
   head_sha?: string;
