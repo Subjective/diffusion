@@ -2324,18 +2324,23 @@ tr.th-row > td {
 }
 
 /* Editing your comments, review summaries, and the title and description of your PR */
-.conv-desc {
-  position: relative;
-}
-.conv-desc > .conv-acts {
-  position: absolute;
-  top: -4px;
-  right: 0;
+.pr .meta .pr-acts {
+  display: inline-flex;
+  margin: -4px 0 -4px auto;
   opacity: 0;
 }
-.conv-desc:hover > .conv-acts,
-.conv-desc > .conv-acts:focus-within {
+.conv:has(> .pr:hover, > .conv-desc:hover) .pr-acts,
+.pr .meta .pr-acts:focus-within {
   opacity: 1;
+}
+/* right-aligned, so the pane's edge doesn't cut the tip off */
+.pr-acts [data-tip]::after {
+  left: auto;
+  right: 0;
+  transform: translateY(2px);
+}
+.pr-acts [data-tip]:hover::after {
+  transform: none;
 }
 .conv-c .h .conv-acts {
   display: inline-flex;

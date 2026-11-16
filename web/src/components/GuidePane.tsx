@@ -14,7 +14,7 @@ import {
   MessageCircle,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { layoutView } from "../lib/layout";
 import { readingOrder, refsOf, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { Inline } from "../lib/md";
@@ -134,7 +134,8 @@ function MiniMap() {
 }
 
 /** Things a reviewer should know that the diff doesn't show. Risks first; items with refs link to code. */
-export function Header() {
+/** The PR's title and stats. ``actions``: buttons at the end of the stats row, shown on hover. */
+export function Header({ actions }: { actions?: ReactNode } = {}) {
   const pr = useApp((s) => s.pr)!;
   return (
     <div className="pr">
@@ -163,6 +164,7 @@ export function Header() {
         </span>
         <span className="n-add">+{pr.additions}</span>
         <span className="n-del">−{pr.deletions}</span>
+        {actions && <span className="pr-acts">{actions}</span>}
       </div>
     </div>
   );

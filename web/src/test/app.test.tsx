@@ -622,6 +622,7 @@ test("the conversation: description, reviews with the threads they started, comm
   const state = {
     ...ghState,
     id: "PR_7",
+    author: "jy",
     threads: ghState.threads.map((t) =>
       t.id === "T1" ? { ...t, comments: t.comments.map((c, i) => (i ? c : { ...c, review: "R1" })) } : t,
     ),
@@ -677,6 +678,13 @@ test("the conversation: description, reviews with the threads they started, comm
       body: "On it now",
     }),
   );
+  // your own PR's title and description are edited from the header, not over the description's text
+  expect(document.querySelector(".conv-desc [data-tip]")).toBeNull();
+  fireEvent.click(document.querySelector<HTMLElement>('.pr .pr-acts [data-tip="Edit title and description"]')!);
+  expect(document.querySelector<HTMLInputElement>(".conv-title-in")!.value).toBe(useApp.getState().pr!.title);
+  expect(document.querySelector(".pr .pr-acts")).toBeNull();
+  fireEvent.keyDown(document.querySelector(".conv-desc textarea")!, { key: "Escape" });
+  expect(document.querySelector(".pr .pr-acts")).toBeTruthy();
   useUI.getState().setMode("guide");
   vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
 });

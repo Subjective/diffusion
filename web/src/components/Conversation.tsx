@@ -76,6 +76,7 @@ export function ConversationPane() {
     }
     return m;
   }, [state]);
+  const [editingPr, setEditingPr] = useState(false);
   // A title or description edited here or on GitHub since the PR loaded.
   useEffect(() => {
     const p = useApp.getState().pr;
@@ -83,6 +84,7 @@ export function ConversationPane() {
       useApp.setState({ pr: { ...p, title: state.title, body: state.body ?? "" } });
   }, [state]);
   if (!pr) return <aside className="guide" />;
+  const own = !!state?.viewer && state.viewer === state.author;
   const jump = (t: Thread) => {
     const keys = threadKeys(t, idx);
     useReview.getState().expand(t.id);
@@ -90,9 +92,24 @@ export function ConversationPane() {
   };
   return (
     <aside className="guide conv">
-      <Header />
+      <Header
+        actions={
+          own &&
+          state?.id &&
+          !editingPr && (
+            <button
+              type="button"
+              className="icon-btn sm"
+              data-tip="Edit title and description"
+              onClick={() => setEditingPr(true)}
+            >
+              {ic(Pencil, 13)}
+            </button>
+          )
+        }
+      />
       {!hasGuide && <GenerateCard url={pr.url} />}
-      <Description own={!!state?.viewer && state.viewer === state.author} prId={state?.id} />
+      <Description own={own} prId={state?.id} editing={editingPr} setEditing={setEditingPr} />
       <div className="conv-tl">
         {entries.map((e) =>
           e.kind === "guide" ? (
@@ -207,11 +224,23 @@ function Editor({
 }
 
 /** The PR's description; its author can edit it and the title. */
-function Description({ own, prId }: { own: boolean; prId?: string }) {
+function Description({
+  own,
+  prId,
+  editing,
+  setEditing,
+}: {
+  own: boolean;
+  prId?: string;
+  editing: boolean;
+  setEditing: (on: boolean) => void;
+}) {
   const pr = useApp((s) => s.pr)!;
   const error = useReview((s) => (s.errorAt === "pr" ? s.error : null));
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(pr.title);
+  useEffect(() => {
+    if (editing) setTitle(pr.title);
+  }, [editing, pr.title]);
   if (editing && prId)
     return (
       <section className="sec conv-desc">
@@ -241,21 +270,6 @@ function Description({ own, prId }: { own: boolean; prId?: string }) {
   if (!pr.body.trim() && !own) return null;
   return (
     <section className="sec conv-desc">
-      {own && prId && (
-        <span className="conv-acts">
-          <button
-            type="button"
-            className="icon-btn sm"
-            data-tip="Edit"
-            onClick={() => {
-              setTitle(pr.title);
-              setEditing(true);
-            }}
-          >
-            {ic(Pencil, 13)}
-          </button>
-        </span>
-      )}
       {pr.body.trim() ? <Markdown text={pr.body} /> : <span className="conv-none">No description</span>}
     </section>
   );
