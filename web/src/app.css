@@ -2109,9 +2109,23 @@ tr.th-row > td {
   color: var(--muted);
 }
 .spin-slow,
+/* The mark spins; its tooltip stays put, ending at the mark and cut short if the step is long. */
 .ib-r .gen.run {
   display: inline-grid;
+}
+.ib-r .gen.run > * {
   animation: spin 2.4s linear infinite;
+}
+.ib-r .gen.run::after {
+  left: auto;
+  right: -6px;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateY(2px);
+}
+.ib-r .gen.run:hover::after {
+  transform: none;
 }
 .write-doing {
   color: var(--subtle);
