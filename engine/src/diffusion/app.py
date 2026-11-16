@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import json
 import os
+import shutil
 import time
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
@@ -55,6 +56,7 @@ class GenerateReq(BaseModel):
     focus: str = ""
     # The mode picked in the chat: the run becomes the guide chat's session.
     mode: Mode = "default"
+    harness: Literal["claude-code", "codex"] = "claude-code"
 
 
 class GenerateAnswer(BaseModel):
@@ -306,22 +308,41 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             prep = await get_prepared(req.url)
         finally:
             starting.discard(key)
-        # Claude Code (bundled with its SDK) runs the review skill, from the reviewer's installed plugin.
+        # The agent runs the review skill from the reviewer's installed plugin. Claude Code comes bundled with its SDK;
+        # Codex is the reviewer's own CLI.
         mode: Mode = (
             "default" if req.mode == "read-only" else req.mode
-        )  # a session of its own, so the skill loads
+        )  # a session of its own: the skill loads
+        cache = Path(d().cfg.cache_dir)
         request = generate_request(
-            req.url, prep.checkout.worktree, focus=req.focus, mode=mode, approve=jobs.approver(key)
-        )
+            req.url, prep.checkout.worktree, focus=req.focus, mode=mode, approve=jobs.approver(key),
+            harness=req.harness, writable=[cache, cache.parent],  # Diffusion's cache, and uv's beside it
+        )  # fmt: skip
         request.modes = jobs.modes(key)
-        runner = d().runner_for("claude-code")
+        runner = d().runner_for(req.harness)
         task = asyncio.create_task(
-            jobs.run(key, lambda: runner(request), request.prompt, lambda t: d().store.saved_at(key) >= t)
+            jobs.run(
+                key,
+                lambda: runner(request),
+                request.prompt,
+                lambda t: d().store.saved_at(key) >= t,
+                req.harness,
+            )
         )
         tasks[key] = task
         task.add_done_callback(lambda t: tasks.pop(key, None) if tasks.get(key) is t else None)
         await asyncio.sleep(0)  # let it register as running
         return jobs.get(key)
+
+    @app.get("/api/generate/harnesses")
+    async def generate_harnesses() -> dict:
+        """The agents that can write a review from here: Claude Code (bundled), and Codex when its CLI is installed."""
+        return {
+            "harnesses": [
+                "claude-code",
+                *(["codex"] if shutil.which(d().cfg.cli_path("codex") or "codex") else []),
+            ]
+        }
 
     @app.get("/api/generate")
     async def generating(url: str) -> dict:

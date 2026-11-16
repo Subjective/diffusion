@@ -56,6 +56,7 @@ vi.mock("../api", () => ({
   startGenerate: vi.fn(async () => ({ state: "running", doing: "" })),
   stopGenerate: vi.fn(async () => ({ state: "stopped" })),
   answerGenerate: vi.fn(async () => {}),
+  fetchGenerateHarnesses: vi.fn(async () => ["claude-code", "codex"]),
   reviewAction: vi.fn(async () => ({ available: true, viewer: "jy", threads: [] })),
   fetchInbox: vi.fn(async () => ({
     login: "jy",
@@ -181,7 +182,7 @@ test("home's pull requests: grouped like GitHub, stacks as one row, remembered, 
   // a PR without a review can have one written from here; the row shows the agent at work
   const plan = screen.getByText("Plan mode").closest<HTMLElement>(".ib-r")!;
   fireEvent.click(plan.querySelector('[aria-label="Write a review"]')!);
-  expect(api.startGenerate).toHaveBeenCalledWith("https://github.com/acme/web/pull/47");
+  expect(api.startGenerate).toHaveBeenCalledWith("https://github.com/acme/web/pull/47", "", "default", "claude-code");
   await waitFor(() => expect(plan.querySelector(".gen.run")).toBeTruthy());
   expect(useApp.getState().url).not.toBe("https://github.com/acme/web/pull/47"); // the row didn't open
 
@@ -907,6 +908,8 @@ test("no guide yet: write one from here, watch it in the chat, stop it, and see 
   fireEvent.change(focus, { target: { value: "the refresh timer" } });
   fireEvent.click(document.querySelector(".gen-h")!);
   expect(screen.getByText("Copy command")).toBeTruthy();
+  // Codex too, when it's installed
+  await waitFor(() => expect(screen.getByRole("menuitemradio", { name: /Codex/ })).toBeTruthy());
   fireEvent.click(document.querySelector(".gen-h")!);
   // Generate runs it in the background; the chat shows the run as it goes
   const running = {
@@ -920,7 +923,7 @@ test("no guide yet: write one from here, watch it in the chat, stop it, and see 
   vi.mocked(api.fetchGenerate).mockResolvedValue(running);
   vi.mocked(api.startGenerate).mockResolvedValue(running);
   fireEvent.keyDown(focus, { key: "Enter" });
-  expect(api.startGenerate).toHaveBeenCalledWith(payload.pr.url, "the refresh timer", "default");
+  expect(api.startGenerate).toHaveBeenCalledWith(payload.pr.url, "the refresh timer", "default", "claude-code");
   await waitFor(() => expect(document.querySelector(".gen-clock")?.textContent).toBe("1:15"));
   expect(document.querySelector(".chat .bubble")!.textContent).toBe(
     `/diffusion:review ${payload.pr.repo}#${payload.pr.number} the refresh timer`,

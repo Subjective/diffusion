@@ -940,6 +940,24 @@ async def test_a_review_being_written_asks_in_the_mode_picked(setup):
     assert r.status_code == 404
 
 
+async def test_codex_can_write_the_review(setup):
+    client, runners, deps, _ = setup
+    seen = []
+
+    async def agent(req):
+        seen.append(req.prompt)
+        yield DoneEvent(turns=1, cost_usd=None, is_error=False, session_id="th_1")
+
+    runners["chat"] = agent
+    deps.store.saved_at = lambda key: 9e12
+    job = (await client.post("/api/generate", json={"url": URL, "harness": "codex"})).json()
+    assert job["harness"] == "codex"
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert seen == [f"$diffusion:review {URL}"]
+    assert (await client.get("/api/generate/harnesses")).json()["harnesses"][0] == "claude-code"
+
+
 async def test_a_run_that_submits_nothing_shows_as_failed(setup):
     client, runners, _, _ = setup
 

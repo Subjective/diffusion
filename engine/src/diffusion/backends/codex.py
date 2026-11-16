@@ -45,6 +45,11 @@ def thread_params(req: AgentRequest) -> dict:
         "approvalPolicy": "on-request" if req.approve and req.mode in ASKS else "never",
         "config": {"web_search": "disabled"},
     }
+    if p["sandbox"] == "workspace-write" and (req.writable_roots or req.network):
+        p["config"]["sandbox_workspace_write"] = {
+            "writable_roots": [str(r) for r in req.writable_roots],
+            "network_access": req.network,
+        }
     if req.model:
         p["model"] = req.model
     return p
@@ -121,14 +126,19 @@ async def skill_inputs(srv: AppServer, req: AgentRequest, prompt: str) -> list[d
             return out
         for entry in res.get("data") or []:
             for sk in entry.get("skills") or []:
-                if sk.get("name") == head[1:] and sk.get("path"):
+                # A plugin's skill is named as `$plugin:skill`; Codex may list it by its own name.
+                name = str(sk.get("name") or "")
+                plugin, _, short = head[1:].rpartition(":")
+                hit = name == head[1:] or (plugin and name == short and plugin in str(sk.get("path") or ""))
+                if hit and sk.get("path"):
                     return [*out, {"type": "skill", "name": sk["name"], "path": sk["path"]}]
     return out
 
 
 def compose_prompt(req: AgentRequest) -> str:
     # A resumed session already has the system prompt; a forked one is someone else's session and doesn't.
-    return f"{req.system_prompt}\n\n{req.prompt}" if not req.resume or req.fork or req.adopt else req.prompt
+    fresh = not req.resume or req.fork or req.adopt
+    return f"{req.system_prompt}\n\n{req.prompt}" if fresh and req.system_prompt else req.prompt
 
 
 def codex_runner(cli_path: str | None = None) -> Runner:
@@ -143,7 +153,7 @@ def codex_runner(cli_path: str | None = None) -> Runner:
                 return None
             return {"decision": CODEX_DECISION[await req.approve(*ask)]}
 
-        async with AppServer(exe, req.cwd, on_request=on_request) as srv:
+        async with AppServer(exe, req.cwd, on_request=on_request, env=req.env) as srv:
             try:
                 params = thread_params(req)
                 if req.resume and req.fork:

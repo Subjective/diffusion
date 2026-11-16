@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import itertools
 import json
+import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -32,8 +33,10 @@ class AppServer:
         cwd: Path | None = None,
         args: list[str] | None = None,
         on_request: Callable[[str, dict], Awaitable[dict | None]] | None = None,
+        env: dict[str, str] | None = None,
     ):
         self.exe, self.cwd, self.args = exe, cwd, args or []
+        self.env = {**os.environ, **env} if env else None
         self.on_request = on_request
         # The items the server has started, by id, as of the latest message read (an approval names its item).
         self.items: dict[str, dict] = {}
@@ -49,6 +52,7 @@ class AppServer:
         self._proc = await asyncio.create_subprocess_exec(
             self.exe, "app-server", *self.args,
             cwd=str(self.cwd) if self.cwd else None,
+            env=self.env,
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             limit=PROTOCOL_LIMIT,
         )  # fmt: skip

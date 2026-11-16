@@ -143,6 +143,10 @@ class AgentRequest:
     env: dict[str, str] = field(default_factory=dict)
     # Modes picked while it runs, to switch the running session to (as Shift+Tab does). Only Claude Code reads it.
     modes: asyncio.Queue[Mode] | None = None
+    # Beyond the checkout, where a sandboxed agent (Codex) may write, and whether it may reach the network, when its
+    # mode lets it write: a review's submit writes Diffusion's cache and may fetch the package.
+    writable_roots: list[Path] = field(default_factory=list)
+    network: bool = False
 
     @property
     def native(self) -> bool:

@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { type MouseEvent, type ReactNode, useMemo, useState } from "react";
+import { useChat } from "../chat";
 import { storage } from "../lib/storage";
 import { ago, dateText } from "../lib/time";
 import { useInbox } from "../review";
@@ -188,7 +189,7 @@ function GuideMark({ p }: { p: InboxPR }) {
         aria-label="Write a review"
         onClick={(e) => {
           stop(e);
-          void useInbox.getState().generate(p.url);
+          void useInbox.getState().generate(p.url, useChat.getState().mode);
         }}
       >
         {job?.state === "failed" ? ic(CircleAlert, 15) : <HarnessMark harness="claude-code" size={15} />}

@@ -9,18 +9,17 @@ import { useApp } from "../store";
 import type { GenerateJob } from "../types";
 import { HarnessMark, harnessName, ic } from "./icons";
 
-/** The agents that can write a review from here (the review skill comes from the reviewer's Claude Code plugin). */
-const HARNESSES = ["claude-code"] as const;
 const NONE: GenerateJob = { state: "none" };
 
-export const reviewCommand = (url: string, focus = "") =>
-  `/diffusion:review ${url} ${focus.split(/\s+/).join(" ")}`.trim();
+/** The review skill as each agent's composer names it. */
+export const reviewCommand = (url: string, focus = "", harness = "claude-code") =>
+  `${harness === "codex" ? "$" : "/"}diffusion:review ${url} ${focus.split(/\s+/).join(" ")}`.trim();
 
 /** The agent writing this PR's review, while there's no review yet to say whose it is. */
 export function useGeneratingHarness(): string | null {
   const url = useApp((s) => (s.pr && !s.pr.local && !s.guide ? s.pr.url : null));
   const job = useGenerate((s) => (url ? s.jobs[url] : undefined));
-  return job && job.state !== "none" ? HARNESSES[0] : null;
+  return job && job.state !== "none" ? (job.harness ?? "claude-code") : null;
 }
 
 /** Polls the run while it goes; the guide shows up on its own when the agent submits it. */
@@ -39,7 +38,8 @@ export function useGenerateJob(url: string) {
 export function GenerateCard({ url }: { url: string }) {
   const job = useGenerateJob(url);
   const [focus, setFocus] = useState("");
-  const [harness, setHarness] = useState<string>(HARNESSES[0]);
+  const harness = useGenerate((s) => s.harness);
+  useEffect(() => void useGenerate.getState().loadHarnesses(), []);
   if (job.state === "running") return <Writing url={url} job={job} />;
   const go = () => {
     useApp.getState().toggleChat(true);
@@ -63,7 +63,11 @@ export function GenerateCard({ url }: { url: string }) {
         }}
       />
       <div className="gen-f">
-        <HarnessPicker harness={harness} onPick={setHarness} command={reviewCommand(url, focus)} />
+        <HarnessPicker
+          harness={harness}
+          onPick={(h) => useGenerate.getState().pick(h)}
+          command={reviewCommand(url, focus, harness)}
+        />
         <button type="button" className="gen-go" onClick={go}>
           <HarnessMark harness={harness} size={14} />
           Generate
@@ -85,6 +89,7 @@ function HarnessPicker({
   command: string;
 }) {
   const [open, setOpen, ref] = usePopover();
+  const harnesses = useGenerate((s) => s.harnesses);
   const [copied, setCopied] = useState(false);
   return (
     <div className="pop-anchor" ref={ref}>
@@ -95,7 +100,7 @@ function HarnessPicker({
       </button>
       {open && (
         <div className="gen-menu" role="menu">
-          {HARNESSES.map((h) => (
+          {harnesses.map((h) => (
             <button
               key={h}
               type="button"

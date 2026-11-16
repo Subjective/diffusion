@@ -3,6 +3,7 @@ import { create } from "zustand";
 import {
   answerGenerate,
   fetchGenerate,
+  fetchGenerateHarnesses,
   fetchInbox,
   fetchReview,
   type ReviewAct,
@@ -167,7 +168,8 @@ interface InboxStore {
   inbox: Inbox | null;
   load(refresh?: boolean): Promise<void>;
   /** Write a review of a PR from here; the inbox shows its progress until it's saved. */
-  generate(url: string): Promise<void>;
+  /** ``mode``: the chat's permission mode, for the run to start in. */
+  generate(url: string, mode?: string): Promise<void>;
 }
 
 export const useInbox = create<InboxStore>((set, get) => ({
@@ -179,14 +181,14 @@ export const useInbox = create<InboxStore>((set, get) => ({
       set({ inbox: get().inbox ?? { login: "", prs: [], error: String((e as Error).message ?? e) } });
     }
   },
-  async generate(url) {
+  async generate(url, mode) {
     const mark = (generating: InboxPR["generating"]) => {
       const inbox = get().inbox;
       if (inbox) set({ inbox: { ...inbox, prs: inbox.prs.map((p) => (p.url === url ? { ...p, generating } : p)) } });
     };
     mark({ state: "running" });
     try {
-      mark(await startGenerate(url));
+      mark(await startGenerate(url, "", mode, useGenerate.getState().harness));
     } catch (e) {
       mark({ state: "failed", error: String((e as Error).message ?? e) });
     }
@@ -196,6 +198,11 @@ export const useInbox = create<InboxStore>((set, get) => ({
 /** Reviews being written from the review page, by PR URL: shared by its card and the chat, which shows the run. */
 interface GenerateStore {
   jobs: Record<string, GenerateJob>;
+  /** The agents that can write a review here, and the one picked (remembered). */
+  harnesses: string[];
+  harness: string;
+  loadHarnesses(): Promise<void>;
+  pick(harness: string): void;
   load(url: string): Promise<void>;
   /** ``mode``: the chat's permission mode, which the run (the guide chat's session to be) starts in. */
   start(url: string, focus: string, mode?: string): Promise<void>;
@@ -210,6 +217,20 @@ export const useGenerate = create<GenerateStore>((set, get) => {
   const fail = (url: string, e: unknown) => put(url, { state: "failed", error: String((e as Error).message ?? e) });
   return {
     jobs: {},
+    harnesses: ["claude-code"],
+    harness: storage.get("rv-gen-harness", "claude-code"),
+    async loadHarnesses() {
+      try {
+        const harnesses = await fetchGenerateHarnesses();
+        set({ harnesses, harness: harnesses.includes(get().harness) ? get().harness : harnesses[0] });
+      } catch {
+        // keep Claude Code
+      }
+    },
+    pick(harness) {
+      storage.set("rv-gen-harness", harness);
+      set({ harness });
+    },
     async load(url) {
       try {
         put(url, await fetchGenerate(url));
@@ -218,9 +239,10 @@ export const useGenerate = create<GenerateStore>((set, get) => {
       }
     },
     async start(url, focus, mode) {
-      put(url, { state: "running", started_at: Date.now() / 1000, log: [], text: "" });
+      const { harness } = get();
+      put(url, { state: "running", started_at: Date.now() / 1000, log: [], text: "", harness });
       try {
-        put(url, await startGenerate(url, focus, mode));
+        put(url, await startGenerate(url, focus, mode, harness));
       } catch (e) {
         fail(url, e);
       }

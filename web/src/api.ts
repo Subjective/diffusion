@@ -128,14 +128,26 @@ export async function reviewAction(url: string, action: ReviewAct): Promise<Revi
 }
 
 /** Start writing a review of the PR with the reviewer's agent, in the background. */
-export async function startGenerate(url: string, focus = "", mode = "default"): Promise<GenerateJob> {
+export async function startGenerate(
+  url: string,
+  focus = "",
+  mode = "default",
+  harness = "claude-code",
+): Promise<GenerateJob> {
   const res = await fetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, focus, mode }),
+    body: JSON.stringify({ url, focus, mode, harness }),
   });
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
+}
+
+/** The agents that can write a review from here. */
+export async function fetchGenerateHarnesses(): Promise<string[]> {
+  const res = await fetch("/api/generate/harnesses");
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()).harnesses;
 }
 
 /** Switch the review being written to another mode; returns the waiting asks that went ahead. */

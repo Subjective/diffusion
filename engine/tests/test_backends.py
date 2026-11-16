@@ -99,7 +99,7 @@ for line in sys.stdin:
     elif method in ("thread/start", "thread/resume", "thread/fork"):
         send({"id": rid, "result": {"thread": {"id": p.get("threadId", "th_new") + ("_fork" if method == "thread/fork" else "")}}})
     elif method == "skills/list":
-        send({"id": rid, "result": {"data": [{"cwd": ".", "skills": [{"name": "release", "description": "d", "path": "/s/release/SKILL.md", "enabled": True}]}]}})
+        send({"id": rid, "result": {"data": [{"cwd": ".", "skills": [{"name": "release", "description": "d", "path": "/s/release/SKILL.md", "enabled": True}, {"name": "review", "description": "r", "path": "/p/diffusion/skills/review/SKILL.md", "enabled": True}]}]}})
     elif method == "turn/start":
         send({"id": rid, "result": {"turn": {"id": "tu_1"}}})
         for n in script["turn"]:
@@ -184,6 +184,26 @@ async def test_codex_runs_a_skill_by_name(tmp_path, repo):
     await collect(codex_runner(str(exe))(AgentRequest("s", "$release cut 1.2", "", repo, resume="th_1")))
     start = next(c for c in calls(tmp_path) if c["method"] == "turn/start")["params"]["input"]
     assert start[1] == {"type": "skill", "name": "release", "path": "/s/release/SKILL.md"}
+
+
+async def test_codex_writes_a_review_with_the_plugins_skill_and_room_to_submit(tmp_path, repo):
+    from diffusion.generate import generate_request
+
+    exe = fake_app_server(
+        tmp_path, [{"method": "turn/completed", "params": {"turn": {"id": "tu_1", "status": "completed"}}}]
+    )
+    req = generate_request(
+        "https://github.com/a/b/pull/1", repo, mode="auto", harness="codex", writable=[tmp_path / "cache"]
+    )
+    await collect(codex_runner(str(exe))(req))
+    sent = {c["method"]: c.get("params") for c in calls(tmp_path) if "method" in c}
+    # the command alone (no system prompt ahead of it), with the plugin's skill named
+    assert sent["turn/start"]["input"] == [
+        {"type": "text", "text": "$diffusion:review https://github.com/a/b/pull/1", "text_elements": []},
+        {"type": "skill", "name": "review", "path": "/p/diffusion/skills/review/SKILL.md"},
+    ]
+    box = sent["thread/start"]["config"]["sandbox_workspace_write"]
+    assert str(tmp_path / "cache") in box["writable_roots"] and box["network_access"] is True
 
 
 async def test_codex_takes_a_steered_message_into_the_running_turn(tmp_path, repo):

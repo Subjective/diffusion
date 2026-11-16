@@ -8,6 +8,7 @@ don't allow is put to the reviewer, in the chat, as in any guide chat turn."""
 from __future__ import annotations
 
 import asyncio
+import tempfile
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -26,14 +27,16 @@ from .agent import (
     allowed_in,
 )
 
-COMMAND = "/diffusion:review"
+# The review skill as each agent's composer names it.
+COMMANDS = {"claude-code": "/diffusion:review", "codex": "$diffusion:review"}
+COMMAND = COMMANDS["claude-code"]
 NOT_SUBMITTED = "It finished without submitting a review."
 LOG_MAX = 400  # steps kept for the chat to show while it runs
 
 
-def generate_prompt(url: str, focus: str = "") -> str:
+def generate_prompt(url: str, focus: str = "", harness: str = "claude-code") -> str:
     """What the reviewer would type: the command, the PR, and what to focus on, if anything."""
-    return f"{COMMAND} {url} {' '.join(focus.split())}".strip()
+    return f"{COMMANDS[harness]} {url} {' '.join(focus.split())}".strip()
 
 
 def generate_request(
@@ -43,10 +46,13 @@ def generate_request(
     focus: str = "",
     mode: Mode = "default",
     approve: Approver | None = None,
+    harness: str = "claude-code",
+    writable: list[Path] | None = None,
 ) -> AgentRequest:
+    """``writable``: where the submit writes (Diffusion's cache, uv's), for an agent that sandboxes its commands."""
     return AgentRequest(
         system_prompt="",
-        prompt=generate_prompt(url, focus),
+        prompt=generate_prompt(url, focus, harness),
         model=model,
         cwd=worktree,
         max_turns=200,
@@ -56,6 +62,8 @@ def generate_request(
         # Published versions before DIFFUSION_NO_BROWSER still use Python's webbrowser, which runs $BROWSER: make
         # that a no-op too.
         env={"DIFFUSION_NO_BROWSER": "1", "BROWSER": "true"},
+        writable_roots=[*(writable or []), Path(tempfile.gettempdir())],
+        network=True,
     )
 
 
@@ -121,12 +129,13 @@ class Jobs:
         events: Callable[[], AsyncIterator[Event]],
         prompt: str = "",
         submitted: Callable[[float], bool] | None = None,
+        harness: str = "claude-code",
     ) -> None:
         """Run the agent to the end. ``submitted(since)`` says whether a guide was saved since the start: a run that
         ends without one failed, whatever the agent said."""
         job = self.jobs[key] = {
             "state": "running", "started_at": time.time(), "prompt": prompt, "doing": "", "error": None,
-            "log": [], "text": "", "asks": [],
+            "log": [], "text": "", "asks": [], "harness": harness,
         }  # fmt: skip
         log: list = job["log"]
         try:
