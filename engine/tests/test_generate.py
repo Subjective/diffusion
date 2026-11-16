@@ -93,7 +93,10 @@ def test_the_agent_may_write_to_any_of_the_temp_directories(tmp_path):
     ok = generate_approver(tmp_path / "wt")
 
     def say(path):
-        return asyncio.run(ok("Write", "", {"file_path": path}))
+        async def ask():
+            return await ok("Write", "", {"file_path": path})
+
+        return asyncio.run(ask())
 
     assert say("/tmp/guide.json") == "allow"
     assert say(str(Path(tempfile.gettempdir()) / "guide.json")) == "allow"
