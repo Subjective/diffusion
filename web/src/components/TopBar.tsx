@@ -2,6 +2,7 @@ import {
   ArrowUpRight,
   Check,
   ChevronDown,
+  ChevronUp,
   CircleCheck,
   CircleDashed,
   CircleX,
@@ -13,6 +14,7 @@ import {
   ListOrdered,
   LoaderCircle,
   Map as MapIcon,
+  MessageSquare,
   Moon,
   Search,
   Sun,
@@ -211,7 +213,8 @@ const VERDICTS: [Verdict, string][] = [
 function ReviewChip() {
   const state = useReview((s) => s.state);
   const pending = useReview((s) => s.pending);
-  const { submit, busy } = useReview();
+  const { submit, editPending, busy } = useReview();
+  const [listed, setListed] = useState(false);
   const error = useReview((s) => (s.errorAt === "review" ? s.error : null));
   const [open, setOpen, ref] = usePopover();
   const body = useReview((s) => s.summary);
@@ -228,6 +231,17 @@ function ReviewChip() {
       setOpen(false);
     }
   };
+  const jump = (p: (typeof pending)[number]) => {
+    setOpen(false);
+    const rows = [...document.querySelectorAll<HTMLElement>(`tr.ln[data-file="${CSS.escape(p.path)}"]`)].filter((r) => {
+      const n = Number(p.side === "new" ? r.dataset.new : r.dataset.old);
+      return n >= p.start && n <= p.end;
+    });
+    useUI.getState().focus(
+      rows.map((r) => r.dataset.rk!),
+      [p.path],
+    );
+  };
   return (
     <div className="pop-anchor" ref={ref}>
       <button
@@ -241,6 +255,37 @@ function ReviewChip() {
       </button>
       {open && (
         <div className="rv-pop" role="dialog" aria-label="Review">
+          {pending.length > 0 && (
+            <div className={`rv-pend${listed ? " on" : ""}`}>
+              <button type="button" className="rv-pend-h" aria-expanded={listed} onClick={() => setListed(!listed)}>
+                {ic(MessageSquare, 14)}
+                <span className="grow">
+                  {pending.length} comment{pending.length === 1 ? "" : "s"}
+                </span>
+                {ic(listed ? ChevronUp : ChevronDown, 14)}
+              </button>
+              {listed &&
+                pending.map((p) => (
+                  <div key={p.id} className="rv-i">
+                    <button type="button" className="rv-go" onClick={() => jump(p)}>
+                      <span className="x">{p.body}</span>
+                      <span className="where">
+                        {p.path.split("/").pop()}
+                        <span>{p.start === p.end ? `L${p.end}` : `L${p.start}–${p.end}`}</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn sm"
+                      aria-label="Remove"
+                      onClick={() => editPending(p.id, "")}
+                    >
+                      {ic(X, 13)}
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
           <textarea
             className="rv-body"
             rows={3}
