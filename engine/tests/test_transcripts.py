@@ -1,6 +1,6 @@
 import json
 
-from diffusion.chat_agent import SHOW_REMINDER
+from diffusion.chat_agent import TURN_NOTE
 from diffusion.transcripts import find_transcript, merge, read_claude, read_codex, session_turns
 
 
@@ -187,17 +187,17 @@ def test_merge_keeps_diffusions_own_record_of_its_turns():
     def t(text):
         return {"questions": [{"n": 1, "text": text}], "answers": {}}
 
-    session = [t("terminal"), t(f"About `a.ts:3`\nwhy?\n\n{SHOW_REMINDER}"), t("terminal again")]
+    session = [t("terminal"), t(f"About `a.ts:3`\nwhy?\n\n{TURN_NOTE}"), t("terminal again")]
     session[1]["trace"] = [{"tool": "post_message", "id": "t1", "failed": True}]
-    stored = [{**t("why?"), "shows": ["x"], "trace": [{"tool": "post_message"}]}, t("still streaming")]
-    out = merge(session, stored, lambda text: text.endswith(SHOW_REMINDER))
+    stored = [{**t("why?"), "guide_version": 2, "trace": [{"tool": "post_message"}]}, t("still streaming")]
+    out = merge(session, stored, lambda text: text.endswith(TURN_NOTE))
     assert [q["questions"][0]["text"] for q in out] == [
         "terminal",
         "why?",
         "terminal again",
         "still streaming",
     ]
-    assert out[1]["shows"] == ["x"] and out[1]["trace"][0]["failed"]
+    assert out[1]["guide_version"] == 2 and out[1]["trace"][0]["failed"]
     assert merge(None, stored, lambda _: False) == stored
 
 
@@ -215,8 +215,8 @@ def test_merge_keeps_a_steered_message_in_the_turn_it_joined():
 
     # the transcript has the steered message as a prompt of its own
     session = [
-        t(f"why?\n\n{SHOW_REMINDER}", [{"tool": "Read a"}]),
-        t(f"and b?\n\n{SHOW_REMINDER}"),
+        t(f"why?\n\n{TURN_NOTE}", [{"tool": "Read a"}]),
+        t(f"and b?\n\n{TURN_NOTE}"),
         t("later"),
     ]
     mine = {
@@ -225,7 +225,7 @@ def test_merge_keeps_a_steered_message_in_the_turn_it_joined():
         "steers": 1,
         "trace": [{"tool": "Read a"}, {"steered": 1}, {"tool": "Read b"}],
     }
-    out = merge(session, [mine], lambda text: text.endswith(SHOW_REMINDER))
+    out = merge(session, [mine], lambda text: text.endswith(TURN_NOTE))
     assert [len(x["questions"]) for x in out] == [2, 1]
     assert out[0]["trace"] == mine["trace"] and out[1]["questions"][0]["text"] == "later"
 

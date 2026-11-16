@@ -66,7 +66,7 @@ def _codex_entries(path: Path, limit: int | None = None) -> list[dict]:
 
 def _turn(text: str) -> dict:
     return {"questions": [{"n": 0, "text": text, "anchor": None}], "answers": {"0": ""}, "tools": [],
-            "trace": [], "shows": [], "status": "done", "source": "session"}  # fmt: skip
+            "trace": [], "status": "done", "source": "session"}  # fmt: skip
 
 
 _TAG = re.compile(r"^<([A-Za-z][\w-]*)[\s>]")
@@ -291,9 +291,9 @@ def session_turns(harness: str, session: str, home: Path | None = None) -> list[
 
 
 def merge(session: list[dict] | None, stored: list[dict], asked_here) -> list[dict]:
-    """The transcript's turns, with each one Diffusion asked replaced by its own record (anchors, shown code, guide
-    versions). ``asked_here(text)`` says whether a transcript prompt came from Diffusion. Stored turns the
-    transcript doesn't have yet (one still streaming) go last; ones it no longer has (rewound away) are dropped."""
+    """The transcript's turns, with each one Diffusion asked replaced by its own record (anchors, guide versions).
+    ``asked_here(text)`` says whether a transcript prompt came from Diffusion. Stored turns the transcript doesn't
+    have yet (one still streaming) go last; ones it no longer has (rewound away) are dropped."""
     if session is None:
         return stored
     rest = list(enumerate(stored))
