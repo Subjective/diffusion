@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { fetchGuide, fetchPR, fetchVersions } from "./api";
 import { storage } from "./lib/storage";
+import { useReview } from "./review";
 import type { FileDiff, Guide, GuideVersion, PRMeta } from "./types";
 
 interface State {
@@ -74,6 +75,7 @@ export const useApp = create<State>((set, get) => ({
     if (!url) return;
     const v = url === get().url ? versionParam() : null;
     set({ url, loading: true, error: null });
+    void useReview.getState().load(url);
     try {
       let data = await fetchPR(url, v);
       if (!data.guide && v && data.versions.length) data = await fetchPR(url); // a version of an older head

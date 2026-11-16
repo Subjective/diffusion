@@ -51,6 +51,7 @@ vi.mock("../api", () => ({
       updated_at: Date.now() / 1000 - 40 * 86400,
     },
   ]),
+  fetchReview: vi.fn(async () => ({ available: false })),
   fetchInbox: vi.fn(async () => ({
     login: "jy",
     error: null,
@@ -99,6 +100,7 @@ const api = await import("../api");
 const { useApp } = await import("../store");
 const { useUI } = await import("../ui");
 const { useChat } = await import("../chat");
+const { useReview, useInbox } = await import("../review");
 
 const rows = (sel: string) => [...document.querySelectorAll<HTMLTableRowElement>(`tr.ln${sel}`)];
 const nums = (sel: string) =>
@@ -106,6 +108,8 @@ const nums = (sel: string) =>
 
 beforeEach(() => {
   localStorage.clear();
+  useReview.setState({ url: "", state: null, hiddenFiles: [], expanded: [] });
+  useInbox.setState({ inbox: null });
   useUI.setState({ mode: "guide", pinStep: null, pinSub: null });
 });
 
@@ -425,6 +429,131 @@ test("comments sit under their last line, highlight it, and can be hidden, resol
   expect([closed.classList.contains("closed"), closed.textContent]).toEqual([true, "ResolvedNo retry"]);
   fireEvent.click(closed.querySelector(".cmt-closed")!);
   expect([cmts()[0].querySelector(".cmt-t")!.textContent, tg.textContent]).toEqual(["A 5xx is not retried.", "2"]);
+});
+
+const comment = (id: string, author: string, body: string) => ({
+  id,
+  author,
+  avatar: "",
+  bot: false,
+  body,
+  created_at: Date.now() / 1000 - 3600,
+  url: "",
+});
+const thread = (id: string, extra: object) => ({
+  id,
+  path: "src/auth/session.ts",
+  side: "new",
+  start: null,
+  end: null,
+  file_level: false,
+  resolved: false,
+  outdated: false,
+  comments: [comment(`${id}c`, "pk", `${id} first`)],
+  ...extra,
+});
+const ghState = {
+  available: true,
+  viewer: "jy",
+  reviewers: [{ login: "pk", avatar: "", state: "changes" }],
+  checks: {
+    state: "failure",
+    failing: 1,
+    list: [
+      { name: "test / ubuntu", state: "failure", url: "https://ci/1" },
+      { name: "lint", state: "success", url: "https://ci/2" },
+    ],
+  },
+  threads: [
+    thread("T1", {
+      start: 6,
+      end: 7,
+      comments: [
+        comment("a", "pk", "Why clear here?"),
+        comment("b", "jy", "Logout"),
+        comment("c", "pk", "And refresh?"),
+        comment("d", "sam", "Fixed"),
+      ],
+    }),
+    thread("T2", { start: 2, end: 2, resolved: true }),
+    thread("T3", { path: "src/auth/types.ts", file_level: true }),
+    thread("T4", { start: 1, end: 1, outdated: true }),
+  ],
+};
+
+test("GitHub threads sit under their lines with range bars, fold long middles, and list in the popover", async () => {
+  vi.mocked(api.fetchReview).mockResolvedValue(ghState as never);
+  useApp.setState({ pr: null }); // so the review loads afresh, with GitHub's state
+  await mount();
+  const card = () => document.querySelector<HTMLElement>('[data-thread="T1"]')!;
+  await waitFor(() => expect(card()).toBeTruthy());
+  // under the last line it covers (after that line's own comment), with a bar on each covered line (none for the
+  // resolved one)
+  const above = card().closest("tr")!.previousElementSibling as HTMLElement;
+  expect([above.className, (above.previousElementSibling as HTMLElement).dataset.new]).toEqual(["cmt-row", "7"]);
+  expect(nums(".rng")).toEqual(["session.ts:6", "session.ts:7"]);
+  // first and last comment, the two between folded
+  expect([...card().querySelectorAll(".th-c b")].map((b) => b.textContent)).toEqual(["pk", "sam"]);
+  fireEvent.click(screen.getByText("2 more replies"));
+  expect(card().querySelectorAll(".th-c")).toHaveLength(4);
+  fireEvent.mouseEnter(card());
+  expect(nums(".hl")).toEqual(["session.ts:6", "session.ts:7"]);
+  fireEvent.mouseLeave(card());
+  // resolved: one line until opened; file-level: under the file's header; outdated: not on the diff
+  expect(document.querySelector('[data-thread="T2"]')!.classList.contains("th-closed")).toBe(true);
+  expect(document.querySelector('.file[data-path="src/auth/types.ts"] .file-th [data-thread="T3"]')).toBeTruthy();
+  expect(document.querySelector('[data-thread="T4"]')).toBeNull();
+
+  // the toolbar button counts open threads and lists them by file
+  const tg = document.querySelector<HTMLElement>(".cmt-tg")!;
+  expect(tg.textContent).toBe("3");
+  fireEvent.click(tg);
+  const pop = () => document.querySelector<HTMLElement>(".th-pop")!;
+  const items = () => [...pop().querySelectorAll(".tl-t .where")].map((w) => w.textContent);
+  expect(items()).toEqual(["L6–7 · 4", "outdated", "file"]);
+  const seg = (i: number) => pop().querySelectorAll<HTMLElement>(".th-seg button")[i];
+  fireEvent.click(seg(1));
+  expect(items()).toEqual(["L2"]);
+  fireEvent.click(seg(0));
+  // hiding a file's threads takes them off the diff
+  fireEvent.click(pop().querySelector(".tl-g:last-child .tl-hide")!);
+  expect(document.querySelector('[data-thread="T3"]')).toBeNull();
+  // folding a file shows its count
+  fireEvent.click(pop().querySelector(".tl-fold")!);
+  expect(pop().querySelector(".tl-f .n")!.textContent).toBe("2");
+  vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
+});
+
+test("a GitHub PR's top bar: switcher with its stack, checks, reviewers", async () => {
+  vi.mocked(api.fetchReview).mockResolvedValue(ghState as never);
+  vi.mocked(api.fetchInbox).mockResolvedValueOnce({
+    login: "jy",
+    error: null,
+    prs: [
+      inboxPR(7, "yours", { title: "Add token refresh", stack: { id: "s", index: 2, size: 2 } }),
+      inboxPR(6, "yours", { title: "Session types", stack: { id: "s", index: 1, size: 2 } }),
+      inboxPR(9, "review", { title: "Other work" }),
+    ],
+  } as never);
+  useApp.setState({ pr: null });
+  await mount();
+  await waitFor(() =>
+    expect(document.querySelector(".target .stk") && document.querySelector(".ci-chip")).toBeTruthy(),
+  );
+  expect(document.querySelector(".target .stk")!.textContent).toBe("2/2");
+  expect(document.querySelector(".ci-chip")!.textContent).toBe("1");
+  expect(document.querySelector('.target .rv[data-tip="pk requested changes"]')).toBeTruthy();
+  fireEvent.click(document.querySelector(".ci-chip")!);
+  expect([...document.querySelectorAll(".ci-pop .r")].map((r) => r.textContent)).toEqual(["test / ubuntu", "lint"]);
+
+  fireEvent.click(document.querySelector(".sw-btn")!);
+  const sw = () => [...document.querySelectorAll(".sw-pop .sw-h, .sw-pop .sw-i")].map((e) => e.textContent);
+  expect(sw()).toEqual(["Stack", "2Add token refresh#7", "1Session types#6", "Needs your review", "Other work#9"]);
+  fireEvent.change(document.querySelector(".sw-q input")!, { target: { value: "other" } });
+  expect(sw()).toEqual(["Needs your review", "Other work#9"]);
+  fireEvent.click(screen.getByText("Other work"));
+  expect(useApp.getState().url).toBe("https://github.com/acme/web/pull/9");
+  vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
 });
 
 test("file list toggles, nests directories, and opens a picked file", async () => {

@@ -23,7 +23,7 @@ from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, 
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
-from .github import GitHubError, fetch_inbox
+from .github import GitHubError, PRRef, fetch_inbox, fetch_review_state
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
@@ -34,6 +34,7 @@ from .validate import DraftError, check
 PrepareFn = Callable[[Config, str], Prepared]
 RunnerFor = Callable[[str], Runner]
 MAX_FILE_CHARS = 2_000_000
+REVIEW_TTL = 30  # seconds a PR's threads, reviewers and checks are reused
 INBOX_TTL = 60  # seconds the home page's PR list is reused before asking GitHub again
 
 
@@ -44,6 +45,9 @@ class Deps:
     prepare: PrepareFn
     store: Store
     inbox: Callable[[], dict] = field(default=fetch_inbox)  # the signed-in user's open PRs
+    review_state: Callable[[PRRef], dict] = field(
+        default=fetch_review_state
+    )  # a PR's threads, reviewers, checks
 
 
 def default_deps(cfg: Config) -> Deps:
@@ -240,6 +244,34 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         data = inbox_cache["data"]
         prs = [{**p, "guides": guides.get(p["url"], 0)} for p in data["prs"]]
         return {"login": data["login"], "prs": prs, "error": inbox_cache["error"]}
+
+    review_cache: dict[str, dict] = {}
+
+    @app.get("/api/review")
+    async def review(url: str, refresh: bool = False) -> dict:
+        """GitHub's side of a PR: review threads, reviewers and checks. Local targets have none (``available`` is
+        false). Cached for half a minute; ``refresh`` asks again. Errors come back as ``error``."""
+        try:
+            ref = target_ref(url)
+        except GitHubError as e:
+            raise HTTPException(400, str(e)) from e
+        if ref.is_local:
+            return {"available": False}
+        hit = review_cache.get(ref.key)
+        now = time.time()
+        if refresh or not hit or now - hit["at"] > REVIEW_TTL:
+            try:
+                hit = {
+                    "at": now,
+                    "data": {"available": True, **await asyncio.to_thread(d().review_state, ref)},
+                }
+            except GitHubError as e:
+                hit = {
+                    "at": now,
+                    "data": {"available": True, "error": str(e), "threads": [], "reviewers": []},
+                }
+            review_cache[ref.key] = hit
+        return hit["data"]
 
     def versions(prep: Prepared) -> list[dict]:
         return d().store.list_guides(prep.meta.ref.key, prep.meta.head_sha)

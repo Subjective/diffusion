@@ -351,3 +351,126 @@ def fetch_inbox(gh: str = "gh") -> dict:
     items = sorted(prs.values(), key=lambda p: p["updated_at"], reverse=True)
     link_stacks(items)
     return {"login": (data.get("viewer") or {}).get("login", ""), "prs": items}
+
+
+# ---------- one PR's review state: threads, reviewers, checks ----------
+
+_PR_QUERY = """
+query($owner: String!, $repo: String!, $number: Int!) {
+  viewer { login }
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      author { login }
+      reviewRequests(first: 20) {
+        nodes { requestedReviewer { ... on User { login avatarUrl } ... on Team { slug avatarUrl } } }
+      }
+      latestOpinionatedReviews(first: 20) { nodes { state author { login avatarUrl } } }
+      commits(last: 1) {
+        nodes { commit { statusCheckRollup {
+          state
+          contexts(first: 100) { nodes {
+            __typename
+            ... on CheckRun { name conclusion status detailsUrl }
+            ... on StatusContext { context state targetUrl }
+          } }
+        } } }
+      }
+      reviewThreads(first: 100) {
+        nodes {
+          id isResolved isOutdated path line startLine diffSide startDiffSide subjectType
+          comments(first: 50) {
+            nodes { id body createdAt url author { __typename login avatarUrl } }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+_CHECK_STATE = {
+    "SUCCESS": "success",
+    "NEUTRAL": "success",
+    "SKIPPED": "skipped",
+    "FAILURE": "failure",
+    "ERROR": "failure",
+    "TIMED_OUT": "failure",
+    "CANCELLED": "failure",
+    "ACTION_REQUIRED": "failure",
+    "STARTUP_FAILURE": "failure",
+    "STALE": "skipped",
+}
+
+
+def _check_list(node: dict) -> list[dict]:
+    commits = (node.get("commits") or {}).get("nodes") or []
+    rollup = (commits[0].get("commit") or {}).get("statusCheckRollup") if commits else None
+    out = []
+    for c in ((rollup or {}).get("contexts") or {}).get("nodes") or []:
+        if c.get("__typename") == "CheckRun":
+            done = c.get("status") == "COMPLETED"
+            state = _CHECK_STATE.get(c.get("conclusion") or "", "pending") if done else "pending"
+            out.append({"name": c.get("name", ""), "state": state, "url": c.get("detailsUrl") or ""})
+        elif c.get("__typename") == "StatusContext":
+            s = c.get("state")
+            state = {"SUCCESS": "success", "PENDING": "pending", "EXPECTED": "pending"}.get(s, "failure")
+            out.append({"name": c.get("context", ""), "state": state, "url": c.get("targetUrl") or ""})
+    order = {"failure": 0, "pending": 1, "success": 2, "skipped": 3}
+    return sorted(out, key=lambda c: (order[c["state"]], c["name"].lower()))
+
+
+def _thread(t: dict) -> dict:
+    comments = [
+        {
+            "id": c["id"],
+            "author": (c.get("author") or {}).get("login") or "ghost",
+            "avatar": (c.get("author") or {}).get("avatarUrl", ""),
+            "bot": (c.get("author") or {}).get("__typename") == "Bot",
+            "body": c.get("body") or "",
+            "created_at": _epoch(c.get("createdAt", "")),
+            "url": c.get("url", ""),
+        }
+        for c in (t.get("comments") or {}).get("nodes") or []
+    ]
+    line = t.get("line")
+    return {
+        "id": t["id"],
+        "path": t.get("path", ""),
+        "side": "old" if t.get("diffSide") == "LEFT" else "new",
+        "start": t.get("startLine") or line,
+        "end": line,
+        "file_level": t.get("subjectType") == "FILE",
+        "resolved": bool(t.get("isResolved")),
+        "outdated": bool(t.get("isOutdated")) or (line is None and t.get("subjectType") != "FILE"),
+        "comments": comments,
+    }
+
+
+def pr_review_state(data: dict) -> dict:
+    pr = ((data.get("repository") or {}).get("pullRequest")) or {}
+    author = (pr.get("author") or {}).get("login", "")
+    checks = _check_list(pr)
+    failing = sum(c["state"] == "failure" for c in checks)
+    pending = any(c["state"] == "pending" for c in checks)
+    state = "none" if not checks else "failure" if failing else "pending" if pending else "success"
+    threads = [_thread(t) for t in (pr.get("reviewThreads") or {}).get("nodes") or [] if t]
+    return {
+        "viewer": (data.get("viewer") or {}).get("login", ""),
+        "reviewers": _reviewers(pr, author),
+        "checks": {"state": state, "failing": failing, "list": checks},
+        "threads": [t for t in threads if t["comments"]],
+    }
+
+
+def fetch_review_state(ref: PRRef, gh: str = "gh") -> dict:
+    """Review threads (with every comment), reviewers and checks for one PR, in one GraphQL call through ``gh``."""
+    if not (shutil.which(gh) or os.sep in gh):
+        raise GitHubError("Install the GitHub CLI and run `gh auth login` to see review comments.")
+    cmd = [gh, "api", "graphql", "--hostname", ref.host, "-f", f"query={_PR_QUERY}"]
+    cmd += ["-f", f"owner={ref.owner}", "-f", f"repo={ref.repo}", "-F", f"number={ref.number}"]
+    try:
+        out = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=60).stdout
+    except subprocess.CalledProcessError as e:
+        raise GitHubError(f"gh api graphql failed: {e.stderr.strip() or e}") from e
+    except subprocess.TimeoutExpired as e:
+        raise GitHubError("GitHub took too long to answer.") from e
+    return pr_review_state(json.loads(out).get("data") or {})

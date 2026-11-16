@@ -28,8 +28,12 @@ export interface Gutter {
   dots: Map<string, Dot[]>;
   /** Extra per-row content (question badges), by row key. */
   extras?: Map<string, ReactNode>;
-  /** Rows rendered under a line (guide comments), by row key. */
+  /** Rows rendered under a line (comments, GitHub threads), by row key. */
   after?: Map<string, ReactNode>;
+  /** Rows an open GitHub thread covers, marked in the gutter. */
+  ranged?: Set<string>;
+  /** File-level GitHub threads, under each file's header. */
+  top?: Map<string, ReactNode>;
 }
 
 interface Props {
@@ -130,6 +134,7 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
           {ic(viewed ? CircleCheck : Circle, 15)}
         </button>
       </div>
+      {!collapsed && gutter.top?.has(file.path) && <div className="file-th">{gutter.top.get(file.path)}</div>}
       {!collapsed && (
         <div className="file-b">
           {file.binary ? (
@@ -229,6 +234,7 @@ function HunkRows({ hunk, lang, gutter }: { hunk: Hunk; lang: string | null; gut
             dots={gutter.dots.get(key)}
             extra={gutter.extras?.get(key)}
             after={gutter.after?.get(key)}
+            ranged={gutter.ranged?.has(key)}
             file={hunk.file}
             pos={r.pos}
           />
@@ -372,6 +378,8 @@ interface RowProps {
   dots?: Dot[];
   extra?: ReactNode;
   after?: ReactNode;
+  /** An open GitHub thread covers this line. */
+  ranged?: boolean;
   file: string;
   pos: number;
   /** Lines were deleted just above this one (a file tab marks where, without showing them). */
@@ -388,6 +396,7 @@ export const DiffRow = memo(function DiffRow({
   dots,
   extra,
   after,
+  ranged,
   file,
   pos,
   cut,
@@ -396,7 +405,16 @@ export const DiffRow = memo(function DiffRow({
   const pin = useUI((s) => s.pinRows.has(rk));
   const flashN = useUI((s) => (s.flash.keys.has(rk) ? s.flash.n : 0));
   const peek = useUI((s) => (s.peek?.rk === rk ? s.peek : null));
-  const cls = ["ln", type, extra && "qd", cut && "cut", hl && "hl", pin && "pin", flashN && `flash f${flashN % 2}`]
+  const cls = [
+    "ln",
+    type,
+    extra && "qd",
+    cut && "cut",
+    ranged && "rng",
+    hl && "hl",
+    pin && "pin",
+    flashN && `flash f${flashN % 2}`,
+  ]
     .filter(Boolean)
     .join(" ");
   const sign = type === "add" ? "+" : type === "del" ? "−" : "";
