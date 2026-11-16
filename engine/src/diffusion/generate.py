@@ -57,7 +57,9 @@ def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
             return "allow"
         if name == "Bash":
             cmd = str(args.get("command", "")).strip()
-            ok = (cmd.startswith(BASH) or bool(UVX.match(cmd))) and not any(c in cmd for c in CHAINING)
+            # A whole command, not a prefix: "git diff" mustn't let "git difftool -x ..." through.
+            named = any(cmd == b.strip() or cmd.startswith(b.strip() + " ") for b in BASH)
+            ok = (named or bool(UVX.match(cmd))) and not any(c in cmd for c in CHAINING)
             ok = ok and not WRITES.search(cmd)
             return "allow" if ok else "deny"
         if name == "Write":
