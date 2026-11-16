@@ -2107,3 +2107,71 @@ tr.th-row > td {
   color: var(--text);
   font: 13.5px / 1.5 var(--sans);
 }
+
+/* Editing your comments, review summaries, and the title and description of your PR */
+.conv-desc {
+  position: relative;
+}
+.conv-desc > .conv-acts {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  opacity: 0;
+}
+.conv-desc:hover > .conv-acts,
+.conv-desc > .conv-acts:focus-within {
+  opacity: 1;
+}
+.conv-c .h .conv-acts {
+  display: inline-flex;
+  margin-left: auto;
+  opacity: 0;
+}
+.conv-c:hover .h .conv-acts,
+.conv-c .h .conv-acts:focus-within {
+  opacity: 1;
+}
+.conv-c .h .conv-acts + .t {
+  margin-left: 0;
+}
+.conv-none {
+  color: var(--subtle);
+}
+.conv-edit {
+  margin-top: 6px;
+}
+.conv-edit textarea {
+  min-height: 60px;
+}
+.conv-title-in {
+  width: 100%;
+  padding: 2px 0 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: 600 15px / 1.4 var(--sans);
+}
+.conv-edit-f {
+  display: flex;
+  gap: 6px;
+}
+.rv-cancel {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  font: 500 13px var(--sans);
+}
+.rv-cancel:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+a.conv-link {
+  color: inherit;
+}
+a.conv-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}

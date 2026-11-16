@@ -113,7 +113,8 @@ export type ReviewAct =
   | { kind: "reply"; thread: string; body: string }
   | { kind: "resolve" | "unresolve"; thread: string }
   | { kind: "edit"; comment: string; body: string }
-  | { kind: "delete"; comment: string };
+  | { kind: "delete"; comment: string }
+  | { kind: "edit_pr"; pr: string; title: string; body: string };
 
 /** Do it on GitHub; the answer is the PR's fresh review state. */
 export async function reviewAction(url: string, action: ReviewAct): Promise<ReviewState> {

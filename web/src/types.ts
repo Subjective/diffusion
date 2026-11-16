@@ -222,6 +222,8 @@ export interface ReviewState {
   viewer?: string;
   /** The PR's GitHub node id (for commenting on it). */
   id?: string;
+  title?: string;
+  body?: string;
   timeline?: TimelineItem[];
   /** The PR's author (who can't approve or request changes on it). */
   author?: string;

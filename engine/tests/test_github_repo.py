@@ -479,7 +479,11 @@ def test_write_review_sends_reviews_by_rest_and_the_rest_by_graphql(tmp_path):
     write_review(ref, {"kind": "submit", "event": "comment", "body": "hi", "comments": []}, gh=str(fake))
     write_review(ref, {"kind": "reply", "thread": "T1", "body": "thanks"}, gh=str(fake))
     write_review(ref, {"kind": "resolve", "thread": "T1"}, gh=str(fake))
-    write_review(ref, {"kind": "edit", "comment": "C1", "body": "fixed"}, gh=str(fake))
+    write_review(ref, {"kind": "edit", "comment": "PRRC_1", "body": "fixed"}, gh=str(fake))
+    write_review(ref, {"kind": "edit", "comment": "IC_1", "body": "fixed"}, gh=str(fake))
+    write_review(ref, {"kind": "edit", "comment": "PRR_1", "body": "summary"}, gh=str(fake))
+    write_review(ref, {"kind": "delete", "comment": "IC_1"}, gh=str(fake))
+    write_review(ref, {"kind": "edit_pr", "pr": "PR_1", "title": "T", "body": "B"}, gh=str(fake))
     calls = (tmp_path / "args").read_text().split("api ")[1:]  # queries span lines
     assert "--method POST repos/acme/web/pulls/42/reviews --input -" in calls[0]
     assert (tmp_path / "stdin").read_text().startswith('{"event": "COMMENT", "body": "hi"}')
@@ -489,7 +493,13 @@ def test_write_review_sends_reviews_by_rest_and_the_rest_by_graphql(tmp_path):
         and "body=thanks" in calls[1]
     )
     assert "resolveReviewThread" in calls[2]
-    assert "updatePullRequestReviewComment" in calls[3] and "comment=C1" in calls[3]
+    assert "updatePullRequestReviewComment" in calls[3] and "comment=PRRC_1" in calls[3]
+    assert "updateIssueComment" in calls[4]
+    assert "updatePullRequestReview(" in calls[5]
+    assert "deleteIssueComment" in calls[6]
+    assert "updatePullRequest(" in calls[7] and "title=T" in calls[7] and "pr=PR_1" in calls[7]
+    with pytest.raises(GitHubError):
+        write_review(ref, {"kind": "delete", "comment": "PRR_1"}, gh=str(fake))
 
 
 def test_write_review_surfaces_githubs_message(tmp_path):
@@ -537,6 +547,6 @@ def test_deleting_a_comment_thats_already_gone_is_done(tmp_path):
     )
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     ref = PRRef("github.com", "acme", "web", 42)
-    write_review(ref, {"kind": "delete", "comment": "C1"}, gh=str(fake))
+    write_review(ref, {"kind": "delete", "comment": "PRRC_1"}, gh=str(fake))
     with pytest.raises(GitHubError, match="Could not resolve"):
-        write_review(ref, {"kind": "edit", "comment": "C1", "body": "x"}, gh=str(fake))
+        write_review(ref, {"kind": "edit", "comment": "PRRC_1", "body": "x"}, gh=str(fake))
