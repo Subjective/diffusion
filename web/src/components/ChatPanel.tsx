@@ -58,12 +58,12 @@ import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
 import { cachedTree } from "../lib/tree";
 import { complete, rankCommands, rankFiles, type Trigger, trigger } from "../lib/typeahead";
-import { commentable, useGenerate, useReview } from "../review";
+import { useGenerate } from "../review";
 import { useApp } from "../store";
 import type { GenerateJob, StepKind } from "../types";
 import { useUI } from "../ui";
 import { useGeneratingHarness } from "./Generate";
-import { GithubIcon, HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
+import { HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
 
 export interface ChatLinkProps {
   /** Hover a question (by local id) to highlight its lines; null clears. */
@@ -627,55 +627,23 @@ function GenerateTurn({ job }: { job: GenerateJob }) {
   );
 }
 
-/** Under an answer: copy it, and on a GitHub PR, draft it into your review: a pending comment on the lines it was
- *  asked about, else a paragraph of the review's summary. */
+/** Under an answer: copy it. */
 function AnswerActions({ q }: { q: Question }) {
-  const [done, setDone] = useState<"copy" | "review" | null>(null);
-  const reviewable = useReview((s) => !!s.state?.available && !s.state.error && !!s.state.viewer);
-  const flash = (d: "copy" | "review") => {
-    setDone(d);
-    setTimeout(() => setDone(null), 1200);
-  };
-  const a = q.anchor;
-  const files = useApp((s) => s.files);
-  // On lines GitHub takes comments on; anything else goes in the review's summary.
-  const onLines = !!a?.file && a.start > 0 && commentable(files, a.file, a.side, a.start, a.end);
-  const toReview = () => {
-    const r = useReview.getState();
-    const body = q.answer.trim();
-    if (onLines) r.addPending({ path: a!.file, side: a!.side, start: a!.start, end: a!.end, body });
-    else r.setSummary(r.summary.trim() ? `${r.summary.trim()}\n\n${body}` : body);
-    flash("review");
-  };
+  const [done, setDone] = useState(false);
   return (
     <div className={`ans-acts${done ? " done" : ""}`}>
       <button
         type="button"
         className="icon-btn sm"
-        data-tip={done === "copy" ? "Copied" : "Copy"}
+        data-tip={done ? "Copied" : "Copy"}
         onClick={() => {
           void navigator.clipboard?.writeText(q.answer.trim());
-          flash("copy");
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
         }}
       >
-        {ic(done === "copy" ? Check : Copy, 14)}
+        {ic(done ? Check : Copy, 14)}
       </button>
-      {reviewable && (
-        <button
-          type="button"
-          className="icon-btn sm"
-          data-tip={
-            done === "review"
-              ? "Added to your review"
-              : onLines
-                ? "Draft a review comment"
-                : "Add to your review's summary"
-          }
-          onClick={toReview}
-        >
-          {done === "review" ? ic(Check, 14) : <GithubIcon size={14} />}
-        </button>
-      )}
     </div>
   );
 }
