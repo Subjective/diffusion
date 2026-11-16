@@ -1155,6 +1155,15 @@ tr.cmt-row.closed > td {
 .target .stk {
   margin-right: 4px;
 }
+.target .stk:hover,
+.target .stk.on {
+  background: var(--hover);
+  color: var(--text);
+}
+.stk-pop {
+  left: 0;
+  width: 400px;
+}
 .ci-chip {
   display: inline-flex;
   align-items: center;
