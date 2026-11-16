@@ -125,6 +125,30 @@ export function threadLayout(threads: Thread[], idx: HunkIndex, hidden: string[]
   };
 }
 
+/** The same for a file tab, which shows the file at the head: threads on its new side, by line number. Threads on
+ *  deleted lines have no line there. */
+export function fileThreadLayout(threads: Thread[], path: string) {
+  const after = new Map<number, ReactNode[]>();
+  const ranged = new Set<number>();
+  const top: ReactNode[] = [];
+  for (const t of threads) {
+    if (t.path !== path || t.outdated) continue;
+    if (t.file_level) {
+      top.push(<ThreadCard key={t.id} t={t} keys={[]} />);
+      continue;
+    }
+    if (t.side !== "new" || t.end == null) continue;
+    const start = t.start ?? t.end;
+    const keys: string[] = [];
+    for (let n = start; n <= t.end; n++) {
+      keys.push(`f:${rowKey(path, n)}`);
+      if (!t.resolved) ranged.add(n);
+    }
+    after.set(t.end, [...(after.get(t.end) ?? []), <ThreadRow key={t.id} t={t} keys={keys} />]);
+  }
+  return { after, ranged, top };
+}
+
 /** Where a thread is: its line range, "file", or "outdated". */
 export const whereText = (t: Thread) =>
   t.file_level
