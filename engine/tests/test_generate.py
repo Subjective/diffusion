@@ -49,7 +49,11 @@ def test_the_generating_agent_reads_and_submits_but_does_nothing_else(tmp_path):
 def test_the_request_runs_the_review_command_in_the_checkout_without_opening_a_browser():
     req = generate_request("https://github.com/a/b/pull/1", Path("/wt"))
     assert req.prompt == "/diffusion:review https://github.com/a/b/pull/1"
-    assert req.cwd == Path("/wt") and req.mode == "default" and req.env == {"DIFFUSION_NO_BROWSER": "1", "BROWSER": "true"}
+    assert (
+        req.cwd == Path("/wt")
+        and req.mode == "default"
+        and req.env == {"DIFFUSION_NO_BROWSER": "1", "BROWSER": "true"}
+    )
 
 
 def test_jobs_track_a_run_to_done_or_failed():
