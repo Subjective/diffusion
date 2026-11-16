@@ -32,7 +32,7 @@ from ..agent import (
 )
 
 if TYPE_CHECKING:
-    from claude_agent_sdk.types import HookContext, HookInput, HookJSONOutput
+    from claude_agent_sdk.types import HookContext, HookInput, HookJSONOutput, PermissionMode
 
 READ_TOOLS = ["Read", "Grep", "Glob"]
 DENY_TOOLS = [
@@ -80,6 +80,11 @@ def user_text(content: Any) -> str | None:
         if parts and all(isinstance(p, str) for p in parts):
             return "".join(parts)  # type: ignore[arg-type]
     return None
+
+
+def claude_mode(mode: Mode) -> PermissionMode:
+    """Claude Code's own mode for ``mode``; anything else (another agent's) asks, as Manual does."""
+    return mode if mode in ("default", "acceptEdits", "plan", "auto") else "default"  # type: ignore[return-value]
 
 
 def claude_code_runner(cli_path: str | None = None) -> Runner:
@@ -189,7 +194,7 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                     "snapshot": False,  # carry the chat's instructions on resume, not just the first request
                 },
                 allowed_tools=[mcp_name(t.name) for t in req.tools],
-                permission_mode="default" if req.mode == "read-only" else req.mode,
+                permission_mode=claude_mode(req.mode),
                 can_use_tool=can_use,
                 setting_sources=["user", "project", "local"],
                 env=req.env,
@@ -241,7 +246,7 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                     mode = await modes.get()
                     if mode != "read-only":
                         with contextlib.suppress(Exception):  # the turn may have just ended
-                            await client.set_permission_mode(mode)
+                            await client.set_permission_mode(claude_mode(mode))
 
             pump = asyncio.create_task(take_steers(req.steer)) if req.steer else None
             switch = asyncio.create_task(take_modes(req.modes)) if req.modes and req.native else None

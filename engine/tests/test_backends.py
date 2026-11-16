@@ -488,27 +488,18 @@ async def test_codex_puts_its_approval_requests_to_the_reviewer(tmp_path, repo):
     ] == ("on-request")
 
 
-def test_codex_modes_are_its_sandboxes(tmp_path):
-    def sandbox(mode):
-        return thread_params(AgentRequest(system_prompt="", prompt="", model="", cwd=tmp_path, mode=mode))[
-            "sandbox"
-        ]
-
-    modes = ("read-only", "plan", "default", "acceptEdits", "auto")
-
+def test_codex_modes_are_its_own_presets(tmp_path):
     async def approve(*_):
         return "allow"
 
-    def policy(mode):
-        req = AgentRequest(system_prompt="", prompt="", model="", cwd=tmp_path, mode=mode, approve=approve)
-        return thread_params(req)["approvalPolicy"]
+    def params(mode, asks=True):
+        req = AgentRequest("", "", "", tmp_path, mode=mode, approve=approve if asks else None)
+        p = thread_params(req)
+        return p["sandbox"], p["approvalPolicy"]
 
-    # Manual and Accept edits ask past the sandbox; the rest never stop
-    assert [policy(m) for m in modes] == ["never", "never", "on-request", "on-request", "never"]
-    assert [sandbox(m) for m in modes] == [
-        "read-only",
-        "read-only",
-        "read-only",
-        "workspace-write",
-        "workspace-write",
-    ]
+    # Read Only, Auto and Full Access, as Codex's /approvals sets them
+    assert params("read-only") == ("read-only", "on-request")
+    assert params("auto") == ("workspace-write", "on-request")
+    assert params("full-access") == ("danger-full-access", "never")
+    # nobody to answer: it stays inside the sandbox
+    assert params("auto", asks=False) == ("workspace-write", "never")

@@ -17,7 +17,7 @@ import { type MouseEvent, type ReactNode, useMemo, useState } from "react";
 import { useChat } from "../chat";
 import { storage } from "../lib/storage";
 import { ago, dateText } from "../lib/time";
-import { useInbox } from "../review";
+import { useGenerate, useInbox } from "../review";
 import type { InboxPR, Reviewer } from "../types";
 import { HarnessMark, ic } from "./icons";
 
@@ -189,7 +189,7 @@ function GuideMark({ p }: { p: InboxPR }) {
         aria-label="Write a review"
         onClick={(e) => {
           stop(e);
-          void useInbox.getState().generate(p.url, useChat.getState().mode);
+          void useInbox.getState().generate(p.url, useChat.getState().modeOf(useGenerate.getState().harness));
         }}
       >
         {job?.state === "failed" ? ic(CircleAlert, 15) : <HarnessMark harness="claude-code" size={15} />}

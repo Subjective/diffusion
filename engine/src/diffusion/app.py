@@ -31,6 +31,7 @@ from .agent import (
     ToolFailedEvent,
     allowed_in,
     make_runner,
+    mode_for,
 )
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
@@ -310,9 +311,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             starting.discard(key)
         # The agent runs the review skill from the reviewer's installed plugin. Claude Code comes bundled with its SDK;
         # Codex is the reviewer's own CLI.
-        mode: Mode = (
-            "default" if req.mode == "read-only" else req.mode
-        )  # a session of its own: the skill loads
+        mode = mode_for(req.harness, req.mode)
         cache = Path(d().cfg.cache_dir)
         request = generate_request(
             req.url, prep.checkout.worktree, focus=req.focus, mode=mode, approve=jobs.approver(key),
@@ -700,8 +699,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 chat["updated_at"] = record["at"]
                 deps.store.save_chat(key, chat)
                 block = GuideBlock()
-                # Cursor has no modes: it only reads.
-                mode: Mode = req.mode if harness in ("claude-code", "codex") else "read-only"
+                mode = mode_for(harness, req.mode)  # the agent's own modes; Cursor has none: it only reads
                 side: asyncio.Queue = asyncio.Queue()
                 mine: dict[str, str] = {}  # this turn's asks: id -> tool
                 modes: asyncio.Queue[Mode] = asyncio.Queue()

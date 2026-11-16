@@ -486,6 +486,26 @@ test("the guide session runs in the harness's permission modes and asks in the c
   useApp.setState({ guide: g });
 });
 
+test("a Codex session shows Codex's own presets, kept apart from Claude Code's", async () => {
+  await mount();
+  const g = useApp.getState().guide!;
+  useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "codex", session: "s1" } } });
+  const { useChat } = await import("../chat");
+  useChat.getState().setMode("plan", "claude-code");
+  await act(async () => useChat.getState().openGuide());
+  const mode = () => document.querySelector<HTMLElement>(".composer button.mode")!;
+  expect(mode().textContent).toBe("Auto");
+  fireEvent.click(mode());
+  const items = [...document.querySelectorAll(".mode-menu .mode-item")].map((i) => i.textContent);
+  expect(items).toEqual(["Read Only", "Auto", "Full Access"]);
+  fireEvent.click(screen.getByText("Full Access"));
+  expect(useChat.getState().modeOf("codex")).toBe("full-access");
+  expect(useChat.getState().modeOf("claude-code")).toBe("plan");
+  useChat.getState().setMode("auto", "codex");
+  useChat.getState().setMode("default", "claude-code");
+  useApp.setState({ guide: g });
+});
+
 test("switching to Auto mid-turn switches the running session and lets the waiting ask through", async () => {
   await mount();
   const g = useApp.getState().guide!;
@@ -508,8 +528,8 @@ test("switching to Auto mid-turn switches the running session and lets the waiti
 
 test("an edit to approve shows its diff, and allowing edits for the session switches the mode", async () => {
   const { useChat } = await import("../chat");
+  useChat.getState().setMode("default", "claude-code");
   useChat.setState({
-    mode: "default",
     asks: [
       {
         id: "e1",
@@ -525,7 +545,7 @@ test("an edit to approve shows its diff, and allowing edits for the session swit
   expect(r.container.querySelector(".ask-h code")!.textContent).toBe("src/a.rs");
   expect([...r.container.querySelectorAll(".ask-diff span")].map((l) => l.className)).toEqual(["del", "del", "add"]);
   fireEvent.click(r.getByText("Allow edits this session"));
-  expect(useChat.getState().mode).toBe("acceptEdits");
+  expect(useChat.getState().modeOf("claude-code")).toBe("acceptEdits");
   r.unmount();
 
   // a plan reads as the plan; approving it leaves plan mode
@@ -536,7 +556,7 @@ test("an edit to approve shows its diff, and allowing edits for the session swit
   const p = render(<AskCardForTest id="p1" />);
   expect(p.container.querySelector(".ask-plan h2")!.textContent).toBe("Plan");
   fireEvent.click(p.getByText("Approve"));
-  expect(useChat.getState().mode).toBe("default");
+  expect(useChat.getState().modeOf("claude-code")).toBe("default");
   p.unmount();
 });
 

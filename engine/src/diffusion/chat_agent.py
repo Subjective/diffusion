@@ -60,6 +60,17 @@ MODE_NOTE: dict[str, str] = {
     "plan": "## Your tools here\nThis is your own session, continued in Diffusion's review panel, in plan mode: "
     "read and plan, and present the plan for the reviewer to approve before changing anything.",
 }
+_CODEX = (
+    "## Your tools here\nThis is your own session, continued in Diffusion's review panel, with your usual tools and "
+    "settings. "
+)
+CODEX_MODE_NOTE: dict[str, str] = {
+    "read-only": _CODEX
+    + "This mode reads; anything that writes or reaches the network is put to the reviewer.",
+    "auto": _CODEX
+    + "This mode edits and runs commands in the workspace; going past it is put to the reviewer.",
+    "full-access": _CODEX + "This mode can do anything without asking.",
+}
 MAX_ANCHOR_LINES = 80
 MAX_SHOWS_PER_TURN = 6
 MAX_HUNKS_PER_CALL = 12
@@ -401,7 +412,15 @@ async def run_turn(
     shown: list[dict] = []
     tools = [hunk_tool(prep.index), show_code_tool(prep.index, shown)]
     req = AgentRequest(
-        system_prompt=SYSTEM_PROMPT + "\n\n" + MODE_NOTE[mode] + "\n\n" + seed_context(prep, guide),
+        system_prompt=SYSTEM_PROMPT
+        + "\n\n"
+        + (
+            (harness == "codex" and CODEX_MODE_NOTE.get(mode))
+            or MODE_NOTE.get(mode)
+            or MODE_NOTE["read-only"]
+        )
+        + "\n\n"
+        + seed_context(prep, guide),
         # A command (`/code-review`, a Codex `$skill`) goes as typed, so the harness runs it rather than reading it.
         prompt=(len(questions) == 1 and not questions[0].anchor and raw_command(harness, questions[0].text))
         or format_turn(questions, prep.index),

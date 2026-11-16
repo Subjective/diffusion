@@ -622,6 +622,16 @@ async def test_switching_mode_mid_turn_reaches_the_session_and_lets_waiting_asks
     assert (await client.post(f"/api/chats/{cid}/mode", json={"mode": "auto"})).json()["ok"] is False
 
 
+def test_each_agent_runs_in_its_own_modes():
+    from diffusion.agent import mode_for
+
+    assert mode_for("claude-code", "plan") == "plan"
+    assert mode_for("claude-code", "full-access") == "default"  # not one of Claude Code's
+    assert mode_for("codex", "full-access") == "full-access"
+    assert mode_for("codex", "default") == "auto"  # Codex's default
+    assert mode_for("cursor", "auto") == "read-only"
+
+
 async def test_forks_run_in_the_mode_asked(setup):
     client, runners, deps, prep = setup
     from diffusion.agent import TextEvent

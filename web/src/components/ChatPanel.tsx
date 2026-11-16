@@ -21,6 +21,7 @@ import {
   Pencil,
   Search,
   ShieldAlert,
+  ShieldOff,
   Sparkles,
   Square,
   SquarePen,
@@ -604,7 +605,7 @@ function GenerateTurn({ job }: { job: GenerateJob }) {
                 a={a}
                 first={i === 0}
                 onAnswer={(id, d) => {
-                  followDecision(a, d);
+                  followDecision(a, d, job.harness ?? "claude-code");
                   void useGenerate.getState().answer(pr.url, id, d);
                 }}
               />
@@ -756,11 +757,22 @@ const MODE_UI: Record<ChatMode, { icon: typeof Lock; label: string; hint: string
   acceptEdits: { icon: FilePen, label: "Accept edits", hint: "Edits files without asking; asks before commands" },
   plan: { icon: ListChecks, label: "Plan", hint: "Reads and plans; changes nothing until you approve" },
   auto: { icon: Zap, label: "Auto", hint: "Acts without asking; a safety check blocks risky actions" },
+  "read-only": { icon: Lock, label: "Read Only", hint: "Reads files; asks before edits and commands" },
+  "full-access": {
+    icon: ShieldOff,
+    label: "Full Access",
+    hint: "Edits and runs anything, network included, without asking",
+  },
 };
+/** Codex's own words for its presets, where they differ. */
+const CODEX_UI: Partial<typeof MODE_UI> = {
+  auto: { icon: Zap, label: "Auto", hint: "Edits and runs commands in the workspace; asks to go past it" },
+};
+const modeUI = (harness: string, m: ChatMode) => (harness === "codex" && CODEX_UI[m]) || MODE_UI[m];
 
 /** The guide session's permission mode, as in the harness. New chats fork the session and can only read. */
 function ModeMenu() {
-  const { chat, mode, setMode } = useChat();
+  const { chat, setMode } = useChat();
   // While a review is being written there's no guide yet to say whose session it is: the agent writing it. With
   // no guide at all, chat runs on Claude Code (bundled with the engine), as a review written from here would.
   const genHarness = useGeneratingHarness();
@@ -769,6 +781,7 @@ function ModeMenu() {
   const box = useRef<HTMLDivElement>(null);
   const harness = chat.harness ?? guideHarness;
   const modes = modesFor(harness);
+  const mode = useChat((s) => s.modeOf(harness));
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
@@ -789,7 +802,7 @@ function ModeMenu() {
     );
   }
   const cur = modes.includes(mode) ? mode : modes[0];
-  const ui = MODE_UI[cur];
+  const ui = modeUI(harness, cur);
   return (
     <div className="mode-box" ref={box}>
       {open && (
@@ -801,14 +814,14 @@ function ModeMenu() {
               role="menuitemradio"
               aria-checked={m === cur}
               className={`mode-item${m === cur ? " on" : ""}`}
-              title={MODE_UI[m].hint}
+              title={modeUI(harness, m).hint}
               onClick={() => {
-                setMode(m);
+                setMode(m, harness);
                 setOpen(false);
               }}
             >
-              {ic(MODE_UI[m].icon, 14)}
-              <span>{MODE_UI[m].label}</span>
+              {ic(modeUI(harness, m).icon, 14)}
+              <span>{modeUI(harness, m).label}</span>
               <span className="grow" />
               {m === cur && ic(Check, 14)}
             </button>

@@ -27,11 +27,13 @@ from ..agent import (
 )
 from .codex_app import AppServer, AppServerError, text_input
 
-# A mode is a sandbox and whether to ask past it. Manual reads and asks before edits and commands that write; Accept
-# edits writes in the workspace and asks before going past it; Auto writes in the workspace and never asks; Plan (and
-# a chat that can't ask) only reads.
-CODEX_SANDBOX = {"acceptEdits": "workspace-write", "auto": "workspace-write"}
-ASKS = {"default", "acceptEdits"}
+# Codex's own modes (its /approvals presets), as its sandbox and approval policy: Read Only reads and asks to do more;
+# Auto writes in the workspace and asks to go past it; Full Access does anything without asking.
+CODEX_MODES: dict[str, tuple[str, str]] = {
+    "read-only": ("read-only", "on-request"),
+    "auto": ("workspace-write", "on-request"),
+    "full-access": ("danger-full-access", "never"),
+}
 # The reviewer's answers in Codex's words.
 CODEX_DECISION = {"allow": "accept", "always": "acceptForSession", "deny": "decline"}
 
@@ -39,10 +41,12 @@ CODEX_DECISION = {"allow": "accept", "always": "acceptForSession", "deny": "decl
 def thread_params(req: AgentRequest) -> dict:
     """How the thread runs: in the repository, in the mode's sandbox, asking the reviewer where the mode does (and
     someone is there to answer), without web search."""
+    sandbox, policy = CODEX_MODES.get(req.mode, CODEX_MODES["read-only"])
     p: dict = {
         "cwd": str(req.cwd),
-        "sandbox": CODEX_SANDBOX.get(req.mode, "read-only"),
-        "approvalPolicy": "on-request" if req.approve and req.mode in ASKS else "never",
+        "sandbox": sandbox,
+        # Nobody to ask (a chat that can't show the card): stay inside the sandbox
+        "approvalPolicy": policy if req.approve else "never",
         "config": {"web_search": "disabled"},
     }
     if p["sandbox"] == "workspace-write" and (req.writable_roots or req.network):

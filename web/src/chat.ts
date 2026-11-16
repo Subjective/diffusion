@@ -108,8 +108,11 @@ interface State {
   history: ChatSummary[];
   historyOpen: boolean;
   error: string | null;
-  mode: ChatMode;
-  setMode(mode: ChatMode): void;
+  /** The mode picked for each agent, as each has its own. */
+  modes: Record<string, ChatMode>;
+  modeOf(harness: string): ChatMode;
+  /** Picks ``mode`` for ``harness`` (by default the session in front of the reviewer). */
+  setMode(mode: ChatMode, harness?: string): void;
   /** Tool calls waiting on the reviewer in the running turn. */
   asks: Ask[];
   answer(id: string, decision: Decision): Promise<void>;
@@ -153,18 +156,32 @@ interface State {
   sendStaged(extra?: string): void;
 }
 
-/** How much a chat's session may do: the harness's own permission modes. */
-export type ChatMode = "default" | "acceptEdits" | "plan" | "auto";
+/** How much a chat's session may do: the harness's own permission modes. Claude Code's are default, acceptEdits,
+ *  plan and auto; Codex's are its /approvals presets read-only, auto and full-access. */
+export type ChatMode = "default" | "acceptEdits" | "plan" | "auto" | "read-only" | "full-access";
 /** The reviewer's answer to a tool call; "always" also allows its kind for the rest of the session. */
 export type Decision = "allow" | "deny" | "always";
-/** The modes an agent has, in the order Claude Code's Shift+Tab cycles them. For Codex a mode is a sandbox and
- * whether to ask past it (see the engine's codex backend). Cursor has none: it only reads. */
-export const modesFor = (harness: string | null): ChatMode[] =>
-  harness === "claude-code" || harness === "codex" ? ["default", "acceptEdits", "plan", "auto"] : [];
+/** The modes an agent has, in the order it lists them: Claude Code's Shift+Tab cycle, Codex's /approvals. Cursor
+ *  has none: it only reads. */
+const HARNESS_MODES: Record<string, ChatMode[]> = {
+  "claude-code": ["default", "acceptEdits", "plan", "auto"],
+  codex: ["read-only", "auto", "full-access"],
+};
+const DEFAULT_MODE: Record<string, ChatMode> = { "claude-code": "default", codex: "auto" };
+export const modesFor = (harness: string | null): ChatMode[] => HARNESS_MODES[harness ?? ""] ?? [];
+
+/** Whose session the reviewer is talking to: the chat's, else the guide's, else the agent writing the review. With
+ *  none, chat runs on Claude Code (bundled with the engine), as a review written from here would. */
+export function sessionHarness(chat: { harness?: string | null } = useChat.getState().chat): string {
+  const pr = useApp.getState().pr?.url;
+  const job = pr ? useGenerate.getState().jobs[pr] : undefined;
+  const writing = job && job.state !== "none" ? (job.harness ?? "claude-code") : null;
+  return chat.harness ?? useApp.getState().guide?.meta?.harness ?? writing ?? "claude-code";
+}
 
 /** Whether switching to ``mode`` answers a waiting ask (the engine's allowed_in). */
 export const allowedIn = (mode: ChatMode, tool: string) =>
-  mode === "auto" || (mode === "acceptEdits" && EDIT_TOOLS.includes(tool));
+  mode === "auto" || mode === "full-access" || (mode === "acceptEdits" && EDIT_TOOLS.includes(tool));
 
 /** A tool call the session wants to make that its settings don't already allow. */
 export const EDIT_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
@@ -178,8 +195,9 @@ export interface Ask {
 
 /** The mode an answer moves the session to, as the terminal does: "Allow edits this session" switches to accepting
  *  edits, and approving a plan leaves plan mode. */
-export function followDecision(ask: Ask, decision: Decision) {
-  const { setMode } = useChat.getState();
+export function followDecision(ask: Ask, decision: Decision, harness = sessionHarness()) {
+  if (harness !== "claude-code") return; // Codex's "for this session" doesn't change its preset
+  const setMode = (m: ChatMode) => useChat.getState().setMode(m, harness);
   if (decision === "always" && EDIT_TOOLS.includes(ask.tool)) setMode("acceptEdits");
   if (decision !== "deny" && ask.tool === "ExitPlanMode") setMode(decision === "always" ? "acceptEdits" : "default");
 }
@@ -287,7 +305,7 @@ export const useChat = create<State>((set, get) => {
           url: get().pr,
           questions: wire,
           version: useApp.getState().guide?.version ?? null,
-          mode: get().mode,
+          mode: get().modeOf(sessionHarness(get().chat)),
           ...(rewind ? { rewind } : {}),
         },
         ({ event, data }) => {
@@ -385,9 +403,15 @@ export const useChat = create<State>((set, get) => {
     historyOpen: false,
     error: null,
     autoShow: null,
-    mode: ((m) => (modesFor("claude-code").includes(m) ? m : "default"))(
-      storage.get<ChatMode>("rv-chat-mode", "default"),
+    modes: Object.fromEntries(
+      Object.entries(DEFAULT_MODE).map(([h, d]) => {
+        const m = storage.get<ChatMode>(`rv-chat-mode:${h}`, d);
+        return [h, modesFor(h).includes(m) ? m : d];
+      }),
     ),
+    modeOf(harness) {
+      return get().modes[harness] ?? DEFAULT_MODE[harness] ?? "read-only";
+    },
     asks: [],
     editing: null,
     rewriting: null,
@@ -424,13 +448,14 @@ export const useChat = create<State>((set, get) => {
       set({ editing: batch });
       if (!batch) sendNext();
     },
-    setMode(mode) {
-      storage.set("rv-chat-mode", mode);
-      set({ mode });
+    setMode(mode, harness = sessionHarness(get().chat)) {
+      if (!modesFor(harness).includes(mode)) return;
+      storage.set(`rv-chat-mode:${harness}`, mode);
+      set((s) => ({ modes: { ...s.modes, [harness]: mode } }));
       // As Shift+Tab mid-turn: the running turn (or review being written) switches now, and what the mode allows
       // that's waiting goes ahead.
       const { chat } = get();
-      if (chat.busy && chat.id) {
+      if (chat.busy && chat.id && sessionHarness(chat) === harness) {
         set((s) => ({ asks: s.asks.filter((a) => !allowedIn(mode, a.tool)) }));
         void fetch(`/api/chats/${chat.id}/mode`, {
           method: "POST",
@@ -439,7 +464,9 @@ export const useChat = create<State>((set, get) => {
         }).catch(() => {});
       }
       const pr = useApp.getState().pr?.url;
-      if (pr && useGenerate.getState().jobs[pr]?.state === "running") void useGenerate.getState().switchMode(pr, mode);
+      const job = pr ? useGenerate.getState().jobs[pr] : undefined;
+      if (pr && job?.state === "running" && (job.harness ?? "claude-code") === harness)
+        void useGenerate.getState().switchMode(pr, mode);
     },
     async answer(id, decision) {
       const ask = get().asks.find((a) => a.id === id);

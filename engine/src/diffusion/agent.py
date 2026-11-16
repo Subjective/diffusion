@@ -97,11 +97,31 @@ class ToolSpec:
     handler: Callable[[dict], Awaitable[str]]
 
 
-Mode = Literal["read-only", "default", "acceptEdits", "plan", "auto"]
+Mode = Literal["read-only", "default", "acceptEdits", "plan", "auto", "full-access"]
 """How much a chat may do. read-only: Diffusion's read tools only (for agents without modes, like Cursor). The rest are Claude Code's own permission
 modes (Manual, Accept edits, Plan, Auto), run with the session's own tools and settings: default asks before anything
 those don't allow, acceptEdits also lets file edits through, plan only plans, auto lets Claude Code's safety check
-decide instead of asking."""
+decide instead of asking. Codex has its own (its /approvals presets): read-only (reads, asks to do more), auto (writes
+in the workspace, asks to go past it), full-access (anything, never asks)."""
+
+# Each agent's own modes, its default first. Agents not listed (Cursor) only read.
+HARNESS_MODES: dict[str, tuple[Mode, ...]] = {
+    "claude-code": ("default", "acceptEdits", "plan", "auto"),
+    "codex": ("auto", "read-only", "full-access"),
+}
+
+
+def mode_for(harness: str, mode: str) -> Mode:
+    """The mode a session of ``harness`` runs in when ``mode`` is asked: it, if the agent has it, else its default."""
+    modes = HARNESS_MODES.get(harness)
+    if not modes:
+        return "read-only"
+    found: Mode = modes[0]
+    for m in modes:
+        if m == mode:
+            found = m
+    return found
+
 
 Decision = Literal["allow", "deny", "always"]
 """The reviewer's answer to a tool call; always also allows its kind for the rest of the session."""
@@ -114,7 +134,7 @@ EDIT_TOOLS = ("Edit", "MultiEdit", "Write", "NotebookEdit")
 
 def allowed_in(mode: Mode, tool: str) -> bool:
     """Whether switching to ``mode`` answers a waiting ask for ``tool``: Auto takes anything, Accept edits edits."""
-    return mode == "auto" or (mode == "acceptEdits" and tool in EDIT_TOOLS)
+    return mode in ("auto", "full-access") or (mode == "acceptEdits" and tool in EDIT_TOOLS)
 
 
 @dataclass

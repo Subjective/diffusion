@@ -43,7 +43,7 @@ export function GenerateCard({ url }: { url: string }) {
   if (job.state === "running") return <Writing url={url} job={job} />;
   const go = () => {
     useApp.getState().toggleChat(true);
-    void useGenerate.getState().start(url, focus, useChat.getState().mode);
+    void useGenerate.getState().start(url, focus, useChat.getState().modeOf(harness));
   };
   return (
     <div className="gen-card">
