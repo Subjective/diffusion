@@ -648,7 +648,7 @@ function AnswerActions({ q }: { q: Question }) {
     flash("review");
   };
   return (
-    <div className="ans-acts">
+    <div className={`ans-acts${done ? " done" : ""}`}>
       <button
         type="button"
         className="icon-btn sm"

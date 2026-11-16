@@ -2396,4 +2396,20 @@ a.conv-link:hover {
   display: flex;
   gap: 2px;
   margin: 6px 0 0 -6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+/* Shown with the answer under the pointer (or a key, or a "done" check), as in Codex and Cursor */
+.ans:hover .ans-acts,
+.ans-acts:focus-within,
+.ans-acts.done {
+  opacity: 1;
+}
+/* At the panel's left edge: tips open rightward from the button, not centered on it */
+.ans-acts [data-tip]::after {
+  left: 0;
+  transform: translateY(2px);
+}
+.ans-acts [data-tip]:hover::after {
+  transform: none;
 }
