@@ -2,17 +2,25 @@
 #root {
   display: contents;
 }
+/* A disabled button is dimmed (its content and fill, not the whole button, so its tooltip stays solid) and
+   doesn't react to hover. */
 .icon-btn:disabled {
-  opacity: 0.35;
   cursor: default;
 }
-/* A disabled button doesn't react to hover. */
+.icon-btn:disabled > * {
+  opacity: 0.35;
+}
 .icon-btn:not(.solid):disabled:hover {
   background: none;
   color: var(--muted);
 }
+.icon-btn.solid:disabled,
 .icon-btn.solid:disabled:hover {
-  opacity: 0.35;
+  background: color-mix(in srgb, var(--solid) 35%, transparent);
+  opacity: 1;
+}
+.icon-btn.solid:disabled > * {
+  opacity: 1;
 }
 
 .banner {
