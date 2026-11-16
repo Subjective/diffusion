@@ -60,6 +60,7 @@ import { useGenerate, useReview } from "../review";
 import { useApp } from "../store";
 import type { GenerateJob, StepKind } from "../types";
 import { useUI } from "../ui";
+import { useGeneratingHarness } from "./Generate";
 import { GithubIcon, HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
 
 export interface ChatLinkProps {
@@ -77,7 +78,8 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
   const { chat, historyOpen, setHistoryOpen, newChat, error } = useChat();
   const toggleChat = useApp((s) => s.toggleChat);
   const meta = useApp((s) => s.guide?.meta);
-  const guideHarness = meta?.harness ?? null;
+  const genHarness = useGeneratingHarness();
+  const guideHarness = meta?.harness ?? genHarness;
   // Back from the terminal: show what was said to the guide's session there.
   useEffect(() => {
     const sync = () => document.visibilityState === "visible" && void useChat.getState().syncGuide();
