@@ -12,7 +12,6 @@ const note = (file: string, pfrom: number, pto: number): Question => ({
   answer: "",
   tools: [],
   turn: 0,
-  shows: [],
 });
 
 test("a note's badge goes on its first line, in the diff, in expanded context, or in a file tab", () => {

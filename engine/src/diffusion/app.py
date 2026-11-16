@@ -33,7 +33,7 @@ from .agent import (
     make_runner,
     mode_for,
 )
-from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
+from .chat_agent import TURN_NOTE, ChatDelta, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
 from .generate import Jobs, generate_request, uv_dirs
@@ -556,7 +556,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         if not (harness and session):
             return {**chat, "harness": harness}
         found = await asyncio.to_thread(session_turns, harness, session)
-        reminder = SHOW_REMINDER.strip()
+        reminder = TURN_NOTE.strip()
         # Diffusion's turns end with its reminder, except commands, which go as typed.
         sent = {
             q["text"].strip()
@@ -691,7 +691,6 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     "answers": {str(q.n): "" for q in req.questions},
                     "tools": [],
                     "trace": [],  # what the agent did, in order: {"think": text} and {"tool": summary}
-                    "shows": [],
                     "status": "streaming",
                 }
                 chat["turns"].append(record)
@@ -761,9 +760,6 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                     said = True
                                     record["answers"][str(ev.n)] += ev.text
                                     yield "delta", {"n": ev.n, "text": ev.text}
-                                elif isinstance(ev, ChatFocus):
-                                    record["shows"].append(ev.to_dict())
-                                    yield "focus", ev.to_dict()
                                 elif isinstance(ev, ThinkingEvent):
                                     said = True
                                     trace = record["trace"]

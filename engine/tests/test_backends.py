@@ -313,8 +313,8 @@ def test_claude_code_prompt_maps_plain_tool_names():
         return ""
 
     assert tool_names_note([]) == ""
-    note = tool_names_note([ToolSpec("show_code", "", {}, h)])
-    assert "`show_code` is `mcp__diffusion__show_code`" in note
+    note = tool_names_note([ToolSpec("get_hunk", "", {}, h)])
+    assert "`get_hunk` is `mcp__diffusion__get_hunk`" in note
 
 
 async def _claude_options(monkeypatch, tmp_path, **kw):

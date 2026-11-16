@@ -14,7 +14,6 @@ import {
   History,
   Layers,
   ListChecks,
-  LocateFixed,
   Lock,
   MessageCircle,
   Minus,
@@ -45,7 +44,6 @@ import {
   guideSessionOf,
   modesFor,
   type Question,
-  type Show,
   type TraceItem,
   useChat,
 } from "../chat";
@@ -118,16 +116,6 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
   const [showEarlier, setShowEarlier] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: fold again whenever another chat opens
   useEffect(() => setShowEarlier(false), [chat.key]);
-
-  // The model's first show_code of a turn jumps the diff (chat.ts decides whether the reviewer was busy there).
-  const autoShow = useChat((s) => s.autoShow);
-  const resolve = useResolveLoc();
-  useEffect(() => {
-    if (!autoShow) return;
-    const show = useChat.getState().chat.questions.find((q) => q.id === autoShow.q)?.shows[autoShow.i];
-    const r = show && resolve(show);
-    if (r) useUI.getState().focus(r.keys, r.files);
-  }, [autoShow, resolve]);
 
   return (
     <aside className="chat">
@@ -319,33 +307,6 @@ function PathLink({ path, label }: { path: string; label?: string }) {
     >
       <code>{label ? label.replace(/^.*\//, "") : repo}</code>
     </button>
-  );
-}
-
-const locText = (s: CodeLoc) => `${s.file.split("/").pop()}:${s.start}${s.end !== s.start ? `–${s.end}` : ""}`;
-
-/** Regions the model pointed at with show_code. */
-function Shows({ shows }: { shows: Show[] }) {
-  const resolve = useResolveLoc();
-  return (
-    <div className="shows">
-      {shows.map((s, i) => {
-        const r = resolve(s);
-        return (
-          <button
-            key={i}
-            className="show-chip"
-            disabled={!r}
-            title={r ? "Show in diff" : "No longer in this diff"}
-            {...(r ? locLink(r) : {})}
-          >
-            {ic(LocateFixed, 13)}
-            {s.label && <span className="lbl">{s.label}</span>}
-            <span className="loc">{locText(s)}</span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -560,7 +521,6 @@ function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first:
                   )}
                   {q.status === "error" && !q.answer && <span className="ans-err">—</span>}
                 </div>
-                {q.shows.length > 0 && <Shows shows={q.shows} />}
                 {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
                 {q.status === "answered" && q.answer.trim() && <AnswerActions q={q} />}
               </div>
@@ -586,7 +546,6 @@ function GenerateTurn({ job }: { job: GenerateJob }) {
     answer: job.text ?? "",
     tools: [],
     turn: 0,
-    shows: [],
     trace: job.log ?? [],
   };
   return (
@@ -666,7 +625,6 @@ const TOOL_ICONS: Partial<Record<string, typeof Wrench>> = {
   Glob: Search,
   Search: Search,
   Diff: FileCode,
-  Show: FileCode,
 };
 
 /** One tool call as a quiet line, the way chat apps show them: an icon, a verb, and what it acted on. */

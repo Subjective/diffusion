@@ -1,8 +1,8 @@
 """Backend: Codex, through its app server (``codex app-server``), using your Codex setup and login.
 
-Codex explores the repository with its own shell tools inside its sandbox. Our custom tools (``get_hunk``,
-``show_code``) don't cross the process boundary; the chat prompt carries the hunk table, and Codex reads the rest
-with its shell. The app server, unlike ``codex exec``, takes messages into a running turn (Steer) and names the
+Codex explores the repository with its own shell tools inside its sandbox. Our custom tool (``get_hunk``)
+doesn't cross the process boundary; the chat prompt carries the hunk table, and Codex reads the rest with its
+shell. The app server, unlike ``codex exec``, takes messages into a running turn (Steer) and names the
 skill a ``$skill`` prompt asks for.
 """
 
