@@ -1,5 +1,4 @@
 import {
-  ArrowUpRight,
   BookOpen,
   Check,
   ChevronDown,
@@ -152,12 +151,11 @@ const OnGitHub = ({ url, children }: { url: string; children: ReactNode }) => {
       className="on-gh"
       role="link"
       tabIndex={0}
-      title="Open on GitHub"
+      data-tip="Open on GitHub"
       onClick={open}
       onKeyDown={(e) => e.key === "Enter" && open(e)}
     >
       {children}
-      {ic(ArrowUpRight, 12)}
     </span>
   );
 };

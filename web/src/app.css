@@ -287,22 +287,12 @@ button.ib-r {
   width: 36px;
 }
 .ib-r .on-gh {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  border-radius: 4px;
   cursor: pointer;
-}
-.ib-r .on-gh .ic {
-  opacity: 0;
 }
 .ib-r .on-gh:hover {
   color: var(--text);
   text-decoration: underline;
   text-underline-offset: 2px;
-}
-.ib-r .on-gh:hover .ic {
-  opacity: 1;
 }
 /* Loading rows: the inbox's shape in grey, pulsing */
 .ib-skel .sk {
