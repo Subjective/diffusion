@@ -8,6 +8,7 @@ import { useReview } from "../review";
 import { useApp } from "../store";
 import type { Thread, TimelineItem } from "../types";
 import { useUI } from "../ui";
+import { GenerateCard } from "./Generate";
 import { Header } from "./GuidePane";
 import { HarnessMark, ic } from "./icons";
 import { threadKeys, whereText } from "./Threads";
@@ -53,6 +54,7 @@ export function ConversationPane() {
   const files = useApp((s) => s.files);
   const versions = useApp((s) => s.versions);
   const harness = useApp((s) => s.guide?.meta?.harness);
+  const hasGuide = useApp((s) => !!s.guide);
   const state = useReview((s) => s.state);
   const idx = useMemo(() => indexFiles(files), [files]);
   const entries = useMemo(
@@ -89,6 +91,7 @@ export function ConversationPane() {
   return (
     <aside className="guide conv">
       <Header />
+      {!hasGuide && <GenerateCard url={pr.url} />}
       <Description own={!!state?.viewer && state.viewer === state.author} prId={state?.id} />
       <div className="conv-tl">
         {entries.map((e) =>

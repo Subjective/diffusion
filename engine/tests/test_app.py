@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from diffusion.agent import DoneEvent, ToolEvent
+from diffusion.agent import DoneEvent, TextEvent, ToolEvent
 from diffusion.app import Deps, create_app
 from diffusion.config import Config
 from diffusion.github import GitHubError, PRMeta, PRRef
@@ -876,3 +876,24 @@ async def test_generate_runs_the_review_command_in_the_background_and_reports_pr
         await asyncio.sleep(0)
     assert (await client.get("/api/generate", params={"url": URL})).json()["state"] == "done"
     assert len(seen) == 1
+
+
+async def test_a_review_being_written_can_be_stopped(setup):
+    client, runners, deps, _ = setup
+    seen = []
+
+    async def agent(req):
+        seen.append(req.prompt)
+        yield TextEvent("Looking at the diff")
+        await asyncio.Event().wait()  # runs until stopped
+        yield DoneEvent(turns=1, cost_usd=None, is_error=False, session_id="s1")
+
+    runners["chat"] = agent
+    job = (await client.post("/api/generate", json={"url": URL, "focus": "the retry loop"})).json()
+    assert job["state"] == "running"
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert seen == [f"/diffusion:review {URL} the retry loop"]
+    assert (await client.get("/api/generate", params={"url": URL})).json()["text"] == "Looking at the diff"
+    stopped = (await client.post("/api/generate/stop", json={"url": URL})).json()
+    assert stopped["state"] == "stopped"

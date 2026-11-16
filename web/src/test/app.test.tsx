@@ -54,6 +54,7 @@ vi.mock("../api", () => ({
   fetchReview: vi.fn(async () => ({ available: false })),
   fetchGenerate: vi.fn(async () => ({ state: "none" })),
   startGenerate: vi.fn(async () => ({ state: "running", doing: "" })),
+  stopGenerate: vi.fn(async () => ({ state: "stopped" })),
   reviewAction: vi.fn(async () => ({ available: true, viewer: "jy", threads: [] })),
   fetchInbox: vi.fn(async () => ({
     login: "jy",
@@ -897,18 +898,43 @@ test("scope chip names what the guide covers", async () => {
   expect(document.querySelector(".ver-btn")).toBeNull(); // one version: no history
 });
 
-test("no guide yet: says how to get one, then shows it when it's submitted", async () => {
+test("no guide yet: write one from here, watch it in the chat, stop it, and see it when it's submitted", async () => {
   await mountWith({ ...payload, guide: null, versions: [] });
-  expect(document.querySelector(".no-guide code")!.textContent).toBe("/diffusion:review");
-  // or write one from here: it runs in the background, saying what the agent is doing
-  vi.mocked(api.fetchGenerate).mockResolvedValue({ state: "running", doing: "Read session.ts" });
-  fireEvent.click(screen.getByText("Write a review"));
-  expect(api.startGenerate).toHaveBeenCalledWith(payload.pr.url);
-  await waitFor(() => expect(document.querySelector(".write-doing")?.textContent).toBe("Read session.ts"));
-  expect(document.querySelector<HTMLButtonElement>(".write-btn")!.disabled).toBe(true);
+  expect(document.querySelector(".no-guide")).toBeNull(); // a GitHub PR gets the card, not the command hint
+  // the picker can copy the command, focus included, to run it yourself
+  const focus = screen.getByPlaceholderText("Anything to focus on?");
+  fireEvent.change(focus, { target: { value: "the refresh timer" } });
+  fireEvent.click(document.querySelector(".gen-h")!);
+  expect(screen.getByText("Copy command")).toBeTruthy();
+  fireEvent.click(document.querySelector(".gen-h")!);
+  // Generate runs it in the background; the chat shows the run as it goes
+  const running = {
+    state: "running" as const,
+    started_at: Date.now() / 1000 - 75,
+    prompt: `/diffusion:review ${payload.pr.url} the refresh timer`,
+    log: [{ tool: "Read session.ts" }],
+    text: "Starting with the timer.",
+  };
+  vi.mocked(api.fetchGenerate).mockResolvedValue(running);
+  vi.mocked(api.startGenerate).mockResolvedValue(running);
+  fireEvent.keyDown(focus, { key: "Enter" });
+  expect(api.startGenerate).toHaveBeenCalledWith(payload.pr.url, "the refresh timer");
+  await waitFor(() => expect(document.querySelector(".gen-clock")?.textContent).toBe("1:15"));
+  expect(document.querySelector(".chat .bubble")!.textContent).toBe(
+    `/diffusion:review ${payload.pr.repo}#${payload.pr.number} the refresh timer`,
+  );
+  expect(document.querySelector(".chat .trace-tool")!.textContent).toContain("session.ts");
+  expect(document.querySelector(".chat .ans-t")!.textContent).toBe("Starting with the timer.");
+  // Stop ends the run and brings the card back
+  vi.mocked(api.fetchGenerate).mockResolvedValue({ state: "stopped" });
+  vi.mocked(api.stopGenerate).mockResolvedValue({ state: "stopped" });
+  fireEvent.click(document.querySelector('[data-tip="Stop"]')!);
+  await waitFor(() => expect(screen.getByPlaceholderText("Anything to focus on?")).toBeTruthy());
+  expect(api.stopGenerate).toHaveBeenCalledWith(payload.pr.url);
+  // a submitted guide replaces the card
   vi.mocked(api.fetchGenerate).mockResolvedValue({ state: "none" });
   vi.mocked(api.fetchGuide).mockResolvedValueOnce({ ...payload.guide!, version: 1 });
   await useApp.getState().refresh();
   await waitFor(() => expect(document.querySelector(".tldr")).toBeTruthy());
-  expect(document.querySelector(".no-guide")).toBeNull();
+  expect(document.querySelector(".gen-card")).toBeNull();
 });

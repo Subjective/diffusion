@@ -4,6 +4,7 @@ chat answers stream over SSE."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import time
@@ -41,6 +42,7 @@ INBOX_TTL = 60  # seconds the home page's PR list is reused before asking GitHub
 
 class GenerateReq(BaseModel):
     url: str
+    focus: str = ""
 
 
 class ReviewAction(BaseModel):
@@ -263,7 +265,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
 
     review_cache: dict[str, dict] = {}
     jobs = Jobs()
-    tasks: set[asyncio.Task] = set()
+    tasks: dict[str, asyncio.Task] = {}
 
     @app.post("/api/generate")
     async def generate(req: GenerateReq) -> dict:
@@ -274,17 +276,28 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             return jobs.get(key)
         # Claude Code (bundled with its SDK) runs the review skill, from the reviewer's installed plugin.
         prep = await get_prepared(req.url)
-        request = generate_request(req.url, prep.checkout.worktree)
+        request = generate_request(req.url, prep.checkout.worktree, focus=req.focus)
         runner = d().runner_for("claude-code")
-        task = asyncio.create_task(jobs.run(key, lambda: runner(request)))
-        tasks.add(task)
-        task.add_done_callback(tasks.discard)
+        task = asyncio.create_task(jobs.run(key, lambda: runner(request), request.prompt))
+        tasks[key] = task
+        task.add_done_callback(lambda t: tasks.pop(key, None) if tasks.get(key) is t else None)
         await asyncio.sleep(0)  # let it register as running
         return jobs.get(key)
 
     @app.get("/api/generate")
     async def generating(url: str) -> dict:
         return jobs.get(pr_key(url))
+
+    @app.post("/api/generate/stop")
+    async def stop_generate(req: GenerateReq) -> dict:
+        """Stop the review being written: its agent stops, and nothing is saved."""
+        key = pr_key(req.url)
+        task = tasks.get(key)
+        if task and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        return jobs.get(key)
 
     @app.get("/api/review")
     async def review(url: str, refresh: bool = False) -> dict:

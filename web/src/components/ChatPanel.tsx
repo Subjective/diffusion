@@ -55,8 +55,9 @@ import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
 import { cachedTree } from "../lib/tree";
 import { complete, rankCommands, rankFiles, type Trigger, trigger } from "../lib/typeahead";
+import { useGenerate } from "../review";
 import { useApp } from "../store";
-import type { StepKind } from "../types";
+import type { GenerateJob, StepKind } from "../types";
 import { useUI } from "../ui";
 import { HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
 
@@ -100,6 +101,10 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
 
   const turns = groupTurns(sent);
   const asks = useChat((s) => s.asks);
+  // A review being written from the review page: its run, until the guide (and its session) arrives.
+  const genUrl = useApp((s) => (s.pr && !s.pr.local && !s.guide ? s.pr.url : null));
+  const gen = useGenerate((s) => (genUrl ? s.jobs[genUrl] : undefined));
+  const generating = gen?.state === "running" || gen?.state === "failed" ? gen : null;
   // The conversation the session had in the terminal before this chat: folded to one line until opened.
   let earlier = turns.findIndex((qs) => !qs.every((q) => q.fromSession));
   if (earlier < 0) earlier = turns.length;
@@ -162,7 +167,13 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
       >
-        {!turns.length ? (
+        {generating ? (
+          <InlineCodeContext.Provider value={Cite}>
+            <div className="thread">
+              <GenerateTurn job={generating} />
+            </div>
+          </InlineCodeContext.Provider>
+        ) : !turns.length ? (
           <Empty />
         ) : (
           <InlineCodeContext.Provider value={Cite}>
@@ -553,6 +564,51 @@ function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first:
   );
 }
 
+/** The agent writing a review, as a turn: the command it was given, its steps (open while it runs), and what it
+ *  says. */
+function GenerateTurn({ job }: { job: GenerateJob }) {
+  const pr = useApp((s) => s.pr)!;
+  const running = job.state === "running";
+  const q: Question = {
+    id: "generate",
+    n: null,
+    text: "",
+    anchor: null,
+    status: running ? "pending" : "answered",
+    answer: job.text ?? "",
+    tools: [],
+    turn: 0,
+    shows: [],
+    trace: job.log ?? [],
+  };
+  return (
+    <>
+      <div className="msg user">
+        <div className="q-item">
+          <div className="bubble">{(job.prompt || "/diffusion:review").replace(pr.url, `${pr.repo}#${pr.number}`)}</div>
+        </div>
+      </div>
+      <div className="msg ai">
+        <div className="ai-body">
+          <Trace q={q} pending={running} open={running} />
+          <div className="ans">
+            <div className="ans-t">
+              {job.text ? (
+                <div className={running ? "streaming" : undefined}>
+                  <Markdown text={job.text} />
+                </div>
+              ) : (
+                running && <span className="cursor" />
+              )}
+              {job.state === "failed" && <div className="chat-err">{job.error}</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 const secs = (s: number) => (s < 60 ? `${Math.max(1, Math.round(s))}s` : `${Math.round(s / 60)}m`);
 
 /** A reasoning summary's headline: its first bold phrase, else its first sentence. */
@@ -595,8 +651,8 @@ function ToolRow({ summary, failed }: { summary: string; failed?: boolean }) {
 
 /** What the agent did for a turn, folded into one quiet line that opens to a timeline: reasoning and tool calls in
  * the order they happened. While it runs, the line shows the latest step. */
-function Trace({ q, pending }: { q: Question; pending: boolean }) {
-  const [open, setOpen] = useState(false);
+function Trace({ q, pending, open: openFirst = false }: { q: Question; pending: boolean; open?: boolean }) {
+  const [open, setOpen] = useState(openFirst);
   const trace = q.trace ?? [];
   if (!trace.length) return null;
   const thought = trace.some((t) => "think" in t);

@@ -8,12 +8,23 @@ writing the guide to the temp directory. Anything else is declined."""
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import time
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
-from .agent import AgentRequest, Approver, Decision, DoneEvent, Event, Runner, ToolEvent
+from .agent import (
+    AgentRequest,
+    Approver,
+    Decision,
+    DoneEvent,
+    Event,
+    Runner,
+    TextEvent,
+    ThinkingEvent,
+    ToolEvent,
+)
 
 COMMAND = "/diffusion:review"
 READ = {"Read", "Grep", "Glob", "LS", "Skill", "Task", "TodoWrite", "ToolSearch"}
@@ -55,10 +66,18 @@ def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
     return approve
 
 
-def generate_request(url: str, worktree: Path, model: str = "") -> AgentRequest:
+LOG_MAX = 400  # steps kept for the chat to show while it runs
+
+
+def generate_prompt(url: str, focus: str = "") -> str:
+    """What the reviewer would type: the command, the PR, and what to focus on, if anything."""
+    return f"{COMMAND} {url} {' '.join(focus.split())}".strip()
+
+
+def generate_request(url: str, worktree: Path, model: str = "", focus: str = "") -> AgentRequest:
     return AgentRequest(
         system_prompt="",
-        prompt=f"{COMMAND} {url}",
+        prompt=generate_prompt(url, focus),
         model=model,
         cwd=worktree,
         max_turns=200,
@@ -70,7 +89,8 @@ def generate_request(url: str, worktree: Path, model: str = "") -> AgentRequest:
 
 
 class Jobs:
-    """Reviews being written, by PR key: running, done or failed, with what the agent is doing now."""
+    """Reviews being written, by PR key: running, done, failed or stopped, with what the agent is doing now and
+    what it has done (``log``: its steps; ``text``: what it has said), for the chat to show."""
 
     def __init__(self) -> None:
         self.jobs: dict[str, dict] = {}
@@ -81,12 +101,21 @@ class Jobs:
     def running(self, key: str) -> bool:
         return self.get(key)["state"] == "running"
 
-    async def run(self, key: str, events: Callable[[], AsyncIterator[Event]]) -> None:
-        job = self.jobs[key] = {"state": "running", "started_at": time.time(), "doing": "", "error": None}
+    async def run(self, key: str, events: Callable[[], AsyncIterator[Event]], prompt: str = "") -> None:
+        job = self.jobs[key] = {
+            "state": "running", "started_at": time.time(), "prompt": prompt, "doing": "", "error": None,
+            "log": [], "text": "",
+        }  # fmt: skip
+        log: list = job["log"]
         try:
             async for ev in events():
                 if isinstance(ev, ToolEvent):
                     job["doing"] = ev.summary
+                    log.append({"tool": ev.summary})
+                elif isinstance(ev, ThinkingEvent) and ev.text.strip():
+                    log.append({"think": ev.text})
+                elif isinstance(ev, TextEvent):
+                    job["text"] += ev.text
                 elif isinstance(ev, DoneEvent):
                     if ev.is_error:
                         job.update(
@@ -97,8 +126,14 @@ class Jobs:
                     job["session"] = ev.session_id
             if job["state"] == "running":
                 job["state"] = "done"
+        except asyncio.CancelledError:  # stopped from the UI
+            job["state"] = "stopped"
+            job["ended_at"] = time.time()
+            raise
         except Exception as e:  # the agent couldn't start, or stopped part way
             job.update(state="failed", error=str(e)[:500] or type(e).__name__)
+        finally:
+            del log[:-LOG_MAX]
         job["ended_at"] = time.time()
 
 

@@ -1,8 +1,16 @@
 // GitHub's side of the open PR (review threads, reviewers, checks), and how its threads are shown.
 import { create } from "zustand";
-import { fetchInbox, fetchReview, type ReviewAct, reviewAction, startGenerate } from "./api";
+import {
+  fetchGenerate,
+  fetchInbox,
+  fetchReview,
+  type ReviewAct,
+  reviewAction,
+  startGenerate,
+  stopGenerate,
+} from "./api";
 import { storage } from "./lib/storage";
-import type { Inbox, InboxPR, ReviewState } from "./types";
+import type { GenerateJob, Inbox, InboxPR, ReviewState } from "./types";
 
 /** A comment written for your next review, kept here until it's submitted. */
 export interface PendingComment {
@@ -163,6 +171,44 @@ export const useInbox = create<InboxStore>((set, get) => ({
     }
   },
 }));
+
+/** Reviews being written from the review page, by PR URL: shared by its card and the chat, which shows the run. */
+interface GenerateStore {
+  jobs: Record<string, GenerateJob>;
+  load(url: string): Promise<void>;
+  start(url: string, focus: string): Promise<void>;
+  stop(url: string): Promise<void>;
+}
+
+export const useGenerate = create<GenerateStore>((set, get) => {
+  const put = (url: string, job: GenerateJob) => set({ jobs: { ...get().jobs, [url]: job } });
+  const fail = (url: string, e: unknown) => put(url, { state: "failed", error: String((e as Error).message ?? e) });
+  return {
+    jobs: {},
+    async load(url) {
+      try {
+        put(url, await fetchGenerate(url));
+      } catch {
+        // the server may be restarting; the next poll tries again
+      }
+    },
+    async start(url, focus) {
+      put(url, { state: "running", started_at: Date.now() / 1000, log: [], text: "" });
+      try {
+        put(url, await startGenerate(url, focus));
+      } catch (e) {
+        fail(url, e);
+      }
+    },
+    async stop(url) {
+      try {
+        put(url, await stopGenerate(url));
+      } catch (e) {
+        fail(url, e);
+      }
+    },
+  };
+});
 
 /** The inbox PR for owner/repo#number, and the stack it's in (top layer first), if any. */
 export function inboxStack(prs: InboxPR[], owner: string, repo: string, number: number) {

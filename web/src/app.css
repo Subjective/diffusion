@@ -2108,34 +2108,141 @@ tr.th-row > td {
   font: 13.5px / 1.5 var(--sans);
 }
 
-/* Writing a review from here */
-.write-rv {
+/* Writing a review from the review page: what to focus on, which agent, and the run */
+.gen-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 22px 4px 0;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 12px 12px 10px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface);
 }
-.write-btn {
+.gen-card textarea {
+  width: 100%;
+  min-height: 24px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: 14px / 1.5 var(--sans);
+}
+.gen-card textarea::placeholder {
+  color: var(--subtle);
+}
+.gen-f {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.gen-h {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
+  gap: 6px;
+  height: 30px;
+  margin-left: -6px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  font: 500 13px var(--sans);
+}
+.gen-h:hover,
+.gen-h.on {
+  background: var(--hover);
   color: var(--text);
+}
+.gen-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px 0 12px;
+  border-radius: 999px;
+  background: var(--solid);
+  color: var(--solid-fg);
   font: 500 13.5px var(--sans);
 }
-.write-btn:hover:not(:disabled) {
+.gen-go:hover {
+  opacity: 0.88;
+}
+.gen-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: -6px;
+  z-index: 30;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.gen-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--text);
+  font: 13px var(--sans);
+  text-align: left;
+}
+.gen-menu button:hover {
   background: var(--hover);
 }
-.write-btn:disabled {
-  cursor: default;
+.gen-menu .gen-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.gen-card.writing {
+  gap: 12px;
+  padding: 12px 12px 14px 16px;
+}
+.gen-w {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 500 14px var(--sans);
+}
+.gen-w .spin {
   color: var(--muted);
 }
-.spin-slow,
+.gen-clock {
+  color: var(--subtle);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+/* No real progress to show: a bar that keeps moving while it runs. */
+.gen-bar {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--chip);
+}
+.gen-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  border-radius: 2px;
+  background: var(--muted);
+  animation: gen-bar 1.8s ease-in-out infinite;
+}
+@keyframes gen-bar {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
 /* The mark spins; its tooltip stays put, ending at the mark and cut short if the step is long. */
 .ib-r .gen.run {
   display: inline-grid;
@@ -2154,16 +2261,9 @@ tr.th-row > td {
 .ib-r .gen.run:hover::after {
   transform: none;
 }
-.write-doing {
-  color: var(--subtle);
-  font: 12px var(--mono);
-}
 .write-err {
   color: var(--del-fg);
   font-size: 12.5px;
-}
-.write-rv .no-guide {
-  margin-top: 10px;
 }
 .ib-r .gd .gen {
   color: var(--muted);

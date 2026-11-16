@@ -128,8 +128,19 @@ export async function reviewAction(url: string, action: ReviewAct): Promise<Revi
 }
 
 /** Start writing a review of the PR with the reviewer's agent, in the background. */
-export async function startGenerate(url: string): Promise<GenerateJob> {
+export async function startGenerate(url: string, focus = ""): Promise<GenerateJob> {
   const res = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, focus }),
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+/** Stop it: the agent stops and nothing is saved. */
+export async function stopGenerate(url: string): Promise<GenerateJob> {
+  const res = await fetch("/api/generate/stop", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),

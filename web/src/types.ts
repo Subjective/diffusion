@@ -261,10 +261,16 @@ export interface InboxPR {
 }
 
 export interface GenerateJob {
-  state: "none" | "running" | "done" | "failed";
+  state: "none" | "running" | "done" | "failed" | "stopped";
   /** What the agent is doing now. */
   doing?: string;
   error?: string | null;
+  /** When it started (epoch seconds), and what it was asked. */
+  started_at?: number;
+  prompt?: string;
+  /** Its steps so far (tool calls, reasoning) and what it has said. */
+  log?: ({ tool: string } | { think: string })[];
+  text?: string;
 }
 
 export interface Inbox {

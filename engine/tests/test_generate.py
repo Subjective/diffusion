@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 
 from diffusion.agent import DoneEvent, ToolEvent
-from diffusion.generate import Jobs, generate_approver, generate_request
+from diffusion.generate import Jobs, generate_approver, generate_prompt, generate_request
 
 
 def test_the_generating_agent_reads_and_submits_but_does_nothing_else(tmp_path):
@@ -51,8 +51,16 @@ def test_jobs_track_a_run_to_done_or_failed():
         yield ToolEvent("Bash", "Ran gh pr diff")
         raise RuntimeError("not signed in")
 
-    asyncio.run(jobs.run("k1", good))
+    asyncio.run(jobs.run("k1", good, "/diffusion:review x"))
     asyncio.run(jobs.run("k2", bad))
     assert jobs.get("k1")["state"] == "done" and jobs.get("k1")["session"] == "s1"
+    assert (
+        jobs.get("k1")["log"] == [{"tool": "Read a.py"}] and jobs.get("k1")["prompt"] == "/diffusion:review x"
+    )
     assert jobs.get("k2")["state"] == "failed" and jobs.get("k2")["error"] == "not signed in"
     assert jobs.get("k3") == {"state": "none"}
+
+
+def test_the_prompt_carries_what_to_focus_on():
+    assert generate_prompt("u", "  the  retry\nlogic ") == "/diffusion:review u the retry logic"
+    assert generate_prompt("u") == "/diffusion:review u"
