@@ -98,7 +98,9 @@ def generate_request(url: str, worktree: Path, model: str = "", focus: str = "")
         mode="default",
         approve=generate_approver(worktree),
         # The review opens where it was asked for (here), so the submit shouldn't open a browser too.
-        env={"DIFFUSION_NO_BROWSER": "1"},
+        # Published versions before DIFFUSION_NO_BROWSER still use Python's webbrowser, which runs $BROWSER: make
+        # that a no-op too.
+        env={"DIFFUSION_NO_BROWSER": "1", "BROWSER": "true"},
     )
 
 
