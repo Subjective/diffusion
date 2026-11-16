@@ -215,12 +215,12 @@ function ReviewChip() {
   const { submit, editPending, busy } = useReview();
   const error = useReview((s) => (s.errorAt === "review" ? s.error : null));
   const [open, setOpen, ref] = usePopover();
-  const [body, setBody] = useState("");
+  const body = useReview((s) => s.summary);
+  const setBody = useReview((s) => s.setSummary);
   const [verdict, setVerdict] = useState<Verdict>("comment");
   if (!state?.available || state.error || !state.viewer) return null;
   // GitHub doesn't let you approve or request changes on your own PR.
   const own = state.viewer === state.author;
-  const verdicts = own ? VERDICTS.slice(0, 1) : VERDICTS;
   const can = !busy && (pending.length > 0 || body.trim() !== "" || verdict === "approve");
   const go = async () => {
     if (await submit(own ? "comment" : verdict, body.trim())) {
@@ -263,7 +263,12 @@ function ReviewChip() {
                     </span>
                     <span className="x">{p.body}</span>
                   </button>
-                  <button type="button" className="icon-btn sm" data-tip="Remove" onClick={() => editPending(p.id, "")}>
+                  <button
+                    type="button"
+                    className="icon-btn sm"
+                    aria-label="Remove"
+                    onClick={() => editPending(p.id, "")}
+                  >
                     {ic(X, 13)}
                   </button>
                 </div>
@@ -285,21 +290,26 @@ function ReviewChip() {
           />
           {error && <div className="rv-err">{error}</div>}
           <div className="rv-f">
-            {verdicts.length > 1 && (
-              <div className="seg th-seg">
-                {verdicts.map(([v, label]) => (
+            <div className="seg th-seg rv-verdict">
+              {VERDICTS.map(([v, label]) => {
+                const mine = own && v !== "comment";
+                return (
                   <button
                     key={v}
                     type="button"
-                    className={verdict === v ? "on" : ""}
-                    aria-pressed={verdict === v}
+                    className={(own ? v === "comment" : verdict === v) ? "on" : ""}
+                    aria-pressed={own ? v === "comment" : verdict === v}
+                    disabled={mine}
+                    data-tip={
+                      mine ? `You can't ${v === "approve" ? "approve" : "request changes on"} your own PR` : undefined
+                    }
                     onClick={() => setVerdict(v)}
                   >
                     {label}
                   </button>
-                ))}
-              </div>
-            )}
+                );
+              })}
+            </div>
             <span className="grow" />
             <button type="button" className="rv-submit" disabled={!can} onClick={go}>
               Submit

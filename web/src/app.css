@@ -1856,8 +1856,18 @@ tr.th-row > td {
 }
 .rv-list {
   max-height: 240px;
-  overflow: auto;
+  overflow: hidden auto;
   margin: -4px -4px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.rv-verdict button:disabled {
+  color: var(--subtle);
+  cursor: default;
+}
+.rv-verdict button:disabled:hover {
+  background: none;
 }
 .rv-i {
   display: flex;
@@ -1932,4 +1942,11 @@ tr.th-row > td {
 .rv-submit:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* Under a chat answer: copy, and draft it into your GitHub review */
+.ans-acts {
+  display: flex;
+  gap: 2px;
+  margin: 6px 0 0 -6px;
 }

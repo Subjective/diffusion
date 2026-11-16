@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
+  Copy,
   FileCode,
   FilePen,
   FileText,
@@ -55,10 +56,11 @@ import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
 import { cachedTree } from "../lib/tree";
 import { complete, rankCommands, rankFiles, type Trigger, trigger } from "../lib/typeahead";
+import { useReview } from "../review";
 import { useApp } from "../store";
 import type { StepKind } from "../types";
 import { useUI } from "../ui";
-import { HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
+import { GithubIcon, HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
 
 export interface ChatLinkProps {
   /** Hover a question (by local id) to highlight its lines; null clears. */
@@ -544,12 +546,64 @@ function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first:
                 </div>
                 {q.shows.length > 0 && <Shows shows={q.shows} />}
                 {q.guideVersion != null && <GuideUpdated v={q.guideVersion} />}
+                {q.status === "answered" && q.answer.trim() && <AnswerActions q={q} />}
               </div>
             ))}
           </div>
         </div>
       )}
     </>
+  );
+}
+
+/** Under an answer: copy it, and on a GitHub PR, draft it into your review: a pending comment on the lines it was
+ *  asked about, else a paragraph of the review's summary. */
+function AnswerActions({ q }: { q: Question }) {
+  const [done, setDone] = useState<"copy" | "review" | null>(null);
+  const reviewable = useReview((s) => !!s.state?.available && !s.state.error && !!s.state.viewer);
+  const flash = (d: "copy" | "review") => {
+    setDone(d);
+    setTimeout(() => setDone(null), 1200);
+  };
+  const a = q.anchor;
+  const onLines = !!a?.file && a.start > 0;
+  const toReview = () => {
+    const r = useReview.getState();
+    const body = q.answer.trim();
+    if (onLines) r.addPending({ path: a!.file, side: a!.side, start: a!.start, end: a!.end, body });
+    else r.setSummary(r.summary.trim() ? `${r.summary.trim()}\n\n${body}` : body);
+    flash("review");
+  };
+  return (
+    <div className="ans-acts">
+      <button
+        type="button"
+        className="icon-btn sm"
+        data-tip={done === "copy" ? "Copied" : "Copy"}
+        onClick={() => {
+          void navigator.clipboard?.writeText(q.answer.trim());
+          flash("copy");
+        }}
+      >
+        {ic(done === "copy" ? Check : Copy, 14)}
+      </button>
+      {reviewable && (
+        <button
+          type="button"
+          className="icon-btn sm"
+          data-tip={
+            done === "review"
+              ? "Added to your review"
+              : onLines
+                ? "Draft a review comment"
+                : "Add to your review's summary"
+          }
+          onClick={toReview}
+        >
+          {done === "review" ? ic(Check, 14) : <GithubIcon size={14} />}
+        </button>
+      )}
+    </div>
   );
 }
 
