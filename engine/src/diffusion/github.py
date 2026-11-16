@@ -572,6 +572,11 @@ def write_review(ref: PRRef, action: dict, gh: str = "gh") -> None:
         _graphql(gh, ref.host, _MUTATIONS[kind], thread=action["thread"], **extra)
     elif kind in ("edit", "delete"):
         extra = {"body": action["body"]} if kind == "edit" else {}
-        _graphql(gh, ref.host, _MUTATIONS[kind], comment=action["comment"], **extra)
+        try:
+            _graphql(gh, ref.host, _MUTATIONS[kind], comment=action["comment"], **extra)
+        except GitHubError as e:
+            # Deleting a comment that's already gone (a second click while GitHub still listed it) is done.
+            if not (kind == "delete" and "Could not resolve to a node" in str(e)):
+                raise
     else:
         raise GitHubError(f"Unknown review action: {kind}")

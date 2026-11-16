@@ -201,11 +201,11 @@ function CommentView({ c, t, mine }: { c: ThreadComment; t: Thread; mine: boolea
   const act = useReview((s) => s.act);
   const editPending = useReview((s) => s.editPending);
   const save = (body: string) => {
-    if (!t.pending) return act({ kind: "edit", comment: c.id, body });
+    if (!t.pending) return act({ kind: "edit", comment: c.id, body }, t.id);
     editPending(c.id, body);
     return true;
   };
-  const remove = () => (t.pending ? editPending(c.id, "") : act({ kind: "delete", comment: c.id }));
+  const remove = () => (t.pending ? editPending(c.id, "") : act({ kind: "delete", comment: c.id }, t.id));
   return (
     <div className="th-c">
       {t.ci ? <span className="av ci">{ic(CircleX, 13)}</span> : <Avatar c={c} />}
@@ -258,7 +258,7 @@ function ThreadFoot({ t }: { t: Thread }) {
       {replying ? (
         <Compose
           placeholder="Reply"
-          onSave={(body) => act({ kind: "reply", thread: t.id, body })}
+          onSave={(body) => act({ kind: "reply", thread: t.id, body }, t.id)}
           onCancel={() => setReplying(false)}
         />
       ) : (
@@ -269,7 +269,7 @@ function ThreadFoot({ t }: { t: Thread }) {
       <button
         type="button"
         className="th-res"
-        onClick={() => void act({ kind: t.resolved ? "unresolve" : "resolve", thread: t.id })}
+        onClick={() => void act({ kind: t.resolved ? "unresolve" : "resolve", thread: t.id }, t.id)}
       >
         {ic(Check, 13)}
         {t.resolved ? "Unresolve" : "Resolve"}
@@ -289,6 +289,7 @@ export function ThreadCard({ t, keys }: { t: Thread; keys: string[] }) {
   const open = useReview((s) => s.expanded.includes(t.id));
   const expand = useReview((s) => s.expand);
   const viewer = useReview((s) => s.state?.viewer ?? "");
+  const error = useReview((s) => (s.errorAt === t.id ? s.error : null));
   const setHover = useUI((s) => s.setHover);
   const hoverProps = keys.length ? { onMouseEnter: () => setHover(keys), onMouseLeave: () => setHover([]) } : {};
   const people = [...new Map(t.comments.map((c) => [c.author, c])).values()];
@@ -337,6 +338,7 @@ export function ThreadCard({ t, keys }: { t: Thread; keys: string[] }) {
       ) : (
         cs.slice(1).map(view)
       )}
+      {error && <div className="rv-err th-err">{error}</div>}
       {!t.pending && !t.ci && <ThreadFoot t={t} />}
     </div>
   );

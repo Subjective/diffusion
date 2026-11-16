@@ -218,7 +218,8 @@ const VERDICTS: [Verdict, string][] = [
 function ReviewChip() {
   const state = useReview((s) => s.state);
   const pending = useReview((s) => s.pending);
-  const { submit, editPending, busy, error } = useReview();
+  const { submit, editPending, busy } = useReview();
+  const error = useReview((s) => (s.errorAt === "review" ? s.error : null));
   const [open, setOpen, ref] = usePopover();
   const [body, setBody] = useState("");
   const [verdict, setVerdict] = useState<Verdict>("comment");
