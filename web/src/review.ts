@@ -31,6 +31,9 @@ interface Review {
   /** What GitHub said when something you did failed, and where: "review", or the thread it was in. */
   error: string | null;
   errorAt: string;
+  /** The review's summary, as it's being written (a chat answer can be added to it). */
+  summary: string;
+  setSummary(s: string): void;
   busy: boolean;
   addPending(c: Omit<PendingComment, "id">): void;
   editPending(id: string, body: string): void;
@@ -65,6 +68,8 @@ export const useReview = create<Review>((set, get) => ({
   pending: [],
   error: null,
   errorAt: "",
+  summary: "",
+  setSummary: (summary) => set({ summary }),
   busy: false,
   hiddenFiles: [],
   expanded: [],
@@ -115,6 +120,7 @@ export const useReview = create<Review>((set, get) => ({
   async load(url, refresh = false) {
     if (url !== get().url)
       set({
+        summary: "",
         url,
         state: null,
         error: null,
