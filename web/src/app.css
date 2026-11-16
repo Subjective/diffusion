@@ -2200,6 +2200,14 @@ tr.th-row > td {
 .gen-menu button:hover {
   background: var(--hover);
 }
+.agent-menu .gen-menu {
+  left: auto;
+  right: 0;
+  min-width: 180px;
+}
+.agent-menu [aria-expanded="true"][data-tip]::after {
+  display: none;
+}
 .gen-menu .gen-sep {
   height: 1px;
   margin: 4px 6px;

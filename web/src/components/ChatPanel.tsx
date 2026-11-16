@@ -21,7 +21,6 @@ import {
   Search,
   ShieldAlert,
   ShieldOff,
-  Sparkles,
   Square,
   SquarePen,
   SquareTerminal,
@@ -401,11 +400,17 @@ const SUGG = [
   { icon: Workflow, label: "Flow", q: "Explain the flow end to end." },
 ];
 
+/** A chat with nothing in it yet: the mark of the agent it runs on, and a few questions to start with. */
 function Empty() {
   const ask = useChat((s) => s.ask);
+  const chatHarness = useChat((s) => s.chat.harness);
+  const genHarness = useGeneratingHarness();
+  const harness = useApp((s) => chatHarness ?? s.guide?.meta?.harness ?? null) ?? genHarness ?? "claude-code";
   return (
     <div className="empty">
-      <div className="big">{ic(Sparkles, 20)}</div>
+      <div className="big">
+        <HarnessMark harness={harness} size={20} />
+      </div>
       <div className="sugg">
         {SUGG.map((s) => (
           <button type="button" key={s.label} onClick={() => ask(s.q)}>
