@@ -2,9 +2,25 @@
 #root {
   display: contents;
 }
+/* A disabled button is dimmed (its content and fill, not the whole button, so its tooltip stays solid) and
+   doesn't react to hover. */
 .icon-btn:disabled {
-  opacity: 0.35;
   cursor: default;
+}
+.icon-btn:disabled > * {
+  opacity: 0.35;
+}
+.icon-btn:not(.solid):disabled:hover {
+  background: none;
+  color: var(--muted);
+}
+.icon-btn.solid:disabled,
+.icon-btn.solid:disabled:hover {
+  background: color-mix(in srgb, var(--solid) 35%, transparent);
+  opacity: 1;
+}
+.icon-btn.solid:disabled > * {
+  opacity: 1;
 }
 
 .banner {
@@ -1431,7 +1447,6 @@ tr.th-row > td {
   border-radius: 12px;
   background: var(--surface);
   font-family: var(--sans);
-  overflow: hidden;
 }
 .th:hover {
   border-color: color-mix(in srgb, var(--hl-bar) 55%, transparent);
@@ -1683,4 +1698,289 @@ tr.th-row > td {
 }
 .tl-t .x code {
   font-size: 12px;
+}
+
+/* Writing on threads: reply, resolve, edit your own, pending and CI cards */
+.th-acts {
+  display: inline-flex;
+  visibility: hidden;
+  margin: -4px -6px -4px 0;
+}
+.th-c:hover .th-acts {
+  visibility: visible;
+}
+.th-h > a.icon-btn {
+  display: grid;
+  margin: -4px -6px -4px 0;
+}
+.th-tag.pend {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--hl-bar) 12%, transparent);
+  color: var(--hl-bar);
+}
+.th.pending {
+  border-style: dashed;
+}
+.av.ci {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  background: var(--del);
+  color: var(--del-fg);
+}
+.th-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+.th-reply {
+  flex: 1;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--subtle);
+  font: 13px var(--sans);
+  text-align: left;
+}
+.th-reply:hover {
+  border-color: var(--border-strong);
+}
+.th-res {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  font: 500 12.5px var(--sans);
+}
+.th-res:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.th-compose {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.th-foot .th-compose {
+  margin-top: 0;
+}
+.th-compose textarea {
+  flex: 1;
+  min-height: 30px;
+  resize: none;
+  overflow-y: hidden;
+  padding: 5px 12px;
+  border: 1px solid var(--subtle);
+  border-radius: 15px;
+  outline: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px / 18px var(--sans);
+}
+.th-compose .icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+/* The line popup's ask | comment switch */
+.ask-ctx > .seg.ask-mode {
+  margin: -2px 0;
+  padding: 2px;
+  font-family: var(--sans);
+}
+.ask-mode .icon-btn {
+  width: 26px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+/* Conflicts line in the checks popover */
+.ci-pop .sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.ci-pop .mg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.ci-pop .mg.bad {
+  color: var(--del-fg);
+}
+
+/* Your review, from the top bar */
+.rv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  margin-right: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text);
+  font: 500 13px var(--sans);
+}
+.rv-btn:hover,
+.rv-btn.on {
+  background: var(--hover);
+}
+.rv-btn .n {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--hl-bar);
+  color: #fff;
+  font: 600 10px / 16px var(--sans);
+  text-align: center;
+}
+.rv-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-family: var(--sans);
+  animation: pop 0.14s ease-out;
+}
+.rv-pend {
+  margin: -4px -4px 0;
+  border-radius: 10px;
+  background: var(--hover);
+}
+.rv-pend.on {
+  max-height: 280px;
+  overflow: hidden auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.rv-pend-h {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: left;
+}
+.rv-pend-h:hover {
+  color: var(--text);
+}
+.rv-i {
+  display: flex;
+  align-items: flex-start;
+  margin: 0 4px;
+  border-radius: 8px;
+}
+.rv-i:hover {
+  background: var(--surface);
+}
+.rv-i .icon-btn {
+  visibility: hidden;
+  margin: 6px 6px 0 0;
+}
+.rv-i:hover .icon-btn {
+  visibility: visible;
+}
+.rv-go {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  text-align: left;
+}
+.rv-go .x {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 18px;
+}
+.rv-go .where {
+  display: flex;
+  gap: 6px;
+  color: var(--subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+.rv-verdict button:disabled {
+  color: var(--subtle);
+  cursor: default;
+}
+.rv-verdict button:disabled:hover {
+  background: none;
+}
+.rv-body {
+  resize: vertical;
+  min-height: 72px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13.5px / 1.5 var(--sans);
+}
+.rv-body:focus {
+  border-color: var(--subtle);
+}
+.rv-err {
+  color: var(--del-fg);
+  font-size: 12.5px;
+}
+.th-err {
+  padding: 0 12px 8px 42px;
+}
+.rv-f {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rv-submit {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--solid);
+  color: var(--solid-fg);
+  font: 500 13px var(--sans);
+}
+.rv-submit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Under a chat answer: copy, and draft it into your GitHub review */
+.ans-acts {
+  display: flex;
+  gap: 2px;
+  margin: 6px 0 0 -6px;
 }

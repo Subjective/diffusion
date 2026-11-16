@@ -100,6 +100,31 @@ export async function fetchReview(url: string, refresh = false): Promise<ReviewS
   return res.json();
 }
 
+/** Something done on the PR as you: submit a review, reply to or (un)resolve a thread, edit or delete a comment. */
+export type ReviewAct =
+  | {
+      kind: "submit";
+      event: "comment" | "approve" | "request_changes";
+      body: string;
+      commit?: string;
+      comments: { path: string; side: "old" | "new"; start: number | null; end: number | null; body: string }[];
+    }
+  | { kind: "reply"; thread: string; body: string }
+  | { kind: "resolve" | "unresolve"; thread: string }
+  | { kind: "edit"; comment: string; body: string }
+  | { kind: "delete"; comment: string };
+
+/** Do it on GitHub; the answer is the PR's fresh review state. */
+export async function reviewAction(url: string, action: ReviewAct): Promise<ReviewState> {
+  const res = await fetch("/api/review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, action }),
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
 export interface Command {
   name: string;
   description: string;

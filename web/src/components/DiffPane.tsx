@@ -15,14 +15,14 @@ import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
 import { usePopover } from "../lib/usePopover";
 import { useReview } from "../review";
 import { useApp } from "../store";
-import type { FileDiff as FD, Guide, Ref } from "../types";
+import type { FileDiff as FD, Guide, Ref, Thread } from "../types";
 import { diffActivity, markDiffActivity, useUI } from "../ui";
 import { type AskComment, commentRows } from "./Comments";
 import { type Dot, FileDiff, type Gutter } from "./FileDiff";
 import { FileRail, fileInView, treeOrder } from "./FileRail";
 import { ic } from "./icons";
 import { FileView, TabBar } from "./Tabs";
-import { ThreadsPopover, threadLayout } from "./Threads";
+import { checkThreads, pendingThreads, ThreadsPopover, threadLayout } from "./Threads";
 
 /** Files in guide order: by first step that references them, then unreferenced, then skippable. */
 export function guideOrder(files: FD[], guide: Guide | null): FD[] {
@@ -217,14 +217,20 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
   const open = comments.filter((c) => !resolved[c.title]).length;
   const review = useReview((s) => s.state);
   const hiddenFiles = useReview((s) => s.hiddenFiles);
-  const threads = review?.threads ?? [];
+  const pending = useReview((s) => s.pending);
+  const threads = review?.threads ?? NO_THREADS;
+  // GitHub's threads, your pending comments, and failing checks' notes, all on the diff alike.
+  const onDiff = useMemo(
+    () => [...threads, ...pendingThreads(pending, review?.viewer ?? ""), ...checkThreads(review?.checks?.list ?? [])],
+    [threads, pending, review],
+  );
   const layout = useMemo(
-    () => (hideComments || !threads.length ? null : threadLayout(threads, idx, hiddenFiles)),
-    [threads, idx, hiddenFiles, hideComments],
+    () => (hideComments || !onDiff.length ? null : threadLayout(onDiff, idx, hiddenFiles)),
+    [onDiff, idx, hiddenFiles, hideComments],
   );
   const fileThreads = useMemo(
-    () => (hideComments ? [] : threads.filter((t) => !hiddenFiles.includes(t.path))),
-    [threads, hiddenFiles, hideComments],
+    () => (hideComments ? [] : onDiff.filter((t) => !hiddenFiles.includes(t.path))),
+    [onDiff, hiddenFiles, hideComments],
   );
   const after = useMemo(() => {
     const own = hideComments ? undefined : commentRows(guide?.comments ?? [], idx, resolved, onAskComment);
@@ -273,7 +279,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
             >
               {ic(EyeOff, 15)}
             </button>
-            {threads.length > 0 ? (
+            {review?.available && !review.error ? (
               <ThreadsButton
                 onJump={(t, keys) => {
                   if (hideComments) toggleHideComments();
@@ -352,6 +358,8 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
   );
 }
 
+const NO_THREADS: Thread[] = [];
+
 /** Two sets of rows under lines, as one: both kinds under a line that has both. */
 function mergeRows(a: Map<string, ReactNode> | undefined, b: Map<string, ReactNode>): Map<string, ReactNode> {
   if (!a?.size) return b;
@@ -371,7 +379,7 @@ function mergeRows(a: Map<string, ReactNode> | undefined, b: Map<string, ReactNo
   return out;
 }
 
-/** The comments button once GitHub has threads on the PR: the open count, and every thread in a popover. */
+/** The comments button on a GitHub PR: the open count, and every thread and pending comment in a popover. */
 function ThreadsButton({
   idx,
   onJump,
@@ -380,8 +388,13 @@ function ThreadsButton({
   onJump: Parameters<typeof ThreadsPopover>[0]["onJump"];
 }) {
   const state = useReview((s) => s.state);
+  const pending = useReview((s) => s.pending);
   const [open, setOpen, ref] = usePopover();
-  const threads = state?.threads ?? [];
+  // Your pending comments first, then GitHub's: everything on the PR in one list.
+  const threads = useMemo(
+    () => [...pendingThreads(pending, state?.viewer ?? ""), ...(state?.threads ?? [])],
+    [pending, state],
+  );
   const n = threads.filter((t) => !t.resolved).length;
   return (
     <div className="th-anchor" ref={ref}>

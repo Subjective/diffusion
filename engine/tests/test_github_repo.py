@@ -15,6 +15,8 @@ from diffusion.github import (
     link_stacks,
     parse_pr_url,
     pr_review_state,
+    review_payload,
+    write_review,
 )
 from diffusion.repo import RepoCache
 
@@ -427,3 +429,87 @@ def test_fetch_review_state_passes_the_pr_to_gh(tmp_path):
     assert len(st["threads"]) == 4
     args = (tmp_path / "args").read_text()
     assert "owner=acme" in args and "repo=web" in args and "number=42" in args
+
+
+def test_review_payload_puts_comments_on_their_side_and_range():
+    body = review_payload(
+        {
+            "event": "request_changes",
+            "body": "A few things",
+            "commit": "abc",
+            "comments": [
+                {"path": "a.rs", "side": "new", "start": 41, "end": 53, "body": "range"},
+                {"path": "a.rs", "side": "old", "start": 7, "end": 7, "body": "one old line"},
+                {
+                    "path": "b.rs",
+                    "side": "new",
+                    "start": None,
+                    "end": None,
+                    "file_level": True,
+                    "body": "file",
+                },
+            ],
+        }
+    )
+    assert (
+        body["event"] == "REQUEST_CHANGES" and body["commit_id"] == "abc" and body["body"] == "A few things"
+    )
+    assert body["comments"] == [
+        {
+            "path": "a.rs",
+            "body": "range",
+            "side": "RIGHT",
+            "line": 53,
+            "start_line": 41,
+            "start_side": "RIGHT",
+        },
+        {"path": "a.rs", "body": "one old line", "side": "LEFT", "line": 7},
+        {"path": "b.rs", "body": "file", "side": "RIGHT", "subject_type": "file"},
+    ]
+    assert "comments" not in review_payload({"event": "approve"})
+
+
+def test_write_review_sends_reviews_by_rest_and_the_rest_by_graphql(tmp_path):
+    fake = tmp_path / "gh"
+    fake.write_text(
+        f'#!/bin/sh\necho "$@" >> {tmp_path}/args\ncat >> {tmp_path}/stdin\necho \'{{"data": {{}}}}\'\n'
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    ref = PRRef("github.com", "acme", "web", 42)
+    write_review(ref, {"kind": "submit", "event": "comment", "body": "hi", "comments": []}, gh=str(fake))
+    write_review(ref, {"kind": "reply", "thread": "T1", "body": "thanks"}, gh=str(fake))
+    write_review(ref, {"kind": "resolve", "thread": "T1"}, gh=str(fake))
+    write_review(ref, {"kind": "edit", "comment": "C1", "body": "fixed"}, gh=str(fake))
+    calls = (tmp_path / "args").read_text().split("api ")[1:]  # queries span lines
+    assert "--method POST repos/acme/web/pulls/42/reviews --input -" in calls[0]
+    assert (tmp_path / "stdin").read_text().startswith('{"event": "COMMENT", "body": "hi"}')
+    assert (
+        "addPullRequestReviewThreadReply" in calls[1]
+        and "thread=T1" in calls[1]
+        and "body=thanks" in calls[1]
+    )
+    assert "resolveReviewThread" in calls[2]
+    assert "updatePullRequestReviewComment" in calls[3] and "comment=C1" in calls[3]
+
+
+def test_write_review_surfaces_githubs_message(tmp_path):
+    fake = tmp_path / "gh"
+    fake.write_text('#!/bin/sh\necho \'{"message": "Can not approve your own pull request"}\'\nexit 1\n')
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    with pytest.raises(GitHubError, match="Can not approve your own"):
+        write_review(
+            PRRef("github.com", "acme", "web", 42), {"kind": "submit", "event": "approve"}, gh=str(fake)
+        )
+
+
+def test_deleting_a_comment_thats_already_gone_is_done(tmp_path):
+    fake = tmp_path / "gh"
+    fake.write_text(
+        '#!/bin/sh\necho \'{"errors": [{"message": "Could not resolve to a node with the global id of '
+        "X.\"}]}'\nexit 1\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    ref = PRRef("github.com", "acme", "web", 42)
+    write_review(ref, {"kind": "delete", "comment": "C1"}, gh=str(fake))
+    with pytest.raises(GitHubError, match="Could not resolve"):
+        write_review(ref, {"kind": "edit", "comment": "C1", "body": "x"}, gh=str(fake))

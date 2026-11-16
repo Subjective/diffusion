@@ -826,3 +826,25 @@ async def test_review_state_is_cached_and_local_targets_have_none(setup):
     assert calls == [7, 7]
     local = (await client.get("/api/review", params={"url": "local:/tmp/x#main..dev"})).json()
     assert local == {"available": False}
+
+
+async def test_review_actions_go_to_github_and_return_fresh_state(setup):
+    client, _, deps, _ = setup
+    done, states = [], iter(["before", "after"])
+    deps.review_state = lambda ref: {"viewer": next(states), "threads": [], "reviewers": []}
+
+    def write(ref, action):
+        if action.get("event") == "approve":
+            raise GitHubError("GitHub said: Can not approve your own pull request")
+        done.append((ref.number, action["kind"]))
+
+    deps.review_write = write
+    assert (await client.get("/api/review", params={"url": URL})).json()["viewer"] == "before"
+    r = await client.post("/api/review", json={"url": URL, "action": {"kind": "resolve", "thread": "T1"}})
+    assert done == [(7, "resolve")] and r.json()["viewer"] == "after"  # the cache was skipped
+    r = await client.post("/api/review", json={"url": URL, "action": {"kind": "submit", "event": "approve"}})
+    assert r.status_code == 400 and "approve your own" in r.json()["detail"]
+    r = await client.post(
+        "/api/review", json={"url": "local:/tmp/x#main..dev", "action": {"kind": "resolve"}}
+    )
+    assert r.status_code == 400

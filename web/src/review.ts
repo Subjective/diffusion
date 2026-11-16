@@ -1,12 +1,53 @@
 // GitHub's side of the open PR (review threads, reviewers, checks), and how its threads are shown.
 import { create } from "zustand";
-import { fetchInbox, fetchReview } from "./api";
+import { fetchInbox, fetchReview, type ReviewAct, reviewAction } from "./api";
 import { storage } from "./lib/storage";
-import type { Inbox, InboxPR, ReviewState } from "./types";
+import type { FileDiff, Inbox, InboxPR, ReviewState } from "./types";
+
+/** Whether GitHub takes a comment on these lines: they must all be in one hunk of the PR's diff, on that side.
+ *  Files the PR doesn't change, and lines outside its hunks (expanded context), can't be commented on. */
+export function commentable(files: FileDiff[], path: string, side: "old" | "new", start: number, end: number) {
+  const f = files.find((x) => x.path === path);
+  return !!f?.hunks.some((h) => {
+    const ns = h.lines.flatMap((l) => {
+      const n = side === "new" ? (l.type === "del" ? null : l.new) : l.type === "add" ? null : l.old;
+      return n == null ? [] : [n];
+    });
+    return ns.includes(start) && ns.includes(end);
+  });
+}
+
+/** A comment written for your next review, kept here until it's submitted. */
+export interface PendingComment {
+  id: string;
+  path: string;
+  side: "old" | "new";
+  start: number;
+  end: number;
+  body: string;
+}
+
+export type Verdict = "comment" | "approve" | "request_changes";
 
 interface Review {
   url: string;
   state: ReviewState | null;
+  pending: PendingComment[];
+  /** What GitHub said when something you did failed, and where: "review", or the thread it was in. */
+  error: string | null;
+  errorAt: string;
+  /** The review's summary, as it's being written (a chat answer can be added to it). */
+  summary: string;
+  setSummary(s: string): void;
+  busy: boolean;
+  addPending(c: Omit<PendingComment, "id">): void;
+  editPending(id: string, body: string): void;
+  /** Do something on GitHub; resolves false (with `error` set at `at`) when GitHub refuses. */
+  act(action: ReviewAct, at?: string): Promise<boolean>;
+  /** Submit the review: the pending comments, a summary and a verdict. */
+  submit(event: Verdict, body: string): Promise<boolean>;
+  /** Post one comment now, as a review of its own. */
+  commentNow(c: Omit<PendingComment, "id">): Promise<boolean>;
   /** Files whose threads are hidden on the diff. */
   hiddenFiles: string[];
   /** Threads opened past their collapsed form (long middles, resolved). */
@@ -16,13 +57,81 @@ interface Review {
   expand(id: string, on?: boolean): void;
 }
 
+const savePending = (url: string, pending: PendingComment[]) => storage.set(`rv-pending:${url}`, pending);
+const dropComment = (s: ReviewState, id: string): ReviewState => ({
+  ...s,
+  threads: s.threads
+    ?.map((t) => ({ ...t, comments: t.comments.filter((c) => c.id !== id) }))
+    .filter((t) => t.comments.length),
+});
+const asComment = ({ id: _, ...c }: PendingComment) => c;
+
 export const useReview = create<Review>((set, get) => ({
   url: "",
   state: null,
+  pending: [],
+  error: null,
+  errorAt: "",
+  summary: "",
+  setSummary: (summary) => set({ summary }),
+  busy: false,
   hiddenFiles: [],
   expanded: [],
+  addPending(c) {
+    const { url, pending } = get();
+    const next = [...pending, { ...c, id: `p${Date.now().toString(36)}${pending.length}` }];
+    savePending(url, next);
+    set({ pending: next });
+  },
+  editPending(id, body) {
+    const { url, pending } = get();
+    const next = body ? pending.map((p) => (p.id === id ? { ...p, body } : p)) : pending.filter((p) => p.id !== id);
+    savePending(url, next);
+    set({ pending: next });
+  },
+  async act(action, at = "review") {
+    const url = get().url;
+    set({ busy: true, error: null });
+    try {
+      let state = await reviewAction(url, action);
+      // GitHub can answer with the comment still there for a moment after deleting it.
+      if (action.kind === "delete") state = dropComment(state, action.comment);
+      if (get().url === url) set({ state, busy: false });
+      return true;
+    } catch (e) {
+      if (get().url === url) set({ error: String((e as Error).message ?? e), errorAt: at, busy: false });
+      return false;
+    }
+  },
+  async submit(event, body) {
+    const { pending, state, url } = get();
+    const ok = await get().act({
+      kind: "submit",
+      event,
+      body,
+      commit: state?.head_sha,
+      comments: pending.map(asComment),
+    });
+    if (ok && get().url === url) {
+      savePending(url, []);
+      set({ pending: [] });
+    }
+    return ok;
+  },
+  commentNow(c) {
+    return get().act({ kind: "submit", event: "comment", body: "", commit: get().state?.head_sha, comments: [c] });
+  },
   async load(url, refresh = false) {
-    if (url !== get().url) set({ url, state: null, expanded: [], hiddenFiles: storage.get(`rv-th-hidden:${url}`, []) });
+    if (url !== get().url)
+      set({
+        summary: "",
+        url,
+        state: null,
+        error: null,
+        expanded: [],
+        hiddenFiles: storage.get(`rv-th-hidden:${url}`, []),
+        pending: storage.get(`rv-pending:${url}`, []),
+      });
     try {
       const state = await fetchReview(url, refresh);
       if (get().url === url) set({ state });

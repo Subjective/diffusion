@@ -2,15 +2,18 @@ import {
   ArrowUpRight,
   Check,
   ChevronDown,
+  ChevronUp,
   CircleCheck,
   CircleDashed,
   CircleX,
   GitBranch,
+  GitMerge,
   History,
   Layers2,
   ListOrdered,
   LoaderCircle,
   Map as MapIcon,
+  MessageSquare,
   Moon,
   Search,
   Sun,
@@ -20,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "../chat";
 import { ago } from "../lib/time";
 import { usePopover } from "../lib/usePopover";
-import { inboxStack, useInbox, useReview } from "../review";
+import { inboxStack, useInbox, useReview, type Verdict } from "../review";
 import { useApp } from "../store";
 import type { Check as CheckRun, InboxPR, PRMeta } from "../types";
 import { useUI } from "../ui";
@@ -45,6 +48,7 @@ export function TopBar() {
       )}
       <Target />
       <div className="top-r">
+        <ReviewChip />
         <ModeToggle />
         <Versions />
         <button type="button" className="icon-btn" title="Theme" onClick={toggleTheme}>
@@ -124,7 +128,9 @@ function PRTarget({ pr }: { pr: PRMeta }) {
       <b>{pr.repo}</b>
       <Switcher pr={pr} layers={layers} />
       {layers.length > 0 && <StackChip pr={pr} layers={layers} />}
-      {review?.checks && review.checks.state !== "none" && <ChecksChip checks={review.checks} />}
+      {review?.checks && review.checks.state !== "none" && (
+        <ChecksChip checks={review.checks} mergeable={review.mergeable} base={review.base_ref ?? pr.base_ref} />
+      )}
       {review?.reviewers?.length ? <Reviewers list={review.reviewers} /> : null}
     </div>
   );
@@ -138,7 +144,15 @@ const CHECK_ICON = {
 };
 
 /** The PR's checks at a glance, and each one (linking to its run) in a popover. */
-function ChecksChip({ checks }: { checks: { state: string; failing: number; list: CheckRun[] } }) {
+function ChecksChip({
+  checks,
+  mergeable,
+  base,
+}: {
+  checks: { state: string; failing: number; list: CheckRun[] };
+  mergeable?: string;
+  base: string;
+}) {
   const [open, setOpen, ref] = usePopover();
   const tip =
     checks.state === "success"
@@ -175,6 +189,144 @@ function ChecksChip({ checks }: { checks: { state: string; failing: number; list
               {ic(ArrowUpRight, 14)}
             </a>
           ))}
+          {mergeable && mergeable !== "unknown" && (
+            <>
+              <div className="sep" />
+              <div className={`mg${mergeable === "conflicting" ? " bad" : ""}`}>
+                {ic(GitMerge, 14)}
+                {mergeable === "conflicting" ? `Conflicts with ${base}` : `No conflicts with ${base}`}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const VERDICTS: [Verdict, string][] = [
+  ["comment", "Comment"],
+  ["approve", "Approve"],
+  ["request_changes", "Request changes"],
+];
+
+/** Your review: the comments waiting in it, a summary and a verdict, submitted to GitHub together. */
+function ReviewChip() {
+  const state = useReview((s) => s.state);
+  const pending = useReview((s) => s.pending);
+  const { submit, editPending, busy } = useReview();
+  const [listed, setListed] = useState(false);
+  const error = useReview((s) => (s.errorAt === "review" ? s.error : null));
+  const [open, setOpen, ref] = usePopover();
+  const body = useReview((s) => s.summary);
+  const setBody = useReview((s) => s.setSummary);
+  const [verdict, setVerdict] = useState<Verdict>("comment");
+  if (!state?.available || state.error || !state.viewer) return null;
+  // GitHub doesn't let you approve or request changes on your own PR.
+  const own = state.viewer === state.author;
+  const can = !busy && (pending.length > 0 || body.trim() !== "" || verdict === "approve");
+  const go = async () => {
+    if (await submit(own ? "comment" : verdict, body.trim())) {
+      setBody("");
+      setVerdict("comment");
+      setOpen(false);
+    }
+  };
+  const jump = (p: (typeof pending)[number]) => {
+    setOpen(false);
+    const rows = [...document.querySelectorAll<HTMLElement>(`tr.ln[data-file="${CSS.escape(p.path)}"]`)].filter((r) => {
+      const n = Number(p.side === "new" ? r.dataset.new : r.dataset.old);
+      return n >= p.start && n <= p.end;
+    });
+    useUI.getState().focus(
+      rows.map((r) => r.dataset.rk!),
+      [p.path],
+    );
+  };
+  return (
+    <div className="pop-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`rv-btn${open ? " on" : ""}`}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        Review
+        {pending.length > 0 && <span className="n">{pending.length}</span>}
+      </button>
+      {open && (
+        <div className="rv-pop" role="dialog" aria-label="Review">
+          {pending.length > 0 && (
+            <div className={`rv-pend${listed ? " on" : ""}`}>
+              <button type="button" className="rv-pend-h" aria-expanded={listed} onClick={() => setListed(!listed)}>
+                {ic(MessageSquare, 14)}
+                <span className="grow">
+                  {pending.length} comment{pending.length === 1 ? "" : "s"}
+                </span>
+                {ic(listed ? ChevronUp : ChevronDown, 14)}
+              </button>
+              {listed &&
+                pending.map((p) => (
+                  <div key={p.id} className="rv-i">
+                    <button type="button" className="rv-go" onClick={() => jump(p)}>
+                      <span className="x">{p.body}</span>
+                      <span className="where">
+                        {p.path.split("/").pop()}
+                        <span>{p.start === p.end ? `L${p.end}` : `L${p.start}–${p.end}`}</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn sm"
+                      aria-label="Remove"
+                      onClick={() => editPending(p.id, "")}
+                    >
+                      {ic(X, 13)}
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+          <textarea
+            className="rv-body"
+            rows={3}
+            value={body}
+            placeholder="Leave a comment"
+            onChange={(e) => setBody(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && can) {
+                e.preventDefault();
+                void go();
+              }
+            }}
+          />
+          {error && <div className="rv-err">{error}</div>}
+          <div className="rv-f">
+            <div className="seg th-seg rv-verdict">
+              {VERDICTS.map(([v, label]) => {
+                const mine = own && v !== "comment";
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    className={(own ? v === "comment" : verdict === v) ? "on" : ""}
+                    aria-pressed={own ? v === "comment" : verdict === v}
+                    disabled={mine}
+                    data-tip={
+                      mine ? `You can't ${v === "approve" ? "approve" : "request changes on"} your own PR` : undefined
+                    }
+                    onClick={() => setVerdict(v)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="grow" />
+            <button type="button" className="rv-submit" disabled={!can} onClick={go}>
+              Submit
+            </button>
+          </div>
         </div>
       )}
     </div>
