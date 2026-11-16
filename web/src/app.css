@@ -1865,61 +1865,12 @@ tr.th-row > td {
   font-family: var(--sans);
   animation: pop 0.14s ease-out;
 }
-.rv-list {
-  max-height: 260px;
-  overflow: hidden auto;
-  margin: -6px -6px 0;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-  scrollbar-width: thin;
-}
 .rv-verdict button:disabled {
   color: var(--subtle);
   cursor: default;
 }
 .rv-verdict button:disabled:hover {
   background: none;
-}
-.rv-i {
-  display: flex;
-  align-items: flex-start;
-  border-radius: 10px;
-}
-.rv-i:hover {
-  background: var(--hover);
-}
-.rv-i .icon-btn {
-  visibility: hidden;
-  margin: 6px 6px 0 0;
-}
-.rv-i:hover .icon-btn {
-  visibility: visible;
-}
-.rv-go {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 7px 10px;
-  text-align: left;
-}
-.rv-go .x {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  color: var(--text);
-  font-size: 13px;
-  line-height: 18px;
-}
-.rv-go .where {
-  display: flex;
-  gap: 6px;
-  color: var(--subtle);
-  font-size: 12px;
-  line-height: 16px;
 }
 .rv-body {
   resize: vertical;

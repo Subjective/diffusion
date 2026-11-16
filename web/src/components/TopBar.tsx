@@ -211,7 +211,7 @@ const VERDICTS: [Verdict, string][] = [
 function ReviewChip() {
   const state = useReview((s) => s.state);
   const pending = useReview((s) => s.pending);
-  const { submit, editPending, busy } = useReview();
+  const { submit, busy } = useReview();
   const error = useReview((s) => (s.errorAt === "review" ? s.error : null));
   const [open, setOpen, ref] = usePopover();
   const body = useReview((s) => s.summary);
@@ -228,17 +228,6 @@ function ReviewChip() {
       setOpen(false);
     }
   };
-  const jump = (p: (typeof pending)[number]) => {
-    setOpen(false);
-    const rows = [...document.querySelectorAll<HTMLElement>(`tr.ln[data-file="${CSS.escape(p.path)}"]`)].filter((r) => {
-      const n = Number(p.side === "new" ? r.dataset.new : r.dataset.old);
-      return n >= p.start && n <= p.end;
-    });
-    useUI.getState().focus(
-      rows.map((r) => r.dataset.rk!),
-      [p.path],
-    );
-  };
   return (
     <div className="pop-anchor" ref={ref}>
       <button
@@ -252,29 +241,6 @@ function ReviewChip() {
       </button>
       {open && (
         <div className="rv-pop" role="dialog" aria-label="Review">
-          {pending.length > 0 && (
-            <div className="rv-list">
-              {pending.map((p) => (
-                <div key={p.id} className="rv-i">
-                  <button type="button" className="rv-go" onClick={() => jump(p)}>
-                    <span className="x">{p.body}</span>
-                    <span className="where">
-                      {p.path.split("/").pop()}
-                      <span>{p.start === p.end ? `L${p.end}` : `L${p.start}–${p.end}`}</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn sm"
-                    aria-label="Remove"
-                    onClick={() => editPending(p.id, "")}
-                  >
-                    {ic(X, 13)}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
           <textarea
             className="rv-body"
             rows={3}
