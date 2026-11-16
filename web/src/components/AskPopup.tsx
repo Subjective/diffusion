@@ -71,9 +71,10 @@ export function AskPopup({
   const a = state.anchor;
   const editing = state.edit;
   // Comments go on lines of the diff; asking about a guide comment or editing a note stays with the agent.
-  // GitHub only takes comments on lines of the PR's diff.
-  const canComment =
-    !!github && !editing && !a.comment && commentable(useApp.getState().files, a.file, a.side, a.start, a.end);
+  const lines = !!github && !editing && !a.comment;
+  // GitHub only takes comments on lines of the PR's diff; elsewhere its option shows, greyed out.
+  const inDiff = lines && commentable(useApp.getState().files, a.file, a.side, a.start, a.end);
+  const canComment = lines && inDiff;
   const gh = canComment && mode === "github";
   const submit = (stage: boolean) => {
     if (editing) {
@@ -109,7 +110,7 @@ export function AskPopup({
         </b>
         <span className="ask-range">{rangeText(a.start, a.end)}</span>
         <span className="grow" />
-        {canComment && (
+        {lines && (
           <span className="seg ask-mode">
             <button
               type="button"
@@ -123,8 +124,9 @@ export function AskPopup({
             <button
               type="button"
               className={`icon-btn${gh ? " on" : ""}`}
-              data-tip="Comment on GitHub"
+              data-tip={inDiff ? "Comment on GitHub" : "Only lines in the diff can be commented on"}
               aria-pressed={gh}
+              disabled={!inDiff}
               onClick={() => setMode("github")}
             >
               <GithubIcon size={13} />
