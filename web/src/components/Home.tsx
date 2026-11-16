@@ -1,10 +1,13 @@
-import { GitBranch, History, MessageCircle, Search } from "lucide-react";
+import { BookOpen, GitBranch, GitPullRequest, History, MessageCircle, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchTargets } from "../api";
+import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
+import { useInbox } from "../review";
 import { useApp } from "../store";
 import type { Target } from "../types";
 import { NoGuide } from "./GuidePane";
+import { Inbox, InboxSkeleton } from "./Inbox";
 import { GithubIcon, ic } from "./icons";
 import { localName } from "./TopBar";
 
@@ -24,10 +27,17 @@ const name = (t: Target) => (t.local ? localName(t.url) : `${t.owner}/${t.repo}`
 const ref = (t: Target) => (t.local ? t.head_ref : `#${t.number}`);
 const title = (t: Target) => t.title || t.label;
 
-/** Past reviews, newest first, when no review is open. */
+type View = "guides" | "prs";
+
+// The last list fetched, so coming back home shows it at once while a fresh one loads.
+let lastTargets: Target[] | null = null;
+
+/** Past reviews, newest first, or your open PRs on GitHub, when no review is open. */
 export function Home() {
   const open = useApp((s) => s.open);
-  const [targets, setTargets] = useState<Target[] | null>(null);
+  const [targets, setTargets] = useState<Target[] | null>(lastTargets);
+  const inbox = useInbox((s) => s.inbox);
+  const [view, setView] = useState<View>(() => storage.get<View>("rv-home-view", "guides"));
   const [q, setQ] = useState("");
   const input = useRef<HTMLInputElement>(null);
 
@@ -45,10 +55,28 @@ export function Home() {
   }, []);
 
   useEffect(() => {
+    const keepTargets = (t: Target[]) => {
+      lastTargets = t;
+      setTargets(t);
+    };
     fetchTargets()
-      .then(setTargets)
-      .catch(() => setTargets([]));
+      .then(keepTargets)
+      .catch(() => keepTargets(lastTargets ?? []));
+    void useInbox.getState().load();
   }, []);
+
+  // While a review is being written from here, keep the list fresh so it shows up when it's saved.
+  const writing = inbox?.prs.some((p) => p.generating?.state === "running");
+  useEffect(() => {
+    if (!writing) return;
+    const t = setInterval(() => void useInbox.getState().load(), 4000);
+    return () => clearInterval(t);
+  }, [writing]);
+
+  const show = (v: View) => {
+    setView(v);
+    storage.set("rv-home-view", v);
+  };
 
   const groups = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -67,7 +95,8 @@ export function Home() {
   const anyVersions = targets?.some((t) => t.versions > 1);
 
   if (!targets) return <main className="landing" />;
-  if (!targets.length)
+  // Nothing reviewed and no PRs to show: just how to start one.
+  if (!targets.length && inbox && !inbox.prs.length)
     return (
       <main className="landing">
         <NoGuide landing />
@@ -76,68 +105,104 @@ export function Home() {
   return (
     <main className="home">
       <div className="home-in">
-        <label className="home-search">
-          {ic(Search, 15)}
-          <input
-            ref={input}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Escape") return;
-              setQ("");
-              e.currentTarget.blur();
-            }}
-            placeholder="Search"
-            spellCheck={false}
-          />
-          <kbd>/</kbd>
-        </label>
-        {groups.map(([g, ts]) => (
-          <section key={g}>
-            <div className="home-g">{g}</div>
-            {ts.map((t) => (
-              <a
-                key={t.url}
-                className="home-r"
-                href={`?${new URLSearchParams({ pr: t.url })}`}
-                onClick={(e) => {
-                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-                  e.preventDefault();
-                  open(t.url);
-                }}
-              >
-                {t.local ? ic(GitBranch, 15) : <GithubIcon size={15} />}
-                <span className="t">
-                  <span title={title(t)}>{title(t)}</span>
-                  <span className="w">
-                    {name(t)} · {ref(t)}
+        <div className="home-bar">
+          <div className="seg home-seg">
+            <button
+              type="button"
+              className={`icon-btn${view === "guides" ? " on" : ""}`}
+              title="Reviews"
+              aria-pressed={view === "guides"}
+              onClick={() => show("guides")}
+            >
+              {ic(BookOpen, 16)}
+            </button>
+            <button
+              type="button"
+              className={`icon-btn${view === "prs" ? " on" : ""}`}
+              title="Pull requests"
+              aria-pressed={view === "prs"}
+              onClick={() => show("prs")}
+            >
+              {ic(GitPullRequest, 16)}
+            </button>
+          </div>
+          <label className="home-search">
+            {ic(Search, 15)}
+            <input
+              ref={input}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                setQ("");
+                e.currentTarget.blur();
+              }}
+              placeholder="Search"
+              spellCheck={false}
+            />
+            <kbd>/</kbd>
+          </label>
+        </div>
+        {view === "prs" ? (
+          !inbox ? (
+            <InboxSkeleton />
+          ) : inbox.error && !inbox.prs.length ? (
+            <div className="home-empty">{inbox.error}</div>
+          ) : (
+            <Inbox prs={inbox.prs} q={q} onOpen={open} />
+          )
+        ) : !targets.length ? (
+          <div className="home-empty">
+            <NoGuide landing />
+          </div>
+        ) : null}
+        {view === "guides" &&
+          groups.map(([g, ts]) => (
+            <section key={g}>
+              <div className="home-g">{g}</div>
+              {ts.map((t) => (
+                <a
+                  key={t.url}
+                  className="home-r"
+                  href={`?${new URLSearchParams({ pr: t.url })}`}
+                  onClick={(e) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                    e.preventDefault();
+                    open(t.url);
+                  }}
+                >
+                  {t.local ? ic(GitBranch, 15) : <GithubIcon size={15} />}
+                  <span className="t">
+                    <span title={title(t)}>{title(t)}</span>
+                    <span className="w">
+                      {name(t)} · {ref(t)}
+                    </span>
                   </span>
-                </span>
-                {anyChats && (
-                  <span className="m" title={t.chats > 0 ? "Chats" : undefined}>
-                    {t.chats > 0 && (
-                      <>
-                        {ic(MessageCircle, 13)}
-                        {t.chats}
-                      </>
-                    )}
-                  </span>
-                )}
-                {anyVersions && (
-                  <span className="m" title={t.versions > 1 ? "Versions" : undefined}>
-                    {t.versions > 1 && (
-                      <>
-                        {ic(History, 13)}
-                        {t.versions}
-                      </>
-                    )}
-                  </span>
-                )}
-                <span className="age">{ago(t.updated_at)}</span>
-              </a>
-            ))}
-          </section>
-        ))}
+                  {anyChats && (
+                    <span className="m" title={t.chats > 0 ? "Chats" : undefined}>
+                      {t.chats > 0 && (
+                        <>
+                          {ic(MessageCircle, 13)}
+                          {t.chats}
+                        </>
+                      )}
+                    </span>
+                  )}
+                  {anyVersions && (
+                    <span className="m" title={t.versions > 1 ? "Versions" : undefined}>
+                      {t.versions > 1 && (
+                        <>
+                          {ic(History, 13)}
+                          {t.versions}
+                        </>
+                      )}
+                    </span>
+                  )}
+                  <span className="age">{ago(t.updated_at)}</span>
+                </a>
+              ))}
+            </section>
+          ))}
       </div>
     </main>
   );

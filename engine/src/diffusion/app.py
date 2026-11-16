@@ -4,12 +4,14 @@ chat answers stream over SSE."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
+import shutil
 import time
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -19,11 +21,23 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
-from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
+from .agent import (
+    Decision,
+    DoneEvent,
+    Mode,
+    Runner,
+    ThinkingEvent,
+    ToolEvent,
+    ToolFailedEvent,
+    allowed_in,
+    make_runner,
+    mode_for,
+)
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
-from .github import GitHubError
+from .generate import Jobs, generate_request, uv_dirs
+from .github import GitHubError, PRRef, fetch_inbox, fetch_review_state, write_review
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
 from .store import Store
@@ -34,6 +48,26 @@ from .validate import DraftError, check
 PrepareFn = Callable[[Config, str], Prepared]
 RunnerFor = Callable[[str], Runner]
 MAX_FILE_CHARS = 2_000_000
+REVIEW_TTL = 30  # seconds a PR's threads, reviewers and checks are reused
+INBOX_TTL = 60  # seconds the home page's PR list is reused before asking GitHub again
+
+
+class GenerateReq(BaseModel):
+    url: str
+    focus: str = ""
+    # The mode picked in the chat: the run becomes the guide chat's session.
+    mode: Mode = "default"
+    harness: Literal["claude-code", "codex"] = "claude-code"
+
+
+class GenerateAnswer(BaseModel):
+    id: str
+    decision: Decision
+
+
+class ReviewAction(BaseModel):
+    url: str
+    action: dict
 
 
 @dataclass
@@ -42,6 +76,13 @@ class Deps:
     runner_for: RunnerFor  # agent name → its runner
     prepare: PrepareFn
     store: Store
+    inbox: Callable[[], dict] = field(default=fetch_inbox)  # the signed-in user's open PRs
+    review_state: Callable[[PRRef], dict] = field(
+        default=fetch_review_state
+    )  # a PR's threads, reviewers, checks
+    review_write: Callable[[PRRef, dict], None] = field(
+        default=write_review
+    )  # comment, reply, resolve, submit
 
 
 def default_deps(cfg: Config) -> Deps:
@@ -73,7 +114,7 @@ def sse_response(events: AsyncIterator[tuple[str, dict]]) -> StreamingResponse:
 
 class ChatCreate(BaseModel):
     url: str
-    # "fork": a read-only branch of the session that wrote the guide. "guide": that session itself, continued.
+    # "fork": a branch of the session that wrote the guide. "guide": that session itself, continued.
     kind: Literal["fork", "guide"] = "fork"
 
 
@@ -89,7 +130,7 @@ class TurnReq(BaseModel):
     url: str
     questions: list[Question]
     version: int | None = None  # the guide version on screen
-    # The guide chat can run as the session itself (see agent.Mode); forks are always read-only.
+    # Any chat runs as the session itself in the mode picked (see agent.Mode); read-only for harnesses without modes.
     mode: Mode = "read-only"
     # Editing an earlier message: the turn replaces it, and everything after it, in the session.
     rewind: Rewind | None = None
@@ -106,6 +147,11 @@ STEERABLE = {"claude-code", "codex"}
 class Approval(BaseModel):
     id: str
     decision: Decision
+
+
+class ModeSwitch(BaseModel):
+    mode: Mode
+    url: str = ""  # for a review being written
 
 
 class ApprovalAsked:
@@ -184,6 +230,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     _latest_seen: dict[str, str | None] = {}
     chat_locks: dict[str, asyncio.Lock] = {}
     approvals: dict[str, asyncio.Future[Decision]] = {}  # tool calls waiting on the reviewer, by id
+    # Running turns' mode switches and waiting asks (id -> tool), by chat.
+    switching: dict[str, tuple[asyncio.Queue[Mode], dict[str, str]]] = {}
     app.state.approvals = approvals
     running: dict[str, asyncio.Queue] = {}  # a running turn's side queue, by chat: Stop goes there
     steering: dict[str, asyncio.Queue] = {}  # a running turn's inbox for messages sent into it, by chat
@@ -220,6 +268,147 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     async def targets() -> list[dict]:
         """Everything reviewed so far, for the home page."""
         return d().store.list_targets()
+
+    inbox_cache: dict = {}
+
+    @app.get("/api/inbox")
+    async def inbox(refresh: bool = False) -> dict:
+        """The signed-in user's open PRs, each with the number of guide versions saved for it. Cached for a minute;
+        ``refresh`` asks GitHub again. A missing or signed-out ``gh`` comes back as ``error``, not a failure."""
+        now = time.time()
+        if refresh or not inbox_cache or now - inbox_cache["at"] > INBOX_TTL:
+            try:
+                data, error = await asyncio.to_thread(d().inbox), None
+            except GitHubError as e:
+                data, error = {"login": "", "prs": []}, str(e)
+            inbox_cache.update(at=now, data=data, error=error)
+        guides = {t["url"]: t["versions"] for t in d().store.list_targets()}
+        data = inbox_cache["data"]
+        prs = [
+            {**p, "guides": guides.get(p["url"], 0), "generating": jobs.get(pr_key(p["url"]))}
+            for p in data["prs"]
+        ]
+        return {"login": data["login"], "prs": prs, "error": inbox_cache["error"]}
+
+    review_cache: dict[str, dict] = {}
+    jobs = Jobs()
+    tasks: dict[str, asyncio.Task] = {}
+    starting: set[str] = set()
+
+    @app.post("/api/generate")
+    async def generate(req: GenerateReq) -> dict:
+        """Write a review of the PR with the reviewer's own agent, in the background. Its progress is
+        ``GET /api/generate``; the guide shows up like any submitted one."""
+        key = pr_key(req.url)
+        if key in starting:
+            return {"state": "running", "started_at": time.time()}
+        if jobs.running(key):
+            return jobs.get(key)
+        starting.add(key)  # a second click while the checkout is prepared doesn't start a second agent
+        try:
+            prep = await get_prepared(req.url)
+        finally:
+            starting.discard(key)
+        # The agent runs the review skill from the reviewer's installed plugin. Claude Code comes bundled with its SDK;
+        # Codex is the reviewer's own CLI.
+        mode = mode_for(req.harness, req.mode)
+        cache = Path(d().cfg.cache_dir)
+        request = generate_request(
+            req.url, prep.checkout.worktree, focus=req.focus, mode=mode, approve=jobs.approver(key),
+            harness=req.harness, writable=[cache, *uv_dirs(dict(os.environ))],
+        )  # fmt: skip
+        request.modes = jobs.modes(key)
+        runner = d().runner_for(req.harness)
+        task = asyncio.create_task(
+            jobs.run(
+                key,
+                lambda: runner(request),
+                request.prompt,
+                lambda t: d().store.saved_at(key) >= t,
+                req.harness,
+            )
+        )
+        tasks[key] = task
+        task.add_done_callback(lambda t: tasks.pop(key, None) if tasks.get(key) is t else None)
+        await asyncio.sleep(0)  # let it register as running
+        return jobs.get(key)
+
+    @app.get("/api/generate/harnesses")
+    async def generate_harnesses() -> dict:
+        """The agents that can write a review from here: Claude Code (bundled), and Codex when its CLI is installed."""
+        return {
+            "harnesses": [
+                "claude-code",
+                *(["codex"] if shutil.which(d().cfg.cli_path("codex") or "codex") else []),
+            ]
+        }
+
+    @app.get("/api/generate")
+    async def generating(url: str) -> dict:
+        return jobs.get(pr_key(url))
+
+    @app.post("/api/generate/approve")
+    async def approve_generate(req: GenerateAnswer) -> dict:
+        if not jobs.answer(req.id, req.decision):
+            raise HTTPException(404, "nothing is waiting on that")
+        return {"ok": True}
+
+    @app.post("/api/generate/mode")
+    async def switch_generate_mode(req: ModeSwitch) -> dict:
+        return {"answered": await jobs.switch(pr_key(req.url), req.mode)}
+
+    @app.post("/api/generate/stop")
+    async def stop_generate(req: GenerateReq) -> dict:
+        """Stop the review being written: its agent stops, and nothing is saved."""
+        key = pr_key(req.url)
+        task = tasks.get(key)
+        if task and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        return jobs.get(key)
+
+    @app.get("/api/review")
+    async def review(url: str, refresh: bool = False) -> dict:
+        """GitHub's side of a PR: review threads, reviewers and checks. Local targets have none (``available`` is
+        false). Cached for half a minute; ``refresh`` asks again. Errors come back as ``error``."""
+        try:
+            ref = target_ref(url)
+        except GitHubError as e:
+            raise HTTPException(400, str(e)) from e
+        if ref.is_local:
+            return {"available": False}
+        hit = review_cache.get(ref.key)
+        now = time.time()
+        if refresh or not hit or now - hit["at"] > REVIEW_TTL:
+            try:
+                hit = {
+                    "at": now,
+                    "data": {"available": True, **await asyncio.to_thread(d().review_state, ref)},
+                }
+            except GitHubError as e:
+                hit = {
+                    "at": now,
+                    "data": {"available": True, "error": str(e), "threads": [], "reviewers": []},
+                }
+            review_cache[ref.key] = hit
+        return hit["data"]
+
+    @app.post("/api/review")
+    async def review_act(req: ReviewAction) -> dict:
+        """Act on a PR as the signed-in user (submit a review, reply, resolve, edit or delete a comment), then
+        return its fresh state. A GitHub refusal comes back as a 400 with GitHub's message."""
+        try:
+            ref = target_ref(req.url)
+        except GitHubError as e:
+            raise HTTPException(400, str(e)) from e
+        if ref.is_local:
+            raise HTTPException(400, "Local reviews aren't on GitHub.")
+        try:
+            await asyncio.to_thread(d().review_write, ref, req.action)
+        except GitHubError as e:
+            raise HTTPException(400, str(e)) from e
+        return await review(req.url, refresh=True)
 
     def versions(prep: Prepared) -> list[dict]:
         return d().store.list_guides(prep.meta.ref.key, prep.meta.head_sha)
@@ -418,6 +607,22 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         await side.put(Stop())
         return {"ok": True}
 
+    @app.post("/api/chats/{chat_id}/mode")
+    async def switch_mode(chat_id: str, req: ModeSwitch) -> dict:
+        """Switch the running turn's session to another mode, as Shift+Tab does mid-turn; what it now allows and
+        is waiting on goes ahead. ``answered``: those asks' ids."""
+        live = switching.get(chat_id)
+        if live is None:
+            return {"ok": False, "answered": []}
+        modes, mine = live
+        await modes.put(req.mode)
+        answered = []
+        for aid, tool in list(mine.items()):
+            if allowed_in(req.mode, tool) and (f := approvals.get(aid)) and not f.done():
+                f.set_result("allow")
+                answered.append(aid)
+        return {"ok": True, "answered": answered}
+
     @app.post("/api/chats/{chat_id}/approve")
     async def approve(chat_id: str, req: Approval) -> dict:
         f = approvals.get(req.id)
@@ -494,15 +699,17 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 chat["updated_at"] = record["at"]
                 deps.store.save_chat(key, chat)
                 block = GuideBlock()
-                mode: Mode = req.mode if chat.get("kind") == "guide" else "read-only"
+                mode = mode_for(harness, req.mode)  # the agent's own modes; Cursor has none: it only reads
                 side: asyncio.Queue = asyncio.Queue()
-                mine: list[str] = []
+                mine: dict[str, str] = {}  # this turn's asks: id -> tool
+                modes: asyncio.Queue[Mode] = asyncio.Queue()
+                switching[chat_id] = (modes, mine)
 
                 async def ask(tool: str, summary: str, tool_input: dict) -> Decision:
                     aid = uuid.uuid4().hex[:12]
                     f: asyncio.Future[Decision] = asyncio.get_running_loop().create_future()
                     approvals[aid] = f
-                    mine.append(aid)
+                    mine[aid] = tool
                     await side.put(ApprovalAsked(aid, tool, summary, tool_input))
                     try:
                         return await f
@@ -522,8 +729,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                             async for ev in (evs := merged(run_turn(
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
                                 resume, fork=fork, adopt=adopt, cwd=cwd, block=block, mode=mode, approve=ask,
-                                harness=harness if chat.get("kind") == "guide" else "", steer=inbox,
-                                resume_at=resume_at, restore_files=restore,
+                                harness=harness, steer=inbox,
+                                resume_at=resume_at, restore_files=restore, modes=modes,
                             ), side)):  # fmt: skip
                                 if isinstance(ev, Stop):
                                     await evs.aclose()
@@ -617,6 +824,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 finally:
                     if running.get(chat_id) is side:
                         del running[chat_id]
+                    if switching.get(chat_id, (None,))[0] is modes:
+                        del switching[chat_id]
                     if inbox and steering.get(chat_id) is inbox:
                         del steering[chat_id]
                     while inbox and not inbox.empty():  # sent as the turn ended: the client sends them next

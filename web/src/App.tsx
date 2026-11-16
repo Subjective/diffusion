@@ -1,6 +1,6 @@
 import { CircleAlert, GitPullRequest } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
-import { type Question, useChat } from "./chat";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Anchor, type Question, useChat } from "./chat";
 import { AskPopup } from "./components/AskPopup";
 import { type ChatLinkProps, ChatPanel } from "./components/ChatPanel";
 import type { AskComment } from "./components/Comments";
@@ -11,11 +11,13 @@ import { ic } from "./components/icons";
 import { MapPane } from "./components/MapPane";
 import { NotePeek } from "./components/NotePeek";
 import { useQuestionBadges } from "./components/QuestionBadges";
+import { useThreadAsk } from "./components/Threads";
 import { TopBar } from "./components/TopBar";
 import { refsTarget, useHunkIndex, useStepLinking } from "./lib/linking";
 import { usePaneWidths } from "./lib/panes";
 import { type HunkIndex, rowKey } from "./lib/refs";
 import { useAsk } from "./lib/useAsk";
+import { useReview } from "./review";
 import { useApp } from "./store";
 import type { Step } from "./types";
 import { useUI } from "./ui";
@@ -42,6 +44,8 @@ export function App() {
   const { theme, chatOpen, pr, error, loading, url, load, toggleChat } = useApp();
   const hasMap = useApp((s) => !!s.guide?.views?.length);
   const map = useUI((s) => s.mode === "map") && hasMap;
+  const onGitHub = useReview((s) => !!s.state?.available && !s.state.error);
+  const conv = useUI((s) => s.mode === "pr") && onGitHub;
   const noDiff = useUI((s) => !s.diffOpen);
   const panes = usePaneWidths(chatOpen, map);
 
@@ -157,6 +161,30 @@ export function App() {
     [open],
   );
 
+  // Ask the agent about a GitHub thread: the line popup on its lines, with the conversation attached.
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    useThreadAsk.setState({
+      ask: (t, x, y) => {
+        if (t.start == null || t.end == null) return;
+        const attr = t.side === "old" ? "data-old" : "data-new";
+        const rows: HTMLElement[] = [];
+        for (let n = t.start; n <= t.end; n++) {
+          const r = document.querySelector<HTMLElement>(`tr.ln[data-file="${CSS.escape(t.path)}"][${attr}="${n}"]`);
+          if (r) rows.push(r);
+        }
+        const first = t.comments[0];
+        const text = t.comments.map((c) => `${c.author}: ${c.body}`).join("\n\n");
+        openRef.current(rows, x, y, {
+          comment: `GitHub review thread.\n\n${text}`,
+          commentTitle: `${first.author}: ${first.body.split("\n")[0]}`,
+        });
+      },
+    });
+    return () => useThreadAsk.setState({ ask: null });
+  }, []);
+
   const askStep = useCallback(
     (s: Step) => {
       toggleChat(true);
@@ -174,6 +202,15 @@ export function App() {
     },
     [toggleChat],
   );
+  // On a GitHub PR you can see as yourself, the line popup can also write review comments.
+  const reviewable = useReview((s) => !!s.state?.available && !s.state.error && !!s.state.viewer);
+  const toGithub = useMemo(() => {
+    const comment = (body: string, a: Anchor) => ({ path: a.file, side: a.side, start: a.start, end: a.end, body });
+    return {
+      onPending: (text: string, a: Anchor) => useReview.getState().addPending(comment(text, a)),
+      onComment: (text: string, a: Anchor) => void useReview.getState().commentNow(comment(text, a)),
+    };
+  }, []);
   return (
     <>
       <TopBar />
@@ -201,7 +238,11 @@ export function App() {
           onMouseOver={onOver}
           onClickCapture={onClick}
         >
-          {map ? <MapPane onWidth={panes.setGuide} /> : <GuidePane onAskStep={askStep} onWidth={panes.setGuide} />}
+          {map ? (
+            <MapPane onWidth={panes.setGuide} />
+          ) : (
+            <GuidePane onAskStep={askStep} onWidth={panes.setGuide} conversation={conv} />
+          )}
           <DiffPane extras={badges} onAskComment={askComment} />
           {noDiff && <DiffRail />}
           {chatOpen ? <ChatPanel onWidth={panes.setChat} link={chatLink} /> : <aside className="chat" />}
@@ -219,6 +260,7 @@ export function App() {
           useApp.getState().toggleChat(true);
         }}
         onEdit={(id, text) => useChat.getState().editStaged(id, text)}
+        github={reviewable ? toGithub : undefined}
       />
       {!ask && <NotePeek id={hoverQ} />}
     </>

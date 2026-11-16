@@ -159,6 +159,130 @@ export interface PRPayload {
 }
 
 /** A past review on the home page. */
+export interface Reviewer {
+  login: string;
+  avatar: string;
+  state: "approved" | "changes" | "commented" | "requested";
+}
+
+export interface Check {
+  name: string;
+  state: "success" | "failure" | "pending" | "skipped";
+  url: string;
+  /** Where a failing check points in the code. */
+  annotations?: { path: string; start: number | null; end: number | null; message: string; title: string }[];
+}
+
+export interface ThreadComment {
+  id: string;
+  author: string;
+  avatar: string;
+  bot: boolean;
+  body: string;
+  created_at: number;
+  url: string;
+  /** The review it was posted with. */
+  review?: string | null;
+}
+
+/** One entry in a PR's conversation: a comment, a submitted review, or a pushed commit. */
+export interface TimelineItem {
+  kind: "comment" | "review" | "commit";
+  id: string;
+  author: string;
+  avatar: string;
+  bot?: boolean;
+  body: string;
+  created_at: number;
+  url?: string;
+  state?: "approved" | "changes" | "commented" | "dismissed";
+  sha?: string;
+}
+
+/** A review thread on GitHub: on lines `start`–`end` of one side of `path`, on the whole file, or outdated. */
+export interface Thread {
+  id: string;
+  path: string;
+  side: "old" | "new";
+  start: number | null;
+  end: number | null;
+  file_level: boolean;
+  resolved: boolean;
+  outdated: boolean;
+  comments: ThreadComment[];
+  /** Diffusion's own, not GitHub's: a comment waiting for your review, or a failing check's note on these lines. */
+  pending?: boolean;
+  ci?: { name: string; url: string };
+}
+
+/** GitHub's side of a PR. `available` is false for local targets. */
+export interface ReviewState {
+  available: boolean;
+  error?: string;
+  viewer?: string;
+  /** The PR's GitHub node id (for commenting on it). */
+  id?: string;
+  title?: string;
+  body?: string;
+  timeline?: TimelineItem[];
+  /** The PR's author (who can't approve or request changes on it). */
+  author?: string;
+  head_sha?: string;
+  base_ref?: string;
+  mergeable?: "mergeable" | "conflicting" | "unknown";
+  reviewers?: Reviewer[];
+  checks?: { state: "success" | "failure" | "pending" | "none"; failing: number; list: Check[] };
+  threads?: Thread[];
+}
+
+/** One of the signed-in user's open PRs on GitHub, for the home page's inbox. */
+export interface InboxPR {
+  url: string;
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  draft: boolean;
+  group: "review" | "yours" | "drafts";
+  author: string;
+  author_avatar: string;
+  base_ref: string;
+  head_ref: string;
+  updated_at: number;
+  comments: number;
+  reviewers: Reviewer[];
+  checks: { state: "success" | "failure" | "pending" | "none"; failing: number };
+  /** Set when the PR builds on another open PR's branch: the bottom PR's url, its layer (1 = bottom) and the size. */
+  stack?: { id: string; index: number; size: number };
+  /** Guide versions saved for it. */
+  guides: number;
+  /** A review Diffusion is writing (or wrote, or failed to) for it from here. */
+  generating?: GenerateJob;
+}
+
+export interface GenerateJob {
+  state: "none" | "running" | "done" | "failed" | "stopped";
+  /** What the agent is doing now. */
+  doing?: string;
+  error?: string | null;
+  /** When it started (epoch seconds), and what it was asked. */
+  started_at?: number;
+  prompt?: string;
+  /** Its steps so far (tool calls, reasoning) and what it has said. */
+  log?: ({ tool: string } | { think: string })[];
+  text?: string;
+  /** The agent writing it. */
+  harness?: string;
+  /** Tool calls waiting on the reviewer, as in a chat turn. */
+  asks?: { id: string; tool: string; summary: string; input: Record<string, unknown> }[];
+}
+
+export interface Inbox {
+  login: string;
+  prs: InboxPR[];
+  error: string | null;
+}
+
 export interface Target {
   url: string;
   owner: string;

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime
 from urllib.parse import urlsplit
 
 import httpx
@@ -210,3 +211,469 @@ def _fetch_meta_gh(ref: PRRef, gh: str) -> PRMeta:
     except subprocess.CalledProcessError as e:
         raise GitHubError(f"gh pr view failed: {e.stderr.strip() or e}") from e
     return meta_from_json(ref, json.loads(out))
+
+
+# ---------- inbox: the signed-in user's open PRs, for the home page ----------
+
+_INBOX_SEARCHES = {
+    "review": "is:pr is:open archived:false review-requested:@me",
+    "yours": "is:pr is:open archived:false author:@me",
+}
+_INBOX_QUERY = """
+query($review: String!, $yours: String!) {
+  viewer { login }
+  review: search(query: $review, type: ISSUE, first: 50) { nodes { ...pr } }
+  yours: search(query: $yours, type: ISSUE, first: 50) { nodes { ...pr } }
+}
+fragment pr on PullRequest {
+  number title url isDraft updatedAt baseRefName headRefName
+  repository { nameWithOwner }
+  author { login avatarUrl }
+  comments { totalCount }
+  reviewThreads { totalCount }
+  reviewRequests(first: 10) {
+    nodes { requestedReviewer { ... on User { login avatarUrl } ... on Team { slug avatarUrl } } }
+  }
+  latestOpinionatedReviews(first: 10) { nodes { state author { login avatarUrl } } }
+  commits(last: 1) {
+    nodes { commit { statusCheckRollup {
+      state
+      contexts(first: 1) { checkRunCountsByState { state count } statusContextCountsByState { state count } }
+    } } }
+  }
+}
+"""
+_REVIEW_STATES = {"APPROVED": "approved", "CHANGES_REQUESTED": "changes", "COMMENTED": "commented"}
+_FAILING = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
+
+
+def _epoch(iso: str) -> float:
+    return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() if iso else 0.0
+
+
+def _checks(node: dict) -> dict:
+    commits = (node.get("commits") or {}).get("nodes") or []
+    rollup = (commits[0].get("commit") or {}).get("statusCheckRollup") if commits else None
+    if not rollup:
+        return {"state": "none", "failing": 0}
+    ctx = rollup.get("contexts") or {}
+    counts = (ctx.get("checkRunCountsByState") or []) + (ctx.get("statusContextCountsByState") or [])
+    failing = sum(c.get("count", 0) for c in counts if c.get("state") in _FAILING)
+    state = {"SUCCESS": "success", "FAILURE": "failure", "ERROR": "failure"}.get(
+        rollup.get("state"), "pending"
+    )
+    return {"state": state, "failing": failing}
+
+
+def _reviewers(node: dict, author: str) -> list[dict]:
+    """Who reviewed (their latest approve / request changes / comment) and who is still requested."""
+    out: dict[str, dict] = {}
+    for r in (node.get("latestOpinionatedReviews") or {}).get("nodes") or []:
+        a = r.get("author") or {}
+        if a.get("login") and a["login"] != author:
+            out[a["login"]] = {
+                "login": a["login"],
+                "avatar": a.get("avatarUrl", ""),
+                "state": _REVIEW_STATES.get(r.get("state"), "commented"),
+            }
+    for r in (node.get("reviewRequests") or {}).get("nodes") or []:
+        who = r.get("requestedReviewer") or {}
+        login = who.get("login") or who.get("slug")
+        if login:  # a re-request after a review means it's their turn again
+            out[login] = {"login": login, "avatar": who.get("avatarUrl", ""), "state": "requested"}
+    return list(out.values())
+
+
+def inbox_pr(node: dict, group: str) -> dict:
+    owner, _, repo = (node.get("repository") or {}).get("nameWithOwner", "/").partition("/")
+    author = (node.get("author") or {}).get("login", "")
+    return {
+        "url": node["url"],
+        "owner": owner,
+        "repo": repo,
+        "number": node["number"],
+        "title": node.get("title") or "",
+        "draft": bool(node.get("isDraft")),
+        "group": "drafts" if group == "yours" and node.get("isDraft") else group,
+        "author": author,
+        "author_avatar": (node.get("author") or {}).get("avatarUrl", ""),
+        "base_ref": node.get("baseRefName", ""),
+        "head_ref": node.get("headRefName", ""),
+        "updated_at": _epoch(node.get("updatedAt", "")),
+        "comments": (node.get("comments") or {}).get("totalCount", 0)
+        + (node.get("reviewThreads") or {}).get("totalCount", 0),
+        "reviewers": _reviewers(node, author),
+        "checks": _checks(node),
+    }
+
+
+def link_stacks(prs: list[dict]) -> None:
+    """Mark PRs that stack: one whose base branch is another open PR's head branch in the same repo sits on top of
+    it. Each PR in a chain of two or more gets ``stack = {"id": <bottom PR's url>, "index": 1-based from the
+    bottom, "size": n}``. Only PRs in ``prs`` are seen, so a layer that isn't in the inbox splits the chain."""
+    by_head = {(p["owner"], p["repo"], p["head_ref"]): p for p in prs}
+    below = {p["url"]: by_head.get((p["owner"], p["repo"], p["base_ref"])) for p in prs}
+    above: dict[str, dict] = {}
+    for p in prs:
+        if (b := below[p["url"]]) and b is not p:
+            above.setdefault(b["url"], p)  # the first one wins if two PRs build on the same branch
+    for p in prs:
+        if below[p["url"]] or p["url"] not in above:
+            continue  # not the bottom of a chain
+        chain, seen = [p], {p["url"]}
+        while (nxt := above.get(chain[-1]["url"])) and nxt["url"] not in seen:
+            chain.append(nxt)
+            seen.add(nxt["url"])
+        for i, q in enumerate(chain, 1):
+            q["stack"] = {"id": p["url"], "index": i, "size": len(chain)}
+
+
+def fetch_inbox(gh: str = "gh") -> dict:
+    """The signed-in user's open PRs, from one GraphQL call through ``gh``: review requests first, then their own
+    (drafts apart). A PR in both lists shows once, as a review request."""
+    if not (shutil.which(gh) or os.sep in gh):
+        raise GitHubError("Install the GitHub CLI and run `gh auth login` to see your pull requests.")
+    cmd = [gh, "api", "graphql", "-f", f"query={_INBOX_QUERY}"]
+    for k, q in _INBOX_SEARCHES.items():
+        cmd += ["-f", f"{k}={q}"]
+    try:
+        out = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=60).stdout
+    except subprocess.CalledProcessError as e:
+        raise GitHubError(f"gh api graphql failed: {e.stderr.strip() or e}") from e
+    except subprocess.TimeoutExpired as e:
+        raise GitHubError("GitHub took too long to answer.") from e
+    data = json.loads(out).get("data") or {}
+    prs: dict[str, dict] = {}
+    for group in ("review", "yours"):
+        for node in (data.get(group) or {}).get("nodes") or []:
+            if node and node.get("url") and node["url"] not in prs:
+                prs[node["url"]] = inbox_pr(node, group)
+    items = sorted(prs.values(), key=lambda p: p["updated_at"], reverse=True)
+    link_stacks(items)
+    return {"login": (data.get("viewer") or {}).get("login", ""), "prs": items}
+
+
+# ---------- one PR's review state: threads, reviewers, checks ----------
+
+_PR_QUERY = """
+query($owner: String!, $repo: String!, $number: Int!) {
+  viewer { login }
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      id title body
+      author { login }
+      mergeable baseRefName headRefOid
+      timelineItems(last: 100, itemTypes: [ISSUE_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_COMMIT]) {
+        nodes {
+          __typename
+          ... on IssueComment { id body createdAt url author { __typename login avatarUrl } }
+          ... on PullRequestReview { id state body submittedAt url author { __typename login avatarUrl } }
+          ... on PullRequestCommit {
+            commit { oid url messageHeadline committedDate author { name user { login avatarUrl } } }
+          }
+        }
+      }
+      reviewRequests(first: 20) {
+        nodes { requestedReviewer { ... on User { login avatarUrl } ... on Team { slug avatarUrl } } }
+      }
+      latestOpinionatedReviews(first: 20) { nodes { state author { login avatarUrl } } }
+      commits(last: 1) {
+        nodes { commit { statusCheckRollup {
+          state
+          contexts(first: 100) { nodes {
+            __typename
+            ... on CheckRun {
+              name conclusion status detailsUrl
+              annotations(first: 20) {
+                nodes { path message title annotationLevel location { start { line } end { line } } }
+              }
+            }
+            ... on StatusContext { context state targetUrl }
+          } }
+        } } }
+      }
+      reviewThreads(first: 100) {
+        nodes {
+          id isResolved isOutdated path line startLine diffSide startDiffSide subjectType
+          comments(first: 50) {
+            nodes { id body createdAt url pullRequestReview { id } author { __typename login avatarUrl } }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+_CHECK_STATE = {
+    "SUCCESS": "success",
+    "NEUTRAL": "success",
+    "SKIPPED": "skipped",
+    "FAILURE": "failure",
+    "ERROR": "failure",
+    "TIMED_OUT": "failure",
+    "CANCELLED": "failure",
+    "ACTION_REQUIRED": "failure",
+    "STARTUP_FAILURE": "failure",
+    "STALE": "skipped",
+}
+
+
+def _check_list(node: dict) -> list[dict]:
+    commits = (node.get("commits") or {}).get("nodes") or []
+    rollup = (commits[0].get("commit") or {}).get("statusCheckRollup") if commits else None
+    out = []
+    for c in ((rollup or {}).get("contexts") or {}).get("nodes") or []:
+        if c.get("__typename") == "CheckRun":
+            done = c.get("status") == "COMPLETED"
+            state = _CHECK_STATE.get(c.get("conclusion") or "", "pending") if done else "pending"
+            notes = [
+                {
+                    "path": a.get("path", ""),
+                    "start": ((a.get("location") or {}).get("start") or {}).get("line"),
+                    "end": ((a.get("location") or {}).get("end") or {}).get("line"),
+                    "message": a.get("message") or "",
+                    "title": a.get("title") or "",
+                }
+                for a in ((c.get("annotations") or {}).get("nodes") or [])
+                if a and a.get("annotationLevel") == "FAILURE" and a.get("path")
+            ]
+            check = {"name": c.get("name", ""), "state": state, "url": c.get("detailsUrl") or ""}
+            out.append({**check, "annotations": notes} if notes else check)
+        elif c.get("__typename") == "StatusContext":
+            s = c.get("state")
+            state = {"SUCCESS": "success", "PENDING": "pending", "EXPECTED": "pending"}.get(s, "failure")
+            out.append({"name": c.get("context", ""), "state": state, "url": c.get("targetUrl") or ""})
+    order = {"failure": 0, "pending": 1, "success": 2, "skipped": 3}
+    return sorted(out, key=lambda c: (order[c["state"]], c["name"].lower()))
+
+
+def _thread(t: dict) -> dict:
+    comments = [
+        {
+            "id": c["id"],
+            "author": (c.get("author") or {}).get("login") or "ghost",
+            "avatar": (c.get("author") or {}).get("avatarUrl", ""),
+            "bot": (c.get("author") or {}).get("__typename") == "Bot",
+            "body": c.get("body") or "",
+            "created_at": _epoch(c.get("createdAt", "")),
+            "url": c.get("url", ""),
+            "review": (c.get("pullRequestReview") or {}).get("id"),
+        }
+        for c in (t.get("comments") or {}).get("nodes") or []
+    ]
+    line = t.get("line")
+    return {
+        "id": t["id"],
+        "path": t.get("path", ""),
+        "side": "old" if t.get("diffSide") == "LEFT" else "new",
+        "start": t.get("startLine") or line,
+        "end": line,
+        "file_level": t.get("subjectType") == "FILE",
+        "resolved": bool(t.get("isResolved")),
+        "outdated": bool(t.get("isOutdated")) or (line is None and t.get("subjectType") != "FILE"),
+        "comments": comments,
+    }
+
+
+_REVIEW_STATE = {
+    "APPROVED": "approved",
+    "CHANGES_REQUESTED": "changes",
+    "COMMENTED": "commented",
+    "DISMISSED": "dismissed",
+}
+
+
+def _who(a: dict | None) -> dict:
+    a = a or {}
+    return {
+        "author": a.get("login") or "ghost",
+        "avatar": a.get("avatarUrl", ""),
+        "bot": a.get("__typename") == "Bot",
+    }
+
+
+def _timeline(pr: dict) -> list[dict]:
+    """The PR's conversation, oldest first: comments, reviews (pending ones are only yours, so left out) and
+    commits."""
+    out = []
+    for n in (pr.get("timelineItems") or {}).get("nodes") or []:
+        kind = (n or {}).get("__typename")
+        if kind == "IssueComment":
+            out.append(
+                {"kind": "comment", "id": n["id"], **_who(n.get("author")), "body": n.get("body") or "",
+                 "created_at": _epoch(n.get("createdAt", "")), "url": n.get("url", "")}
+            )  # fmt: skip
+        elif kind == "PullRequestReview" and n.get("state") in _REVIEW_STATE:
+            out.append(
+                {"kind": "review", "id": n["id"], **_who(n.get("author")), "state": _REVIEW_STATE[n["state"]],
+                 "body": n.get("body") or "", "created_at": _epoch(n.get("submittedAt") or ""), "url": n.get("url", "")}
+            )  # fmt: skip
+        elif kind == "PullRequestCommit":
+            c = n.get("commit") or {}
+            user = (c.get("author") or {}).get("user") or {}
+            out.append(
+                {"kind": "commit", "id": c.get("oid", ""), "sha": c.get("oid", ""),
+                 "author": user.get("login") or (c.get("author") or {}).get("name") or "",
+                 "avatar": user.get("avatarUrl", ""), "body": c.get("messageHeadline", ""),
+                 "created_at": _epoch(c.get("committedDate", "")), "url": c.get("url", "")}
+            )  # fmt: skip
+    return out
+
+
+def pr_review_state(data: dict) -> dict:
+    pr = ((data.get("repository") or {}).get("pullRequest")) or {}
+    author = (pr.get("author") or {}).get("login", "")
+    checks = _check_list(pr)
+    failing = sum(c["state"] == "failure" for c in checks)
+    pending = any(c["state"] == "pending" for c in checks)
+    state = "none" if not checks else "failure" if failing else "pending" if pending else "success"
+    threads = [_thread(t) for t in (pr.get("reviewThreads") or {}).get("nodes") or [] if t]
+    return {
+        "viewer": (data.get("viewer") or {}).get("login", ""),
+        "id": pr.get("id", ""),
+        "title": pr.get("title", ""),
+        "body": pr.get("body") or "",
+        "author": author,
+        "timeline": _timeline(pr),
+        "head_sha": pr.get("headRefOid", ""),
+        "base_ref": pr.get("baseRefName", ""),
+        # MERGEABLE, CONFLICTING, or UNKNOWN while GitHub works it out
+        "mergeable": (pr.get("mergeable") or "UNKNOWN").lower(),
+        "reviewers": _reviewers(pr, author),
+        "checks": {"state": state, "failing": failing, "list": checks},
+        "threads": [t for t in threads if t["comments"]],
+    }
+
+
+def fetch_review_state(ref: PRRef, gh: str = "gh") -> dict:
+    """Review threads (with every comment), reviewers and checks for one PR, in one GraphQL call through ``gh``."""
+    if not (shutil.which(gh) or os.sep in gh):
+        raise GitHubError("Install the GitHub CLI and run `gh auth login` to see review comments.")
+    data = _graphql(gh, ref.host, _PR_QUERY, owner=ref.owner, repo=ref.repo, number=ref.number)
+    return pr_review_state(data)
+
+
+def _gh(cmd: list[str], stdin: str | None = None) -> str:
+    try:
+        return subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=60, input=stdin).stdout
+    except subprocess.CalledProcessError as e:
+        raise GitHubError(f"GitHub said: {_gh_error(e.stdout, e.stderr)}") from e
+    except subprocess.TimeoutExpired as e:
+        raise GitHubError("GitHub took too long to answer.") from e
+
+
+def _gh_error(out: str, err: str) -> str:
+    try:
+        body = json.loads(out)
+        msgs = [m.get("message", "") for m in body.get("errors") or [] if isinstance(m, dict)]
+        return "; ".join(m for m in msgs if m) or body.get("message") or err.strip()
+    except (ValueError, AttributeError):
+        return err.strip() or out.strip()
+
+
+def _graphql(gh: str, host: str, query: str, **variables: str | int | bool) -> dict:
+    """One GraphQL call through ``gh``. Strings go as -f, numbers and booleans as -F (typed)."""
+    cmd = [gh, "api", "graphql", "--hostname", host, "-f", f"query={query}"]
+    for k, v in variables.items():
+        cmd += ["-f", f"{k}={v}"] if isinstance(v, str) else ["-F", f"{k}={str(v).lower()}"]
+    out = json.loads(_gh(cmd) or "{}")
+    if out.get("errors"):
+        raise GitHubError(f"GitHub said: {_gh_error(json.dumps(out), '')}")
+    return out.get("data") or {}
+
+
+# ---------- writing: reviews, replies, resolving, editing your comments ----------
+
+_MUTATIONS = {
+    "reply": """mutation($thread: ID!, $body: String!) {
+      addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $thread, body: $body}) { comment { id } }
+    }""",
+    "resolve": """mutation($thread: ID!) { resolveReviewThread(input: {threadId: $thread}) { thread { id } } }""",
+    "unresolve": """mutation($thread: ID!) { unresolveReviewThread(input: {threadId: $thread}) { thread { id } } }""",
+    "edit_pr": """mutation($pr: ID!, $title: String!, $body: String!) {
+      updatePullRequest(input: {pullRequestId: $pr, title: $title, body: $body}) { pullRequest { id } }
+    }""",
+    "comment": """mutation($pr: ID!, $body: String!) {
+      addComment(input: {subjectId: $pr, body: $body}) { commentEdge { node { id } } }
+    }""",
+}
+# Editing or deleting one of your comments, by the kind of node its id names: a line comment (PRRC_), a
+# conversation comment (IC_) or a review's summary (PRR_; a submitted review can't be deleted).
+_COMMENT_MUTATIONS = {
+    "edit": {
+        "PRRC_": """mutation($comment: ID!, $body: String!) {
+          updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $comment, body: $body}) { clientMutationId }
+        }""",
+        "IC_": """mutation($comment: ID!, $body: String!) {
+          updateIssueComment(input: {id: $comment, body: $body}) { clientMutationId }
+        }""",
+        "PRR_": """mutation($comment: ID!, $body: String!) {
+          updatePullRequestReview(input: {pullRequestReviewId: $comment, body: $body}) { clientMutationId }
+        }""",
+    },
+    "delete": {
+        "PRRC_": """mutation($comment: ID!) { deletePullRequestReviewComment(input: {id: $comment}) { clientMutationId } }""",
+        "IC_": """mutation($comment: ID!) { deleteIssueComment(input: {id: $comment}) { clientMutationId } }""",
+    },
+}
+
+
+def _comment_mutation(kind: str, node: str) -> str:
+    for prefix, query in _COMMENT_MUTATIONS[kind].items():
+        if node.startswith(prefix):
+            return query
+    raise GitHubError(f"Can't {kind} that.")
+
+
+_EVENTS = {"comment": "COMMENT", "approve": "APPROVE", "request_changes": "REQUEST_CHANGES"}
+
+
+def review_payload(action: dict) -> dict:
+    """The REST body for submitting a review: its verdict, summary and line comments (each on one side, over one
+    line or a range). ``commit`` pins the comments to the head they were written against."""
+    comments = []
+    for c in action.get("comments") or []:
+        side = "LEFT" if c.get("side") == "old" else "RIGHT"
+        one = {"path": c["path"], "body": c["body"], "side": side}
+        if c.get("file_level"):
+            one["subject_type"] = "file"
+        else:
+            one["line"] = c["end"]
+            if c.get("start") and c["start"] != c["end"]:
+                one |= {"start_line": c["start"], "start_side": side}
+        comments.append(one)
+    body = {"event": _EVENTS[action.get("event", "comment")], "body": action.get("body") or ""}
+    if action.get("commit"):
+        body["commit_id"] = action["commit"]
+    return body | ({"comments": comments} if comments else {})
+
+
+def write_review(ref: PRRef, action: dict, gh: str = "gh") -> None:
+    """Do one thing on the PR as the signed-in user: ``submit`` a review (with pending comments), ``comment`` on
+    the conversation, ``reply`` to a thread, ``resolve``/``unresolve`` one, ``edit``/``delete`` one of your comments
+    (on a line, in the conversation, or a review's summary), or ``edit_pr`` its title and description."""
+    if not (shutil.which(gh) or os.sep in gh):
+        raise GitHubError("Install the GitHub CLI and run `gh auth login` to comment.")
+    kind = action.get("kind")
+    if kind == "submit":
+        path = f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}/reviews"
+        cmd = [gh, "api", "--hostname", ref.host, "--method", "POST", path, "--input", "-"]
+        _gh(cmd, json.dumps(review_payload(action)))
+    elif kind in ("reply", "resolve", "unresolve"):
+        extra = {"body": action["body"]} if kind == "reply" else {}
+        _graphql(gh, ref.host, _MUTATIONS[kind], thread=action["thread"], **extra)
+    elif kind == "comment":
+        _graphql(gh, ref.host, _MUTATIONS[kind], pr=action["pr"], body=action["body"])
+    elif kind == "edit_pr":
+        _graphql(gh, ref.host, _MUTATIONS[kind], pr=action["pr"], title=action["title"], body=action["body"])
+    elif kind in ("edit", "delete"):
+        extra = {"body": action["body"]} if kind == "edit" else {}
+        query = _comment_mutation(kind, action["comment"])
+        try:
+            _graphql(gh, ref.host, query, comment=action["comment"], **extra)
+        except GitHubError as e:
+            # Deleting a comment that's already gone (a second click while GitHub still listed it) is done.
+            if not (kind == "delete" and "Could not resolve to a node" in str(e)):
+                raise
+    else:
+        raise GitHubError(f"Unknown review action: {kind}")

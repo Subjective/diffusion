@@ -4,9 +4,11 @@ import { highlightLines, type LineTokens, langFor } from "../lib/highlight";
 import { rowKey } from "../lib/refs";
 import { loadFile } from "../lib/useFileLines";
 import { useApp } from "../store";
+import type { Thread } from "../types";
 import { useUI } from "../ui";
 import { DiffRow, type Dot } from "./FileDiff";
 import { ic } from "./icons";
+import { fileThreadLayout } from "./Threads";
 
 const base = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
@@ -71,8 +73,11 @@ export function FileView({
   extras,
   onNav,
   onShowInDiff,
+  threads,
 }: {
   path: string;
+  /** GitHub threads, pending comments and check notes to show on the file's lines. */
+  threads: Thread[];
   dots: Map<string, Dot[]>;
   /** Note badges, by row key (a file tab's lines are the new side's). */
   extras?: Map<string, ReactNode>;
@@ -139,6 +144,8 @@ export function FileView({
     useUI.setState((s) => ({ flash: { keys: new Set(keys), n: s.flash.n + 1 } }));
   }, [at, lines, path]);
 
+  const th = useMemo(() => fileThreadLayout(threads, path), [threads, path]);
+
   const slash = path.lastIndexOf("/") + 1;
   return (
     <div className="diffwrap fileview">
@@ -178,6 +185,7 @@ export function FileView({
                 </button>
               )}
             </div>
+            {th.top.length > 0 && <div className="file-th">{th.top}</div>}
             {lines ? (
               <table className="diff">
                 <tbody>
@@ -197,6 +205,8 @@ export function FileView({
                         file={path}
                         pos={n}
                         cut={marks.cuts.has(n)}
+                        after={th.after.get(n)}
+                        ranged={th.ranged.has(n)}
                       />
                     );
                   })}

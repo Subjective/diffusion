@@ -51,7 +51,49 @@ vi.mock("../api", () => ({
       updated_at: Date.now() / 1000 - 40 * 86400,
     },
   ]),
+  fetchReview: vi.fn(async () => ({ available: false })),
+  fetchGenerate: vi.fn(async () => ({ state: "none" })),
+  startGenerate: vi.fn(async () => ({ state: "running", doing: "" })),
+  stopGenerate: vi.fn(async () => ({ state: "stopped" })),
+  answerGenerate: vi.fn(async () => {}),
+  fetchGenerateHarnesses: vi.fn(async () => ["claude-code", "codex"]),
+  reviewAction: vi.fn(async () => ({ available: true, viewer: "jy", threads: [] })),
+  fetchInbox: vi.fn(async () => ({
+    login: "jy",
+    error: null,
+    prs: [
+      inboxPR(42, "review", { title: "Add token refresh", stack: { id: "s", index: 2, size: 2 }, guides: 2 }),
+      inboxPR(41, "yours", { title: "Add a Decision type", stack: { id: "s", index: 1, size: 2 } }),
+      inboxPR(44, "yours", {
+        title: "Retry budget",
+        checks: { state: "failure", failing: 1 },
+        reviewers: [{ login: "pk", avatar: "", state: "approved" }],
+      }),
+      inboxPR(47, "drafts", { title: "Plan mode", draft: true }),
+    ],
+  })),
 }));
+function inboxPR(n: number, group: string, extra: object) {
+  return {
+    url: n === 42 ? payload.pr.url : `https://github.com/acme/web/pull/${n}`,
+    owner: "acme",
+    repo: "web",
+    number: n,
+    title: "",
+    draft: false,
+    group,
+    author: "sam",
+    author_avatar: "",
+    base_ref: "main",
+    head_ref: `b${n}`,
+    updated_at: Date.now() / 1000 - n * 60,
+    comments: 3,
+    reviewers: [],
+    checks: { state: "success", failing: 0 },
+    guides: 0,
+    ...extra,
+  };
+}
 // jsdom has no caret-from-point; the clicked name comes from here
 const nav = vi.hoisted(() => ({ word: "refreshTokens" }));
 vi.mock("../lib/definition", async (orig) => ({
@@ -64,6 +106,7 @@ const api = await import("../api");
 const { useApp } = await import("../store");
 const { useUI } = await import("../ui");
 const { useChat } = await import("../chat");
+const { useReview, useInbox } = await import("../review");
 
 const rows = (sel: string) => [...document.querySelectorAll<HTMLTableRowElement>(`tr.ln${sel}`)];
 const nums = (sel: string) =>
@@ -71,6 +114,8 @@ const nums = (sel: string) =>
 
 beforeEach(() => {
   localStorage.clear();
+  useReview.setState({ url: "", state: null, hiddenFiles: [], expanded: [], pending: [], error: null, busy: false });
+  useInbox.setState({ inbox: null });
   useUI.setState({ mode: "guide", pinStep: null, pinSub: null });
 });
 
@@ -102,6 +147,50 @@ test("home lists past reviews, filters them, opens one, and the brand goes back"
   fireEvent.click(screen.getByTitle("Home"));
   await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
   expect(location.search).toBe("");
+});
+
+test("home's pull requests: grouped like GitHub, stacks as one row, remembered, and a row opens the review", async () => {
+  useApp.setState({ url: "", pr: null });
+  render(<App />);
+  await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
+  fireEvent.click(screen.getByTitle("Pull requests"));
+  expect(localStorage.getItem("rv-home-view")).toBe('"prs"');
+  const groups = () => [...document.querySelectorAll(".ib-g")].map((g) => g.textContent);
+  // the stack (#41 yours, #42 for review) is one row in the first group either layer is in
+  expect(groups()).toEqual(["Needs your review2", "Yours1", "Drafts1"]);
+  const stack = document.querySelector<HTMLElement>(".ib-stack > .ib-r")!;
+  // titled by its bottom PR, and expanded until folded
+  expect(stack.querySelector(".t > span")!.textContent).toBe("Add a Decision type");
+  expect(stack.querySelector(".w")!.textContent).toBe("web #41 → #42 · 2 PRs · sam");
+  expect([...document.querySelectorAll(".kid .lvl")].map((l) => l.textContent)).toEqual(["2", "1"]);
+  fireEvent.click(stack);
+  expect(document.querySelectorAll(".kid")).toHaveLength(0);
+  expect(localStorage.getItem("rv-inbox-folded-stacks")).toBe('["s"]');
+  fireEvent.click(stack);
+  expect(document.querySelector(".kid [data-tip='Review ready']")).toBeTruthy(); // #42 has a guide
+  const retry = screen.getByText("Retry budget").closest(".ib-r")!;
+  expect(retry.querySelector(".ci.bad")!.textContent).toBe("1");
+  expect(retry.querySelector(".rv")!.getAttribute("data-tip")).toBe("pk approved");
+  expect(retry.querySelector(".ci")!.getAttribute("data-tip")).toBe("1 check failing");
+  // search covers PRs too; a group folds
+  fireEvent.change(screen.getByPlaceholderText("Search"), { target: { value: "plan" } });
+  expect(groups()).toEqual(["Drafts1"]);
+  fireEvent.change(screen.getByPlaceholderText("Search"), { target: { value: "" } });
+  fireEvent.click(screen.getByText("Yours"));
+  expect(screen.queryByText("Retry budget")).toBeNull();
+
+  // a PR without a review can have one written from here; the row shows the agent at work
+  const plan = screen.getByText("Plan mode").closest<HTMLElement>(".ib-r")!;
+  fireEvent.click(plan.querySelector('[aria-label="Write a review"]')!);
+  expect(api.startGenerate).toHaveBeenCalledWith("https://github.com/acme/web/pull/47", "", "default", "claude-code");
+  await waitFor(() => expect(plan.querySelector(".gen.run")).toBeTruthy());
+  expect(useApp.getState().url).not.toBe("https://github.com/acme/web/pull/47"); // the row didn't open
+
+  fireEvent.click(screen.getByText("Add token refresh"));
+  await waitFor(() => expect(document.querySelectorAll(".step")).toHaveLength(3));
+  expect(new URLSearchParams(location.search).get("pr")).toBe(payload.pr.url);
+  fireEvent.click(screen.getByTitle("Home"));
+  await waitFor(() => expect(screen.getByText("Plan mode")).toBeTruthy()); // still on pull requests
 });
 
 test("renders guide, diff in guide order, skippable collapsed", async () => {
@@ -355,6 +444,307 @@ test("comments sit under their last line, highlight it, and can be hidden, resol
   expect([cmts()[0].querySelector(".cmt-t")!.textContent, tg.textContent]).toEqual(["A 5xx is not retried.", "2"]);
 });
 
+const comment = (id: string, author: string, body: string) => ({
+  id,
+  author,
+  avatar: "",
+  bot: false,
+  body,
+  created_at: Date.now() / 1000 - 3600,
+  url: "",
+});
+const thread = (id: string, extra: object) => ({
+  id,
+  path: "src/auth/session.ts",
+  side: "new",
+  start: null,
+  end: null,
+  file_level: false,
+  resolved: false,
+  outdated: false,
+  comments: [comment(`${id}c`, "pk", `${id} first`)],
+  ...extra,
+});
+const ghState = {
+  available: true,
+  viewer: "jy",
+  reviewers: [{ login: "pk", avatar: "", state: "changes" }],
+  checks: {
+    state: "failure",
+    failing: 1,
+    list: [
+      { name: "test / ubuntu", state: "failure", url: "https://ci/1" },
+      { name: "lint", state: "success", url: "https://ci/2" },
+    ],
+  },
+  threads: [
+    thread("T1", {
+      start: 6,
+      end: 7,
+      comments: [
+        comment("a", "pk", "Why clear here?"),
+        comment("b", "jy", "Logout"),
+        comment("c", "pk", "And refresh?"),
+        comment("d", "sam", "Fixed"),
+      ],
+    }),
+    thread("T2", { start: 2, end: 2, resolved: true }),
+    thread("T3", { path: "src/auth/types.ts", file_level: true }),
+    thread("T4", { start: 1, end: 1, outdated: true }),
+  ],
+};
+
+test("GitHub threads sit under their lines with range bars, fold long middles, and list in the popover", async () => {
+  vi.mocked(api.fetchReview).mockResolvedValue(ghState as never);
+  useApp.setState({ pr: null }); // so the review loads afresh, with GitHub's state
+  await mount();
+  const card = () => document.querySelector<HTMLElement>('[data-thread="T1"]')!;
+  await waitFor(() => expect(card()).toBeTruthy());
+  // under the last line it covers (after that line's own comment), with a bar on each covered line (none for the
+  // resolved one)
+  const above = card().closest("tr")!.previousElementSibling as HTMLElement;
+  expect([above.className, (above.previousElementSibling as HTMLElement).dataset.new]).toEqual(["cmt-row", "7"]);
+  expect(nums(".rng")).toEqual(["session.ts:6", "session.ts:7"]);
+  // first and last comment, the two between folded
+  expect([...card().querySelectorAll(".th-c b")].map((b) => b.textContent)).toEqual(["pk", "sam"]);
+  fireEvent.click(screen.getByText("2 more replies"));
+  expect(card().querySelectorAll(".th-c")).toHaveLength(4);
+  fireEvent.mouseEnter(card());
+  expect(nums(".hl")).toEqual(["session.ts:6", "session.ts:7"]);
+  fireEvent.mouseLeave(card());
+  // resolved: one line until opened; file-level: under the file's header; outdated: not on the diff
+  expect(document.querySelector('[data-thread="T2"]')!.classList.contains("th-closed")).toBe(true);
+  expect(document.querySelector('.file[data-path="src/auth/types.ts"] .file-th [data-thread="T3"]')).toBeTruthy();
+  expect(document.querySelector('[data-thread="T4"]')).toBeNull();
+
+  // the toolbar button counts open threads and lists them by file
+  const tg = document.querySelector<HTMLElement>(".cmt-tg")!;
+  expect(tg.textContent).toBe("3");
+  fireEvent.click(tg);
+  const pop = () => document.querySelector<HTMLElement>(".th-pop")!;
+  const items = () => [...pop().querySelectorAll(".tl-t .where")].map((w) => w.textContent);
+  expect(items()).toEqual(["L6–7 · 4", "outdated", "file"]);
+  const seg = (i: number) => pop().querySelectorAll<HTMLElement>(".th-seg button")[i];
+  fireEvent.click(seg(1));
+  expect(items()).toEqual(["L2"]);
+  fireEvent.click(seg(0));
+  // hiding a file's threads takes them off the diff
+  fireEvent.click(pop().querySelector(".tl-g:last-child .tl-hide")!);
+  expect(document.querySelector('[data-thread="T3"]')).toBeNull();
+  // folding a file shows its count
+  fireEvent.click(pop().querySelector(".tl-fold")!);
+  expect(pop().querySelector(".tl-f .n")!.textContent).toBe("2");
+  vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
+});
+
+test("writing: reply, resolve, edit your own, comment from the line popup, and submit a review", async () => {
+  vi.mocked(api.fetchReview).mockResolvedValue({ ...ghState, author: "sam", head_sha: "h1" } as never);
+  vi.mocked(api.reviewAction).mockResolvedValue({ ...ghState, author: "sam", head_sha: "h1" } as never);
+  useApp.setState({ pr: null });
+  await mount();
+  const card = () => document.querySelector<HTMLElement>('[data-thread="T1"]')!;
+  await waitFor(() => expect(card()).toBeTruthy());
+  const acted = () => vi.mocked(api.reviewAction).mock.calls.map((c) => c[1]);
+
+  // reply: a click opens the box, ↵ sends it
+  fireEvent.click(card().querySelector(".th-reply")!);
+  const box = card().querySelector<HTMLTextAreaElement>(".th-compose textarea")!;
+  fireEvent.change(box, { target: { value: "Will do" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(acted()).toEqual([{ kind: "reply", thread: "T1", body: "Will do" }]));
+  fireEvent.click(card().querySelector(".th-res")!);
+  expect(acted()[1]).toEqual({ kind: "resolve", thread: "T1" });
+
+  // only your own comments can be edited
+  fireEvent.click(screen.getByText("2 more replies"));
+  const mine = [...card().querySelectorAll<HTMLElement>(".th-c")].filter((c) => c.querySelector(".th-acts"));
+  expect(mine.map((c) => c.querySelector("b")!.textContent)).toEqual(["jy"]);
+  fireEvent.click(mine[0].querySelector('[data-tip="Edit"]')!);
+  const edit = mine[0].querySelector<HTMLTextAreaElement>(".th-compose textarea")!;
+  expect(edit.value).toBe("Logout");
+  fireEvent.change(edit, { target: { value: "On logout" } });
+  fireEvent.keyDown(edit, { key: "Enter" });
+  await waitFor(() => expect(acted()[2]).toEqual({ kind: "edit", comment: "b", body: "On logout" }));
+
+  // the line popup: Tab switches to commenting, ↵ adds it to your review
+  const rows = [...document.querySelectorAll<HTMLElement>('tr.ln[data-file="src/auth/session.ts"]')];
+  Object.defineProperty(document, "elementFromPoint", { value: () => rows[2], configurable: true });
+  fireEvent.mouseDown(rows[1].querySelector(".ask-btn")!, { button: 0, clientX: 300, clientY: 100 });
+  fireEvent.mouseUp(window, { clientX: 300, clientY: 120 });
+  await waitFor(() => expect(document.querySelector(".ask-pop")).toBeTruthy());
+  const input = document.querySelector<HTMLTextAreaElement>(".ask-in textarea")!;
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input.getAttribute("placeholder")).toBe("Comment");
+  fireEvent.change(input, { target: { value: "Name this better" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  const pend = await waitFor(() => document.querySelector<HTMLElement>(".th.pending")!);
+  expect(pend.querySelector(".th-tag.pend")!.textContent).toBe("Pending");
+  expect(useReview.getState().pending.map((p) => [p.path, p.side, p.start, p.end, p.body])).toEqual([
+    ["src/auth/session.ts", "new", 2, 3, "Name this better"],
+  ]);
+
+  // the review chip counts it; submitting sends it with a verdict and the head it was written on
+  const chip = document.querySelector<HTMLElement>(".rv-btn")!;
+  expect(chip.textContent).toBe("Review1");
+  fireEvent.click(chip);
+  expect([...document.querySelectorAll(".rv-pop .th-seg button")].map((b) => b.textContent)).toEqual([
+    "Comment",
+    "Approve",
+    "Request changes",
+  ]);
+  fireEvent.change(document.querySelector(".rv-body")!, { target: { value: "Nearly there" } });
+  fireEvent.click(screen.getByText("Request changes"));
+  fireEvent.click(screen.getByText("Submit"));
+  await waitFor(() => expect(useReview.getState().pending).toEqual([]));
+  expect(acted()[3]).toEqual({
+    kind: "submit",
+    event: "request_changes",
+    body: "Nearly there",
+    commit: "h1",
+    comments: [{ path: "src/auth/session.ts", side: "new", start: 2, end: 3, body: "Name this better" }],
+  });
+  expect(document.querySelector(".rv-pop")).toBeNull();
+  vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
+  localStorage.removeItem("rv-ask-mode");
+});
+
+test("the conversation: description, reviews with the threads they started, commits run together, and commenting", async () => {
+  const at = Date.now() / 1000;
+  const item = (kind: string, id: string, author: string, ago: number, extra = {}) => ({
+    kind,
+    id,
+    author,
+    avatar: "",
+    body: "",
+    created_at: at - ago,
+    ...extra,
+  });
+  const state = {
+    ...ghState,
+    id: "PR_7",
+    author: "jy",
+    threads: ghState.threads.map((t) =>
+      t.id === "T1" ? { ...t, comments: t.comments.map((c, i) => (i ? c : { ...c, review: "R1" })) } : t,
+    ),
+    timeline: [
+      item("commit", "c1", "sam", 500, { sha: "aaaaaaa1", body: "Start" }),
+      item("commit", "c2", "sam", 400, { sha: "bbbbbbb2", body: "More" }),
+      item("review", "R1", "pk", 300, { state: "changes", body: "One problem" }),
+      item("comment", "C1", "jy", 200, { body: "On it" }),
+    ],
+  };
+  vi.mocked(api.fetchReview).mockResolvedValue(state as never);
+  vi.mocked(api.reviewAction).mockResolvedValue(state as never);
+  useApp.setState({ pr: null });
+  await mount();
+  await waitFor(() => expect(screen.getByTitle("Conversation")).toBeTruthy());
+  fireEvent.click(screen.getByTitle("Conversation"));
+  const tl = () => [...document.querySelectorAll<HTMLElement>(".conv-tl > *")];
+  // the saved review (v1) is older than the PR's events here
+  expect(tl().map((e) => e.querySelector("b, span")!.textContent)).toEqual([
+    "Review v1",
+    "sam pushed 2 commitsaaaaaaa Startbbbbbbb More",
+    "pk",
+    "jy",
+  ]);
+  expect(tl()[2].querySelector(".conv-state")!.textContent).toBe("Changes requested");
+  // a review's threads link to their lines
+  const th = tl()[2].querySelector<HTMLElement>(".conv-th")!;
+  expect(th.querySelector(".where")!.textContent).toBe("session.ts L6–7");
+  fireEvent.click(th);
+  expect(useUI.getState().flash.keys.size).toBeGreaterThan(0);
+  // ⌘↵ comments on the PR
+  const box = document.querySelector<HTMLTextAreaElement>(".conv-box textarea")!;
+  fireEvent.change(box, { target: { value: "Thanks all" } });
+  fireEvent.keyDown(box, { key: "Enter", metaKey: true });
+  await waitFor(() =>
+    expect(vi.mocked(api.reviewAction).mock.calls.at(-1)![1]).toEqual({
+      kind: "comment",
+      pr: "PR_7",
+      body: "Thanks all",
+    }),
+  );
+  // your own comment can be edited (not someone else's review), and its time links to GitHub
+  expect(tl()[2].querySelector('[data-tip="Edit"]')).toBeNull();
+  fireEvent.click(tl()[3].querySelector<HTMLElement>('[data-tip="Edit"]')!);
+  const ed = tl()[3].querySelector<HTMLTextAreaElement>(".conv-edit textarea")!;
+  expect(ed.value).toBe("On it");
+  fireEvent.change(ed, { target: { value: "On it now" } });
+  fireEvent.keyDown(ed, { key: "Enter", metaKey: true });
+  await waitFor(() =>
+    expect(vi.mocked(api.reviewAction).mock.calls.at(-1)![1]).toEqual({
+      kind: "edit",
+      comment: "C1",
+      body: "On it now",
+    }),
+  );
+  // your own PR's title and description are edited in place, together, from the pencil beside the title
+  fireEvent.click(document.querySelector<HTMLElement>('.pr-title .pr-acts [aria-label="Edit title and description"]')!);
+  const ti = document.querySelector<HTMLTextAreaElement>(".pr-title .draft-title")!;
+  expect(ti.value).toBe(useApp.getState().pr!.title);
+  expect(document.querySelector<HTMLTextAreaElement>(".conv-desc .draft-body")!.value).toBe(useApp.getState().pr!.body);
+  fireEvent.change(ti, { target: { value: "New title" } });
+  fireEvent.keyDown(ti, { key: "Enter" });
+  await waitFor(() =>
+    expect(vi.mocked(api.reviewAction).mock.calls.at(-1)![1]).toMatchObject({ kind: "edit_pr", title: "New title" }),
+  );
+  await waitFor(() => expect(document.querySelector(".pr h1")!.textContent).toBe("New title"));
+  expect(document.querySelector(".draft-body")).toBeNull();
+  useUI.getState().setMode("guide");
+  vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
+});
+
+test("a GitHub PR's top bar: switcher with its stack, checks, reviewers", async () => {
+  const failing = {
+    name: "test / ubuntu",
+    state: "failure",
+    url: "https://ci/1",
+    annotations: [{ path: "src/auth/session.ts", start: 5, end: 5, title: "", message: "timer leaks" }],
+  };
+  vi.mocked(api.fetchReview).mockResolvedValue({
+    ...ghState,
+    mergeable: "conflicting",
+    base_ref: "main",
+    checks: { ...ghState.checks, list: [failing, ghState.checks.list[1]] },
+  } as never);
+  vi.mocked(api.fetchInbox).mockResolvedValueOnce({
+    login: "jy",
+    error: null,
+    prs: [
+      inboxPR(7, "yours", { title: "Add token refresh", stack: { id: "s", index: 2, size: 2 } }),
+      inboxPR(6, "yours", { title: "Session types", stack: { id: "s", index: 1, size: 2 } }),
+      inboxPR(9, "review", { title: "Other work" }),
+    ],
+  } as never);
+  useApp.setState({ pr: null });
+  await mount();
+  await waitFor(() =>
+    expect(document.querySelector(".target .stk") && document.querySelector(".ci-chip")).toBeTruthy(),
+  );
+  expect(document.querySelector(".target .stk")!.textContent).toBe("2/2");
+  expect(document.querySelector(".ci-chip")!.textContent).toBe("1");
+  expect(document.querySelector('.target .rv[data-tip="pk requested changes"]')).toBeTruthy();
+  fireEvent.click(document.querySelector(".ci-chip")!);
+  expect([...document.querySelectorAll(".ci-pop .r")].map((r) => r.textContent)).toEqual(["test / ubuntu", "lint"]);
+  expect(document.querySelector(".ci-pop .mg")!.textContent).toBe("Conflicts with main");
+  // a failing check's note sits on the line it points at
+  const ci = document.querySelector<HTMLElement>('[data-thread^="ci:"]')!;
+  expect([ci.querySelector(".th-tag")!.textContent, ci.querySelector(".th-x")!.textContent]).toEqual([
+    "CI",
+    "timer leaks",
+  ]);
+  expect((ci.closest("tr")!.previousElementSibling as HTMLElement).dataset.new).toBe("5");
+
+  fireEvent.click(document.querySelector(".sw-btn")!);
+  const sw = () => [...document.querySelectorAll(".sw-pop .sw-h, .sw-pop .sw-i")].map((e) => e.textContent);
+  expect(sw()).toEqual(["Stack", "2Add token refresh#7", "1Session types#6", "Needs your review", "Other work#9"]);
+  fireEvent.change(document.querySelector(".sw-q input")!, { target: { value: "other" } });
+  expect(sw()).toEqual(["Needs your review", "Other work#9"]);
+  fireEvent.click(screen.getByText("Other work"));
+  expect(useApp.getState().url).toBe("https://github.com/acme/web/pull/9");
+  vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
+});
+
 test("file list toggles, nests directories, and opens a picked file", async () => {
   await mount();
   expect(document.querySelector(".rail")).toBeNull();
@@ -523,11 +913,52 @@ test("scope chip names what the guide covers", async () => {
   expect(document.querySelector(".ver-btn")).toBeNull(); // one version: no history
 });
 
-test("no guide yet: says how to get one, then shows it when it's submitted", async () => {
+test("no guide yet: write one from here, watch it in the chat, stop it, and see it when it's submitted", async () => {
   await mountWith({ ...payload, guide: null, versions: [] });
-  expect(document.querySelector(".no-guide code")!.textContent).toBe("/diffusion:review");
+  expect(document.querySelector(".no-guide")).toBeNull(); // a GitHub PR gets the card, not the command hint
+  // the picker can copy the command, focus included, to run it yourself
+  const focus = screen.getByPlaceholderText("Anything to focus on?");
+  fireEvent.change(focus, { target: { value: "the refresh timer" } });
+  fireEvent.click(document.querySelector(".gen-h")!);
+  expect(screen.getByText("Copy command")).toBeTruthy();
+  // Codex too, when it's installed
+  await waitFor(() => expect(screen.getByRole("menuitemradio", { name: /Codex/ })).toBeTruthy());
+  fireEvent.click(document.querySelector(".gen-h")!);
+  // Generate runs it in the background; the chat shows the run as it goes
+  const running = {
+    state: "running" as const,
+    started_at: Date.now() / 1000 - 75,
+    prompt: `/diffusion:review ${payload.pr.url} the refresh timer`,
+    log: [{ tool: "Read session.ts" }],
+    text: "Starting with the timer.",
+    asks: [{ id: "g1", tool: "Bash", summary: "Run npm test", input: { command: "npm test" } }],
+  };
+  vi.mocked(api.fetchGenerate).mockResolvedValue(running);
+  vi.mocked(api.startGenerate).mockResolvedValue(running);
+  fireEvent.keyDown(focus, { key: "Enter" });
+  expect(api.startGenerate).toHaveBeenCalledWith(payload.pr.url, "the refresh timer", "default", "claude-code");
+  await waitFor(() => expect(document.querySelector(".gen-clock")?.textContent).toBe("1:15"));
+  expect(document.querySelector(".chat .bubble")!.textContent).toBe(
+    `/diffusion:review ${payload.pr.repo}#${payload.pr.number} the refresh timer`,
+  );
+  expect(document.querySelector(".chat .trace-tool")!.textContent).toContain("session.ts");
+  expect(document.querySelector(".chat .ans-t")!.textContent).toBe("Starting with the timer.");
+  // what the run's mode doesn't allow is asked in the chat, as in a turn
+  expect(document.querySelector(".chat .ask-d")!.textContent).toBe("npm test");
+  vi.mocked(api.fetchGenerate).mockResolvedValue({ ...running, asks: [] });
+  fireEvent.click(screen.getByTitle("Allow (↵)"));
+  expect(api.answerGenerate).toHaveBeenCalledWith("g1", "allow");
+  expect(document.querySelector(".chat .ask-card")).toBeNull();
+  // Stop ends the run and brings the card back
+  vi.mocked(api.fetchGenerate).mockResolvedValue({ state: "stopped" });
+  vi.mocked(api.stopGenerate).mockResolvedValue({ state: "stopped" });
+  fireEvent.click(document.querySelector('[data-tip="Stop"]')!);
+  await waitFor(() => expect(screen.getByPlaceholderText("Anything to focus on?")).toBeTruthy());
+  expect(api.stopGenerate).toHaveBeenCalledWith(payload.pr.url);
+  // a submitted guide replaces the card
+  vi.mocked(api.fetchGenerate).mockResolvedValue({ state: "none" });
   vi.mocked(api.fetchGuide).mockResolvedValueOnce({ ...payload.guide!, version: 1 });
   await useApp.getState().refresh();
   await waitFor(() => expect(document.querySelector(".tldr")).toBeTruthy());
-  expect(document.querySelector(".no-guide")).toBeNull();
+  expect(document.querySelector(".gen-card")).toBeNull();
 });
