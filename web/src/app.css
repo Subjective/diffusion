@@ -2177,6 +2177,8 @@ tr.th-row > td {
 }
 .ib-r .gd button.gen.failed {
   color: var(--del-fg);
+}
+
 /* Editing your comments, review summaries, and the title and description of your PR */
 .conv-desc {
   position: relative;
