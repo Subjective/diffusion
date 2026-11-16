@@ -1169,7 +1169,8 @@ function Composer({ link }: { link: ChatLinkProps }) {
     if (!q) return;
     setEditing(null);
     setRestoreCode(false);
-    setText(q.text);
+    // The message's typed part; its notes are back above as pills.
+    setText(useChat.getState().chat.questions.find((x) => x.turn === q.turn && !x.anchor)?.text ?? "");
     requestAnimationFrame(() => {
       autosize(ta.current, 12);
       ta.current?.focus();
@@ -1242,15 +1243,17 @@ function Composer({ link }: { link: ChatLinkProps }) {
       {waiting.length > 0 && <Queue waiting={waiting} editing={editing} onEdit={startEdit} link={link} />}
       <div className="composer stack">
         {menu.open && <TypeaheadMenu picks={menu.picks} active={menu.active} onPick={pick} onHover={menu.setActive} />}
-        {(editing || rewriting) && (
+        {(editing || rewriting || staged.length > 0) && (
           <div className="notes">
-            <span className="editing-chip">
-              {ic(Pencil, 13)}
-              Editing
-              <button type="button" className="icon-btn sm" title="Cancel (Esc)" onClick={cancelEdit}>
-                {ic(X, 12)}
-              </button>
-            </span>
+            {(editing || rewriting) && (
+              <span className="editing-chip">
+                {ic(Pencil, 13)}
+                Editing
+                <button type="button" className="icon-btn sm" title="Cancel (Esc)" onClick={cancelEdit}>
+                  {ic(X, 12)}
+                </button>
+              </span>
+            )}
             {rewriting && touchedFiles && (
               <button
                 type="button"
@@ -1263,25 +1266,22 @@ function Composer({ link }: { link: ChatLinkProps }) {
                 Restore code
               </button>
             )}
-          </div>
-        )}
-        {!editing && !rewriting && staged.length > 0 && (
-          <div className="notes">
-            {staged.map((q) => (
-              <div
-                key={q.id}
-                className={`note${link.hoverQ === q.id ? " hover" : ""}`}
-                {...noteLink(q, link)}
-                onClick={(e) => {
-                  link.onFocusQ(q);
-                  link.onEditQ(q.id, e.currentTarget);
-                }}
-              >
-                <Qn q={q} />
-                <span className="ref">{q.text}</span>
-                <RemoveBtn onClick={() => unstage(q.id)} />
-              </div>
-            ))}
+            {!editing &&
+              staged.map((q) => (
+                <div
+                  key={q.id}
+                  className={`note${link.hoverQ === q.id ? " hover" : ""}`}
+                  {...noteLink(q, link)}
+                  onClick={(e) => {
+                    link.onFocusQ(q);
+                    link.onEditQ(q.id, e.currentTarget);
+                  }}
+                >
+                  <Qn q={q} />
+                  <span className="ref">{q.text}</span>
+                  <RemoveBtn onClick={() => unstage(q.id)} />
+                </div>
+              ))}
           </div>
         )}
         <textarea
@@ -1325,7 +1325,14 @@ function Composer({ link }: { link: ChatLinkProps }) {
           <ModeMenu />
           <span className="grow" />
           {editing || rewriting ? (
-            <button type="button" id="chatSend" className="icon-btn solid" title="Save" onClick={send}>
+            <button
+              type="button"
+              id="chatSend"
+              className="icon-btn solid"
+              title="Save"
+              disabled={!!rewriting && !text.trim() && !staged.length}
+              onClick={send}
+            >
               {ic(Check, 16)}
             </button>
           ) : chat.busy && !text.trim() && !staged.length ? (
