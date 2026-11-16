@@ -1,4 +1,4 @@
-import { ArrowUp, Check, FileCode, ListPlus, MessageCircle, X } from "lucide-react";
+import { ArrowUp, Check, FileCode, ListPlus, MessageCircle, MessageSquarePlus, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Anchor } from "../chat";
 import { useChat } from "../chat";
@@ -164,10 +164,10 @@ export function AskPopup({
         ) : gh ? (
           <>
             <button type="button" className="icon-btn" title="Add to review (↵)" onClick={() => submit(true)}>
-              {ic(ListPlus, 17)}
+              {ic(MessageSquarePlus, 17)}
             </button>
             <button type="button" className="icon-btn solid" title="Comment now (⌘↵)" onClick={() => submit(false)}>
-              {ic(ArrowUp, 16)}
+              {ic(Send, 15)}
             </button>
           </>
         ) : (
