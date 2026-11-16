@@ -1419,7 +1419,6 @@ tr.th-row > td {
   border-radius: 12px;
   background: var(--surface);
   font-family: var(--sans);
-  overflow: hidden;
 }
 .th:hover {
   border-color: color-mix(in srgb, var(--hl-bar) 55%, transparent);
@@ -1886,6 +1885,9 @@ tr.th-row > td {
 .rv-err {
   color: var(--del-fg);
   font-size: 12.5px;
+}
+.th-err {
+  padding: 0 12px 8px 42px;
 }
 .rv-f {
   display: flex;

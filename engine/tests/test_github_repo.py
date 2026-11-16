@@ -527,3 +527,16 @@ def test_pr_review_state_reads_the_conversation():
         ("comment", "ci-bot", None),
     ]
     assert st["timeline"][2]["bot"] and st["timeline"][0]["body"] == "Start"
+
+
+def test_deleting_a_comment_thats_already_gone_is_done(tmp_path):
+    fake = tmp_path / "gh"
+    fake.write_text(
+        '#!/bin/sh\necho \'{"errors": [{"message": "Could not resolve to a node with the global id of '
+        "X.\"}]}'\nexit 1\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    ref = PRRef("github.com", "acme", "web", 42)
+    write_review(ref, {"kind": "delete", "comment": "C1"}, gh=str(fake))
+    with pytest.raises(GitHubError, match="Could not resolve"):
+        write_review(ref, {"kind": "edit", "comment": "C1", "body": "x"}, gh=str(fake))
