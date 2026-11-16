@@ -44,6 +44,7 @@ interface Review {
 const savePending = (url: string, pending: PendingComment[]) => storage.set(`rv-pending:${url}`, pending);
 const dropComment = (s: ReviewState, id: string): ReviewState => ({
   ...s,
+  timeline: s.timeline?.filter((i) => i.id !== id),
   threads: s.threads
     ?.map((t) => ({ ...t, comments: t.comments.filter((c) => c.id !== id) }))
     .filter((t) => t.comments.length),

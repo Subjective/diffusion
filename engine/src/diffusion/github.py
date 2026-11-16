@@ -360,7 +360,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      id
+      id title body
       author { login }
       mergeable baseRefName headRefOid
       timelineItems(last: 100, itemTypes: [ISSUE_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_COMMIT]) {
@@ -369,7 +369,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
           ... on IssueComment { id body createdAt url author { __typename login avatarUrl } }
           ... on PullRequestReview { id state body submittedAt url author { __typename login avatarUrl } }
           ... on PullRequestCommit {
-            commit { oid messageHeadline committedDate author { name user { login avatarUrl } } }
+            commit { oid url messageHeadline committedDate author { name user { login avatarUrl } } }
           }
         }
       }
@@ -515,7 +515,7 @@ def _timeline(pr: dict) -> list[dict]:
                 {"kind": "commit", "id": c.get("oid", ""), "sha": c.get("oid", ""),
                  "author": user.get("login") or (c.get("author") or {}).get("name") or "",
                  "avatar": user.get("avatarUrl", ""), "body": c.get("messageHeadline", ""),
-                 "created_at": _epoch(c.get("committedDate", ""))}
+                 "created_at": _epoch(c.get("committedDate", "")), "url": c.get("url", "")}
             )  # fmt: skip
     return out
 
@@ -531,6 +531,8 @@ def pr_review_state(data: dict) -> dict:
     return {
         "viewer": (data.get("viewer") or {}).get("login", ""),
         "id": pr.get("id", ""),
+        "title": pr.get("title", ""),
+        "body": pr.get("body") or "",
         "author": author,
         "timeline": _timeline(pr),
         "head_sha": pr.get("headRefOid", ""),
@@ -588,14 +590,41 @@ _MUTATIONS = {
     }""",
     "resolve": """mutation($thread: ID!) { resolveReviewThread(input: {threadId: $thread}) { thread { id } } }""",
     "unresolve": """mutation($thread: ID!) { unresolveReviewThread(input: {threadId: $thread}) { thread { id } } }""",
-    "edit": """mutation($comment: ID!, $body: String!) {
-      updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $comment, body: $body}) { pullRequestReviewComment { id } }
+    "edit_pr": """mutation($pr: ID!, $title: String!, $body: String!) {
+      updatePullRequest(input: {pullRequestId: $pr, title: $title, body: $body}) { pullRequest { id } }
     }""",
-    "delete": """mutation($comment: ID!) { deletePullRequestReviewComment(input: {id: $comment}) { clientMutationId } }""",
     "comment": """mutation($pr: ID!, $body: String!) {
       addComment(input: {subjectId: $pr, body: $body}) { commentEdge { node { id } } }
     }""",
 }
+# Editing or deleting one of your comments, by the kind of node its id names: a line comment (PRRC_), a
+# conversation comment (IC_) or a review's summary (PRR_; a submitted review can't be deleted).
+_COMMENT_MUTATIONS = {
+    "edit": {
+        "PRRC_": """mutation($comment: ID!, $body: String!) {
+          updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $comment, body: $body}) { clientMutationId }
+        }""",
+        "IC_": """mutation($comment: ID!, $body: String!) {
+          updateIssueComment(input: {id: $comment, body: $body}) { clientMutationId }
+        }""",
+        "PRR_": """mutation($comment: ID!, $body: String!) {
+          updatePullRequestReview(input: {pullRequestReviewId: $comment, body: $body}) { clientMutationId }
+        }""",
+    },
+    "delete": {
+        "PRRC_": """mutation($comment: ID!) { deletePullRequestReviewComment(input: {id: $comment}) { clientMutationId } }""",
+        "IC_": """mutation($comment: ID!) { deleteIssueComment(input: {id: $comment}) { clientMutationId } }""",
+    },
+}
+
+
+def _comment_mutation(kind: str, node: str) -> str:
+    for prefix, query in _COMMENT_MUTATIONS[kind].items():
+        if node.startswith(prefix):
+            return query
+    raise GitHubError(f"Can't {kind} that.")
+
+
 _EVENTS = {"comment": "COMMENT", "approve": "APPROVE", "request_changes": "REQUEST_CHANGES"}
 
 
@@ -621,8 +650,8 @@ def review_payload(action: dict) -> dict:
 
 def write_review(ref: PRRef, action: dict, gh: str = "gh") -> None:
     """Do one thing on the PR as the signed-in user: ``submit`` a review (with pending comments), ``comment`` on
-    the conversation, ``reply`` to a thread, ``resolve``/``unresolve`` one, or ``edit``/``delete`` one of your
-    review comments."""
+    the conversation, ``reply`` to a thread, ``resolve``/``unresolve`` one, ``edit``/``delete`` one of your comments
+    (on a line, in the conversation, or a review's summary), or ``edit_pr`` its title and description."""
     if not (shutil.which(gh) or os.sep in gh):
         raise GitHubError("Install the GitHub CLI and run `gh auth login` to comment.")
     kind = action.get("kind")
@@ -635,10 +664,13 @@ def write_review(ref: PRRef, action: dict, gh: str = "gh") -> None:
         _graphql(gh, ref.host, _MUTATIONS[kind], thread=action["thread"], **extra)
     elif kind == "comment":
         _graphql(gh, ref.host, _MUTATIONS[kind], pr=action["pr"], body=action["body"])
+    elif kind == "edit_pr":
+        _graphql(gh, ref.host, _MUTATIONS[kind], pr=action["pr"], title=action["title"], body=action["body"])
     elif kind in ("edit", "delete"):
         extra = {"body": action["body"]} if kind == "edit" else {}
+        query = _comment_mutation(kind, action["comment"])
         try:
-            _graphql(gh, ref.host, _MUTATIONS[kind], comment=action["comment"], **extra)
+            _graphql(gh, ref.host, query, comment=action["comment"], **extra)
         except GitHubError as e:
             # Deleting a comment that's already gone (a second click while GitHub still listed it) is done.
             if not (kind == "delete" and "Could not resolve to a node" in str(e)):

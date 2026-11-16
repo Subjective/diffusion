@@ -1,5 +1,5 @@
-import { CircleCheck, CircleX, FileCode, GitCommitHorizontal, MessageSquare } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CircleCheck, CircleX, FileCode, GitCommitHorizontal, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { autosize } from "../lib/autosize";
 import { Inline, Markdown } from "../lib/md";
 import { indexFiles } from "../lib/refs";
@@ -74,6 +74,12 @@ export function ConversationPane() {
     }
     return m;
   }, [state]);
+  // A title or description edited here or on GitHub since the PR loaded.
+  useEffect(() => {
+    const p = useApp.getState().pr;
+    if (p && state?.title && (state.title !== p.title || (state.body ?? "") !== p.body))
+      useApp.setState({ pr: { ...p, title: state.title, body: state.body ?? "" } });
+  }, [state]);
   if (!pr) return <aside className="guide" />;
   const jump = (t: Thread) => {
     const keys = threadKeys(t, idx);
@@ -83,11 +89,7 @@ export function ConversationPane() {
   return (
     <aside className="guide conv">
       <Header />
-      {pr.body.trim() && (
-        <section className="sec conv-desc">
-          <Markdown text={pr.body} />
-        </section>
-      )}
+      <Description own={!!state?.viewer && state.viewer === state.author} prId={state?.id} />
       <div className="conv-tl">
         {entries.map((e) =>
           e.kind === "guide" ? (
@@ -108,7 +110,10 @@ export function ConversationPane() {
                 {e.author} pushed {e.commits.length === 1 ? "a commit" : `${e.commits.length} commits`}
                 {e.commits.map((c) => (
                   <span key={c.id} className="conv-commit">
-                    <code>{c.sha?.slice(0, 7)}</code> <Inline text={c.body} />
+                    <Link url={c.url} tip="Open on GitHub">
+                      <code>{c.sha?.slice(0, 7)}</code>
+                    </Link>{" "}
+                    <Inline text={c.body} />
                   </span>
                 ))}
               </span>
@@ -126,8 +131,139 @@ export function ConversationPane() {
   );
 }
 
+/** `children`, linking to the original on GitHub when there's a URL. */
+function Link({ url, tip, children }: { url?: string; tip?: string; children: ReactNode }) {
+  return url ? (
+    <a className="conv-link" href={url} target="_blank" rel="noreferrer" data-tip={tip}>
+      {children}
+    </a>
+  ) : (
+    children
+  );
+}
+
+/** A textarea to write or edit markdown: ⌘↵ saves, Esc cancels. */
+function Editor({
+  initial,
+  placeholder,
+  onSave,
+  onCancel,
+  head,
+}: {
+  initial: string;
+  placeholder: string;
+  onSave: (text: string) => Promise<boolean>;
+  onCancel: () => void;
+  head?: ReactNode;
+}) {
+  const [text, setText] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    const ok = await onSave(text.trim());
+    setBusy(false);
+    if (ok) onCancel();
+  };
+  return (
+    <div className="conv-box conv-edit">
+      {head}
+      <textarea
+        // biome-ignore lint/a11y/noAutofocus: opened by a click on Edit
+        autoFocus
+        rows={3}
+        value={text}
+        placeholder={placeholder}
+        ref={(el) => {
+          if (el) autosize(el, 20);
+        }}
+        onChange={(e) => {
+          setText(e.target.value);
+          autosize(e.target, 20);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            onCancel();
+          } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            void save();
+          }
+        }}
+      />
+      <div className="conv-edit-f">
+        <button type="button" className="rv-cancel" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="rv-submit" disabled={busy} onClick={save}>
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The PR's description; its author can edit it and the title. */
+function Description({ own, prId }: { own: boolean; prId?: string }) {
+  const pr = useApp((s) => s.pr)!;
+  const error = useReview((s) => (s.errorAt === "pr" ? s.error : null));
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState("");
+  if (editing && prId)
+    return (
+      <section className="sec conv-desc">
+        <Editor
+          initial={pr.body}
+          placeholder="Description"
+          head={
+            <input
+              className="conv-title-in"
+              value={title}
+              placeholder="Title"
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          }
+          onCancel={() => setEditing(false)}
+          onSave={async (body) => {
+            const t = title.trim() || pr.title;
+            const ok = await useReview.getState().act({ kind: "edit_pr", pr: prId, title: t, body }, "pr");
+            const p = useApp.getState().pr;
+            if (ok && p) useApp.setState({ pr: { ...p, title: t, body } });
+            return ok;
+          }}
+        />
+        {error && <div className="rv-err">{error}</div>}
+      </section>
+    );
+  if (!pr.body.trim() && !own) return null;
+  return (
+    <section className="sec conv-desc">
+      {own && prId && (
+        <span className="conv-acts">
+          <button
+            type="button"
+            className="icon-btn sm"
+            data-tip="Edit"
+            onClick={() => {
+              setTitle(pr.title);
+              setEditing(true);
+            }}
+          >
+            {ic(Pencil, 13)}
+          </button>
+        </span>
+      )}
+      {pr.body.trim() ? <Markdown text={pr.body} /> : <span className="conv-none">No description</span>}
+    </section>
+  );
+}
+
 function Item({ item, threads, onJump }: { item: TimelineItem; threads: Thread[]; onJump: (t: Thread) => void }) {
   const [label, tone] = item.state ? STATE[item.state] : ["", ""];
+  const mine = useReview((s) => !!s.state?.viewer && s.state.viewer === item.author);
+  const error = useReview((s) => (s.errorAt === item.id ? s.error : null));
+  const [editing, setEditing] = useState(false);
+  const act = useReview((s) => s.act);
   return (
     <div className="conv-c">
       <img className="av" src={item.avatar || undefined} alt={item.author} width={24} height={24} />
@@ -142,15 +278,42 @@ function Item({ item, threads, onJump }: { item: TimelineItem; threads: Thread[]
               {label}
             </span>
           )}
+          {mine && !editing && (
+            <span className="conv-acts">
+              <button type="button" className="icon-btn sm" data-tip="Edit" onClick={() => setEditing(true)}>
+                {ic(Pencil, 13)}
+              </button>
+              {item.kind === "comment" && (
+                <button
+                  type="button"
+                  className="icon-btn sm"
+                  data-tip="Delete"
+                  onClick={() => void act({ kind: "delete", comment: item.id }, item.id)}
+                >
+                  {ic(Trash2, 13)}
+                </button>
+              )}
+            </span>
+          )}
           <span className="t" data-tip={dateText(item.created_at)}>
-            {ago(item.created_at)}
+            <Link url={item.url}>{ago(item.created_at)}</Link>
           </span>
         </div>
-        {item.body.trim() && (
-          <div className="x">
-            <Markdown text={item.body} />
-          </div>
+        {editing ? (
+          <Editor
+            initial={item.body}
+            placeholder={item.kind === "review" ? "Summary" : "Comment"}
+            onCancel={() => setEditing(false)}
+            onSave={(body) => act({ kind: "edit", comment: item.id, body }, item.id)}
+          />
+        ) : (
+          item.body.trim() && (
+            <div className="x">
+              <Markdown text={item.body} />
+            </div>
+          )
         )}
+        {error && <div className="rv-err">{error}</div>}
         {threads.map((t) => (
           <button key={t.id} type="button" className="conv-th" disabled={t.outdated} onClick={() => onJump(t)}>
             {ic(FileCode, 13)}

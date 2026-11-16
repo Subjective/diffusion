@@ -660,6 +660,20 @@ test("the conversation: description, reviews with the threads they started, comm
       body: "Thanks all",
     }),
   );
+  // your own comment can be edited (not someone else's review), and its time links to GitHub
+  expect(tl()[2].querySelector('[data-tip="Edit"]')).toBeNull();
+  fireEvent.click(tl()[3].querySelector<HTMLElement>('[data-tip="Edit"]')!);
+  const ed = tl()[3].querySelector<HTMLTextAreaElement>(".conv-edit textarea")!;
+  expect(ed.value).toBe("On it");
+  fireEvent.change(ed, { target: { value: "On it now" } });
+  fireEvent.keyDown(ed, { key: "Enter", metaKey: true });
+  await waitFor(() =>
+    expect(vi.mocked(api.reviewAction).mock.calls.at(-1)![1]).toEqual({
+      kind: "edit",
+      comment: "C1",
+      body: "On it now",
+    }),
+  );
   useUI.getState().setMode("guide");
   vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
 });
