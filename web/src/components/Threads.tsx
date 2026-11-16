@@ -12,14 +12,17 @@ import {
   User,
 } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
+import { create } from "zustand";
+import { useChat } from "../chat";
 import { autosize } from "../lib/autosize";
 import { Inline, Markdown } from "../lib/md";
 import { type HunkIndex, rowKey } from "../lib/refs";
 import { ago, dateText } from "../lib/time";
 import { type PendingComment, useReview } from "../review";
+import { useApp } from "../store";
 import type { Check as CheckRun, Thread, ThreadComment } from "../types";
 import { useUI } from "../ui";
-import { ic } from "./icons";
+import { HarnessMark, harnessName, ic } from "./icons";
 
 /** Where GitHub's review threads sit on the diff: under the last line each covers (`after`), with every covered
  *  line marked (`ranged`), and file-level threads under their file's header (`top`). */
@@ -248,11 +251,18 @@ function CommentView({ c, t, mine }: { c: ThreadComment; t: Thread; mine: boolea
   );
 }
 
-/** Under a GitHub thread: a reply box (opened by a click), and resolving it. */
+/** Opens the line popup on a thread's lines with the thread attached, to ask the agent about it (set by App). */
+export const useThreadAsk = create<{ ask: ((t: Thread, x: number, y: number) => void) | null }>(() => ({ ask: null }));
+
+/** Under a GitHub thread: a reply box (opened by a click), asking the agent about it, and resolving it. */
 function ThreadFoot({ t }: { t: Thread }) {
   const [replying, setReplying] = useState(false);
   const act = useReview((s) => s.act);
   const expand = useReview((s) => s.expand);
+  const ask = useThreadAsk((s) => s.ask);
+  const chatHarness = useChat((s) => s.chat.harness);
+  const guideHarness = useApp((s) => s.guide?.meta?.harness);
+  const harness = chatHarness ?? guideHarness ?? null;
   return (
     <div className="th-foot">
       {replying ? (
@@ -264,6 +274,19 @@ function ThreadFoot({ t }: { t: Thread }) {
       ) : (
         <button type="button" className="th-reply" onClick={() => setReplying(true)}>
           Reply
+        </button>
+      )}
+      {ask && t.start != null && !replying && (
+        <button
+          type="button"
+          className="icon-btn sm th-ask"
+          data-tip={`Ask ${harnessName(harness)}`}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            ask(t, r.right - 360, r.bottom);
+          }}
+        >
+          <HarnessMark harness={harness} size={15} />
         </button>
       )}
       <button
