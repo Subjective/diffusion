@@ -97,4 +97,4 @@ def test_the_agent_may_write_to_any_of_the_temp_directories(tmp_path):
 
     assert say("/tmp/guide.json") == "allow"
     assert say(str(Path(tempfile.gettempdir()) / "guide.json")) == "allow"
-    assert say(str(Path.home() / "guide.json")) == "deny"
+    assert say("/Users/me/guide.json") == "deny"
