@@ -514,6 +514,7 @@ export function ThreadsPopover({ threads, viewer, idx, onJump }: PopoverProps) {
                         <Avatar c={c} />
                         <b>{c.author}</b>
                         {c.bot && ic(Bot, 13)}
+                        {t.pending && <span className="th-tag pend">Pending</span>}
                         <span className="grow" />
                         <span className="where">
                           {whereText(t)}
