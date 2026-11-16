@@ -779,7 +779,9 @@ const MODE_UI: Record<ChatMode, { icon: typeof Lock; label: string; hint: string
 /** The guide session's permission mode, as in the harness. New chats fork the session and can only read. */
 function ModeMenu() {
   const { chat, mode, setMode } = useChat();
-  const guideHarness = useApp((s) => s.guide?.meta?.harness ?? null);
+  // While a review is being written there's no guide yet to say whose session it is: the agent writing it.
+  const genHarness = useGeneratingHarness();
+  const guideHarness = useApp((s) => s.guide?.meta?.harness ?? null) ?? genHarness;
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const harness = chat.harness ?? guideHarness;

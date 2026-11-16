@@ -39,7 +39,10 @@ def test_the_generating_agent_reads_and_submits_but_does_nothing_else(tmp_path):
     assert say("Write", file_path=str(tmp / "guide.json")) == "allow"
     assert say("Write", file_path=str(tree / "src" / "a.py")) == "deny"
     assert say("Write", file_path="relative.json") == "deny"
-    assert say("Edit", file_path=str(tmp / "guide.json")) == "deny"
+    assert say("Edit", file_path=str(tmp / "guide.json")) == "allow"
+    assert say("Edit", file_path=str(tree / "src" / "a.py")) == "deny"
+    assert say("Bash", command="git diff & rm -rf ~") == "deny"
+    assert say("Bash", command="grep -n kind " + str(tree / "schema.json")) == "allow"
     assert say("WebFetch", url="https://x") == "deny"
 
 

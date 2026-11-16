@@ -38,10 +38,15 @@ BASH = (
     "gh pr diff",
     "ls ",
     "cd ",
+    "cat ",
+    "grep ",
+    "head ",
+    "tail ",
+    "wc ",
 )
 # uvx runs whatever package it's given, so only Diffusion's own (as the skill pins it).
 UVX = re.compile(r"uvx --from diffusion-review(==[\w.]+)? diffusion ")
-CHAINING = (";", "&&", "||", "|", "`", "$(", ">", "<", "\n")
+CHAINING = (";", "&", "|", "`", "$(", ">", "<", "\n")  # "&" covers "&&" and running in the background
 # git's flags that write files (``git diff --output=...``) or run programs.
 WRITES = re.compile(r"(^|\s)(--output|--ext-diff|--textconv|--exec|-o\b)")
 
@@ -62,7 +67,7 @@ def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
             ok = (named or bool(UVX.match(cmd))) and not any(c in cmd for c in CHAINING)
             ok = ok and not WRITES.search(cmd)
             return "allow" if ok else "deny"
-        if name == "Write":
+        if name in ("Write", "Edit", "MultiEdit"):
             p = Path(str(args.get("file_path", "")))
             if not p.is_absolute():
                 return "deny"
