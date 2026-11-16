@@ -109,10 +109,12 @@ export type ReviewAct =
       commit?: string;
       comments: { path: string; side: "old" | "new"; start: number | null; end: number | null; body: string }[];
     }
+  | { kind: "comment"; pr: string; body: string }
   | { kind: "reply"; thread: string; body: string }
   | { kind: "resolve" | "unresolve"; thread: string }
   | { kind: "edit"; comment: string; body: string }
-  | { kind: "delete"; comment: string };
+  | { kind: "delete"; comment: string }
+  | { kind: "edit_pr"; pr: string; title: string; body: string };
 
 /** Do it on GitHub; the answer is the PR's fresh review state. */
 export async function reviewAction(url: string, action: ReviewAct): Promise<ReviewState> {

@@ -479,7 +479,11 @@ def test_write_review_sends_reviews_by_rest_and_the_rest_by_graphql(tmp_path):
     write_review(ref, {"kind": "submit", "event": "comment", "body": "hi", "comments": []}, gh=str(fake))
     write_review(ref, {"kind": "reply", "thread": "T1", "body": "thanks"}, gh=str(fake))
     write_review(ref, {"kind": "resolve", "thread": "T1"}, gh=str(fake))
-    write_review(ref, {"kind": "edit", "comment": "C1", "body": "fixed"}, gh=str(fake))
+    write_review(ref, {"kind": "edit", "comment": "PRRC_1", "body": "fixed"}, gh=str(fake))
+    write_review(ref, {"kind": "edit", "comment": "IC_1", "body": "fixed"}, gh=str(fake))
+    write_review(ref, {"kind": "edit", "comment": "PRR_1", "body": "summary"}, gh=str(fake))
+    write_review(ref, {"kind": "delete", "comment": "IC_1"}, gh=str(fake))
+    write_review(ref, {"kind": "edit_pr", "pr": "PR_1", "title": "T", "body": "B"}, gh=str(fake))
     calls = (tmp_path / "args").read_text().split("api ")[1:]  # queries span lines
     assert "--method POST repos/acme/web/pulls/42/reviews --input -" in calls[0]
     assert (tmp_path / "stdin").read_text().startswith('{"event": "COMMENT", "body": "hi"}')
@@ -489,7 +493,13 @@ def test_write_review_sends_reviews_by_rest_and_the_rest_by_graphql(tmp_path):
         and "body=thanks" in calls[1]
     )
     assert "resolveReviewThread" in calls[2]
-    assert "updatePullRequestReviewComment" in calls[3] and "comment=C1" in calls[3]
+    assert "updatePullRequestReviewComment" in calls[3] and "comment=PRRC_1" in calls[3]
+    assert "updateIssueComment" in calls[4]
+    assert "updatePullRequestReview(" in calls[5]
+    assert "deleteIssueComment" in calls[6]
+    assert "updatePullRequest(" in calls[7] and "title=T" in calls[7] and "pr=PR_1" in calls[7]
+    with pytest.raises(GitHubError):
+        write_review(ref, {"kind": "delete", "comment": "PRR_1"}, gh=str(fake))
 
 
 def test_write_review_surfaces_githubs_message(tmp_path):
@@ -502,6 +512,33 @@ def test_write_review_surfaces_githubs_message(tmp_path):
         )
 
 
+def test_pr_review_state_reads_the_conversation():
+    data = _review_payload()
+    who = {"__typename": "User", "login": "pk", "avatarUrl": "https://a/pk"}
+    data["repository"]["pullRequest"] |= {
+        "id": "PR_1",
+        "timelineItems": {
+            "nodes": [
+                {"__typename": "PullRequestCommit", "commit": {"oid": "abc", "messageHeadline": "Start",
+                 "committedDate": "2026-11-15T09:00:00Z", "author": {"name": "Sam", "user": None}}},
+                {"__typename": "PullRequestReview", "id": "R1", "state": "CHANGES_REQUESTED", "body": "One thing",
+                 "submittedAt": "2026-11-15T10:00:00Z", "url": "u", "author": who},
+                {"__typename": "PullRequestReview", "id": "R2", "state": "PENDING", "body": "", "author": who},
+                {"__typename": "IssueComment", "id": "C1", "body": "Thanks", "createdAt": "2026-11-15T11:00:00Z",
+                 "url": "u2", "author": {**who, "__typename": "Bot", "login": "ci-bot"}},
+            ]
+        },
+    }  # fmt: skip
+    st = pr_review_state(data)
+    assert st["id"] == "PR_1"
+    assert [(t["kind"], t["author"], t.get("state")) for t in st["timeline"]] == [
+        ("commit", "Sam", None),
+        ("review", "pk", "changes"),
+        ("comment", "ci-bot", None),
+    ]
+    assert st["timeline"][2]["bot"] and st["timeline"][0]["body"] == "Start"
+
+
 def test_deleting_a_comment_thats_already_gone_is_done(tmp_path):
     fake = tmp_path / "gh"
     fake.write_text(
@@ -510,6 +547,6 @@ def test_deleting_a_comment_thats_already_gone_is_done(tmp_path):
     )
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     ref = PRRef("github.com", "acme", "web", 42)
-    write_review(ref, {"kind": "delete", "comment": "C1"}, gh=str(fake))
+    write_review(ref, {"kind": "delete", "comment": "PRRC_1"}, gh=str(fake))
     with pytest.raises(GitHubError, match="Could not resolve"):
-        write_review(ref, {"kind": "edit", "comment": "C1", "body": "x"}, gh=str(fake))
+        write_review(ref, {"kind": "edit", "comment": "PRRC_1", "body": "x"}, gh=str(fake))
