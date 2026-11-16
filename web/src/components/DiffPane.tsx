@@ -228,6 +228,10 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
     () => (hideComments || !onDiff.length ? null : threadLayout(onDiff, idx, hiddenFiles)),
     [onDiff, idx, hiddenFiles, hideComments],
   );
+  const fileThreads = useMemo(
+    () => (hideComments ? [] : threads.filter((t) => !hiddenFiles.includes(t.path))),
+    [threads, hiddenFiles, hideComments],
+  );
   const after = useMemo(() => {
     const own = hideComments ? undefined : commentRows(guide?.comments ?? [], idx, resolved, onAskComment);
     return layout ? mergeRows(own, layout.after) : own;
@@ -323,7 +327,15 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
           <FileRail files={files} skip={skipFiles} fileSteps={fileSteps} current={tab ?? current} onPick={pickFile} />
         )}
         {tab != null && (
-          <FileView key={tab} path={tab} dots={dots} extras={extras} onNav={onNavClick} onShowInDiff={pickFile} />
+          <FileView
+            key={tab}
+            path={tab}
+            dots={dots}
+            extras={extras}
+            onNav={onNavClick}
+            onShowInDiff={pickFile}
+            threads={fileThreads}
+          />
         )}
         {/* Kept mounted behind a file tab, so the diff keeps its place. */}
         <div className="diffwrap" hidden={tab != null}>
