@@ -7,7 +7,7 @@ import pytest
 from diffusion.agent import DoneEvent, ToolEvent
 from diffusion.app import Deps, create_app
 from diffusion.config import Config
-from diffusion.github import PRMeta, PRRef
+from diffusion.github import GitHubError, PRMeta, PRRef
 from diffusion.hunks import parse_diff
 from diffusion.pipeline import Prepared
 from diffusion.store import Store
@@ -772,3 +772,33 @@ def test_editing_a_steered_message_cuts_its_turn_there():
     assert turns[0]["answers"] == {"0": "a"} and turns[0]["trace"] == [{"tool": "Read a"}]
     cut_from(turns, "u1")
     assert turns == []
+
+
+async def test_inbox_lists_prs_with_their_guides_and_caches(setup):
+    client, _, deps, prep = setup
+    calls = []
+
+    def inbox():
+        calls.append(1)
+        return {"login": "jy", "prs": [{"url": URL, "number": 7}, {"url": URL[:-1] + "8", "number": 8}]}
+
+    deps.inbox = inbox
+    submit(deps, prep, guide_for(prep))
+    body = (await client.get("/api/inbox")).json()
+    assert body["login"] == "jy" and body["error"] is None
+    assert [(p["number"], p["guides"]) for p in body["prs"]] == [(7, 1), (8, 0)]
+    await client.get("/api/inbox")
+    assert len(calls) == 1  # reused within the minute
+    await client.get("/api/inbox", params={"refresh": True})
+    assert len(calls) == 2
+
+
+async def test_inbox_reports_a_missing_gh_as_an_error(setup):
+    client, _, deps, _ = setup
+
+    def inbox():
+        raise GitHubError("Install the GitHub CLI")
+
+    deps.inbox = inbox
+    body = (await client.get("/api/inbox")).json()
+    assert body == {"login": "", "prs": [], "error": "Install the GitHub CLI"}

@@ -1770,8 +1770,6 @@ tr.qd.sel td.mark {
 .note .x {
   width: 18px;
   height: 18px;
-}
-.note .x {
   opacity: 0;
 }
 .note:hover .x {

@@ -1,5 +1,5 @@
 import { errorText } from "./lib/sse";
-import type { Guide, GuideVersion, PRPayload, Target } from "./types";
+import type { Guide, GuideVersion, Inbox, PRPayload, Target } from "./types";
 
 /** The diff and a guide: version `v`, or the latest. */
 export async function fetchPR(url: string, v?: number | null): Promise<PRPayload> {
@@ -80,6 +80,13 @@ export async function fetchAround(
 /** Everything reviewed so far, most recent first. */
 export async function fetchTargets(): Promise<Target[]> {
   const res = await fetch("/api/targets");
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+/** The signed-in user's open PRs on GitHub (the engine reuses its answer for a minute unless `refresh`). */
+export async function fetchInbox(refresh = false): Promise<Inbox> {
+  const res = await fetch(`/api/inbox${refresh ? "?refresh=true" : ""}`);
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }

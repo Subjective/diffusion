@@ -51,7 +51,42 @@ vi.mock("../api", () => ({
       updated_at: Date.now() / 1000 - 40 * 86400,
     },
   ]),
+  fetchInbox: vi.fn(async () => ({
+    login: "jy",
+    error: null,
+    prs: [
+      inboxPR(42, "review", { title: "Add token refresh", stack: { id: "s", index: 2, size: 2 }, guides: 2 }),
+      inboxPR(41, "yours", { title: "Add a Decision type", stack: { id: "s", index: 1, size: 2 } }),
+      inboxPR(44, "yours", {
+        title: "Retry budget",
+        checks: { state: "failure", failing: 1 },
+        reviewers: [{ login: "pk", avatar: "", state: "approved" }],
+      }),
+      inboxPR(47, "drafts", { title: "Plan mode", draft: true }),
+    ],
+  })),
 }));
+function inboxPR(n: number, group: string, extra: object) {
+  return {
+    url: n === 42 ? payload.pr.url : `https://github.com/acme/web/pull/${n}`,
+    owner: "acme",
+    repo: "web",
+    number: n,
+    title: "",
+    draft: false,
+    group,
+    author: "sam",
+    author_avatar: "",
+    base_ref: "main",
+    head_ref: `b${n}`,
+    updated_at: Date.now() / 1000 - n * 60,
+    comments: 3,
+    reviewers: [],
+    checks: { state: "success", failing: 0 },
+    guides: 0,
+    ...extra,
+  };
+}
 // jsdom has no caret-from-point; the clicked name comes from here
 const nav = vi.hoisted(() => ({ word: "refreshTokens" }));
 vi.mock("../lib/definition", async (orig) => ({
@@ -102,6 +137,43 @@ test("home lists past reviews, filters them, opens one, and the brand goes back"
   fireEvent.click(screen.getByTitle("Home"));
   await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
   expect(location.search).toBe("");
+});
+
+test("home's pull requests: grouped like GitHub, stacks as one row, remembered, and a row opens the review", async () => {
+  useApp.setState({ url: "", pr: null });
+  render(<App />);
+  await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
+  fireEvent.click(screen.getByTitle("Pull requests"));
+  expect(localStorage.getItem("rv-home-view")).toBe('"prs"');
+  const groups = () => [...document.querySelectorAll(".ib-g")].map((g) => g.textContent);
+  // the stack (#41 yours, #42 for review) is one row in the first group either layer is in
+  expect(groups()).toEqual(["Needs your review2", "Yours1", "Drafts1"]);
+  const stack = document.querySelector<HTMLElement>(".ib-stack > .ib-r")!;
+  // titled by its bottom PR, and expanded until folded
+  expect(stack.querySelector(".t > span")!.textContent).toBe("Add a Decision type");
+  expect(stack.querySelector(".w")!.textContent).toBe("web #41 → #42 · 2 PRs · sam");
+  expect([...document.querySelectorAll(".kid .lvl")].map((l) => l.textContent)).toEqual(["2", "1"]);
+  fireEvent.click(stack);
+  expect(document.querySelectorAll(".kid")).toHaveLength(0);
+  expect(localStorage.getItem("rv-inbox-folded-stacks")).toBe('["s"]');
+  fireEvent.click(stack);
+  expect(document.querySelector(".kid [data-tip='Review ready']")).toBeTruthy(); // #42 has a guide
+  const retry = screen.getByText("Retry budget").closest(".ib-r")!;
+  expect(retry.querySelector(".ci.bad")!.textContent).toBe("1");
+  expect(retry.querySelector(".rv")!.getAttribute("data-tip")).toBe("pk approved");
+  expect(retry.querySelector(".ci")!.getAttribute("data-tip")).toBe("1 check failing");
+  // search covers PRs too; a group folds
+  fireEvent.change(screen.getByPlaceholderText("Search"), { target: { value: "plan" } });
+  expect(groups()).toEqual(["Drafts1"]);
+  fireEvent.change(screen.getByPlaceholderText("Search"), { target: { value: "" } });
+  fireEvent.click(screen.getByText("Yours"));
+  expect(screen.queryByText("Retry budget")).toBeNull();
+
+  fireEvent.click(screen.getByText("Add token refresh"));
+  await waitFor(() => expect(document.querySelectorAll(".step")).toHaveLength(3));
+  expect(new URLSearchParams(location.search).get("pr")).toBe(payload.pr.url);
+  fireEvent.click(screen.getByTitle("Home"));
+  await waitFor(() => expect(screen.getByText("Plan mode")).toBeTruthy()); // still on pull requests
 });
 
 test("renders guide, diff in guide order, skippable collapsed", async () => {
