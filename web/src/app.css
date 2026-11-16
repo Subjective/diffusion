@@ -1866,10 +1866,10 @@ tr.th-row > td {
   animation: pop 0.14s ease-out;
 }
 .rv-list {
-  max-height: 240px;
+  max-height: 260px;
   overflow: hidden auto;
-  margin: -4px -4px 0;
-  padding-bottom: 8px;
+  margin: -6px -6px 0;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
   scrollbar-width: thin;
 }
@@ -1882,15 +1882,15 @@ tr.th-row > td {
 }
 .rv-i {
   display: flex;
-  align-items: center;
-  border-radius: 9px;
+  align-items: flex-start;
+  border-radius: 10px;
 }
 .rv-i:hover {
   background: var(--hover);
 }
 .rv-i .icon-btn {
   visibility: hidden;
-  margin-right: 4px;
+  margin: 6px 6px 0 0;
 }
 .rv-i:hover .icon-btn {
   visibility: visible;
@@ -1899,22 +1899,27 @@ tr.th-row > td {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 7px 8px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
   text-align: left;
 }
-.rv-go .where {
-  flex: none;
-  color: var(--subtle);
-  font: 12px var(--mono);
-}
 .rv-go .x {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   color: var(--text);
   font-size: 13px;
+  line-height: 18px;
+}
+.rv-go .where {
+  display: flex;
+  gap: 6px;
+  color: var(--subtle);
+  font-size: 12px;
+  line-height: 16px;
 }
 .rv-body {
   resize: vertical;

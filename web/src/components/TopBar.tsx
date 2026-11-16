@@ -258,10 +258,11 @@ function ReviewChip() {
               {pending.map((p) => (
                 <div key={p.id} className="rv-i">
                   <button type="button" className="rv-go" onClick={() => jump(p)}>
-                    <span className="where">
-                      {p.path.split("/").pop()}:{p.start === p.end ? p.end : `${p.start}–${p.end}`}
-                    </span>
                     <span className="x">{p.body}</span>
+                    <span className="where">
+                      {p.path.split("/").pop()}
+                      <span>{p.start === p.end ? `L${p.end}` : `L${p.start}–${p.end}`}</span>
+                    </span>
                   </button>
                   <button
                     type="button"
