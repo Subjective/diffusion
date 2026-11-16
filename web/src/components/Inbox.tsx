@@ -167,6 +167,7 @@ const OnGitHub = ({ url, children }: { url: string; children: ReactNode }) => {
  *  writes one. */
 function GuideMark({ p }: { p: InboxPR }) {
   const job = p.generating;
+  const harness = useGenerate((s) => s.harness);
   const stop = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -176,7 +177,7 @@ function GuideMark({ p }: { p: InboxPR }) {
     return (
       <span className="gd">
         <span className="gen run" data-tip={job.doing ? `Writing a review · ${job.doing}` : "Writing a review"}>
-          <HarnessMark harness="claude-code" size={15} />
+          <HarnessMark harness={harness} size={15} />
         </span>
       </span>
     );
@@ -192,7 +193,7 @@ function GuideMark({ p }: { p: InboxPR }) {
           void useInbox.getState().generate(p.url, useChat.getState().modeOf(useGenerate.getState().harness));
         }}
       >
-        {job?.state === "failed" ? ic(CircleAlert, 15) : <HarnessMark harness="claude-code" size={15} />}
+        {job?.state === "failed" ? ic(CircleAlert, 15) : <HarnessMark harness={harness} size={15} />}
       </button>
     </span>
   );

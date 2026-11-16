@@ -2314,6 +2314,8 @@ tr.th-row > td {
 }
 .ib-r .gd button.gen {
   visibility: hidden;
+  /* its mark lines up with the book and the running mark, which sit at the column's right edge */
+  margin: -6px -5.5px -6px 0;
 }
 .ib-r:hover .gd button.gen,
 .ib-r .gd button.gen.failed {
@@ -2324,49 +2326,63 @@ tr.th-row > td {
 }
 
 /* Editing your comments, review summaries, and the title and description of your PR */
-.pr .meta .pr-acts {
+.pr-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.pr-title > h1 {
+  flex: 1;
+  min-width: 0;
+}
+.pr-acts {
   display: inline-flex;
-  margin: -4px 0 -4px auto;
+  flex: none;
+  margin-top: -2px;
   opacity: 0;
 }
-.pr:hover .pr-acts,
-.pr .meta .pr-acts:focus-within {
+.conv:has(> .pr:hover, > .conv-desc:hover) .pr-acts,
+.pr-acts:focus-within {
   opacity: 1;
 }
-.conv-desc .desc-edit {
-  float: right;
-  margin: -2px 0 2px 8px;
-  opacity: 0;
-}
-.conv-desc:hover .desc-edit,
-.conv-desc .desc-edit:focus-visible {
-  opacity: 1;
-}
-.title-edit {
-  margin-bottom: 6px;
-}
-.title-edit input {
-  width: 100%;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+/* Editing in place: the same text where it was, in a light box; the box's padding and border sit in the margin */
+:is(.draft-title, .draft-body) {
+  display: block;
+  resize: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
   outline: 0;
-  background: none;
+  background: var(--surface);
   color: var(--text);
-  font: inherit;
-  font-size: 17px;
-  font-weight: 600;
 }
-.title-edit input:focus {
-  border-color: var(--border-strong);
+:is(.draft-title, .draft-body):focus {
+  border-color: var(--subtle);
+}
+.draft-title {
+  flex: 1;
+  min-width: 0;
+  margin: -3px 0 5px;
+  padding: 2px 3px;
+  font: 600 17px / 1.35 var(--sans);
+  letter-spacing: -0.01em;
+}
+.draft-body {
+  width: calc(100% + 8px);
+  margin: -4px -4px 0;
+  padding: 3px;
+  font: inherit;
+}
+.conv-desc.editing .conv-edit-f {
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 /* right-aligned, so the pane's edge doesn't cut the tip off */
-:is(.pr-acts, .conv-desc) [data-tip]::after {
+.pr-acts [data-tip]::after {
   left: auto;
   right: 0;
   transform: translateY(2px);
 }
-:is(.pr-acts, .conv-desc) [data-tip]:hover::after {
+.pr-acts [data-tip]:hover::after {
   transform: none;
 }
 .conv-c .h .conv-acts {

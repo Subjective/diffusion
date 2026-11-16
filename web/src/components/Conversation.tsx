@@ -74,7 +74,9 @@ export function ConversationPane() {
     }
     return m;
   }, [state]);
-  const [editing, setEditing] = useState<"title" | "body" | null>(null);
+  // The title and description being edited in place, if they are.
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [saving, setSaving] = useState(false);
   // A title or description edited here or on GitHub since the PR loaded.
   useEffect(() => {
     const p = useApp.getState().pr;
@@ -83,6 +85,17 @@ export function ConversationPane() {
   }, [state]);
   if (!pr) return <aside className="guide" />;
   const own = !!state?.viewer && state.viewer === state.author;
+  const save = async () => {
+    const prId = state?.id;
+    if (!draft || !prId || saving || !draft.title.trim()) return;
+    setSaving(true);
+    const next = { title: draft.title.trim(), body: draft.body.trim() };
+    const ok = await useReview.getState().act({ kind: "edit_pr", pr: prId, ...next }, "pr");
+    setSaving(false);
+    const now = useApp.getState().pr;
+    if (ok && now) useApp.setState({ pr: { ...now, ...next } });
+    if (ok) setDraft(null);
+  };
   const jump = (t: Thread) => {
     const keys = threadKeys(t, idx);
     useReview.getState().expand(t.id);
@@ -92,24 +105,33 @@ export function ConversationPane() {
     <aside className="guide conv">
       <Header
         title={
-          editing === "title" && state?.id ? <TitleEditor prId={state.id} onDone={() => setEditing(null)} /> : undefined
+          draft && (
+            <DraftField
+              multiline={false}
+              value={draft.title}
+              onChange={(title) => setDraft({ ...draft, title })}
+              onSave={save}
+              onCancel={() => setDraft(null)}
+            />
+          )
         }
         actions={
           own &&
           state?.id &&
-          editing !== "title" && (
-            <button type="button" className="icon-btn sm" data-tip="Edit title" onClick={() => setEditing("title")}>
+          !draft && (
+            <button
+              type="button"
+              className="icon-btn sm"
+              data-tip="Edit"
+              aria-label="Edit title and description"
+              onClick={() => setDraft({ title: pr.title, body: pr.body })}
+            >
               {ic(Pencil, 13)}
             </button>
           )
         }
       />
-      <Description
-        own={own}
-        prId={state?.id}
-        editing={editing === "body"}
-        setEditing={(on) => setEditing(on ? "body" : null)}
-      />
+      <Description own={own} draft={draft} setDraft={setDraft} onSave={save} />
       <div className="conv-tl">
         {entries.map((e) =>
           e.kind === "guide" ? (
@@ -223,102 +245,90 @@ function Editor({
   );
 }
 
-/** Saves the PR's title or description; the other is sent as it is. */
-async function editPR(prId: string, edit: { title?: string; body?: string }) {
-  const p = useApp.getState().pr!;
-  const next = { title: edit.title ?? p.title, body: edit.body ?? p.body };
-  const ok = await useReview.getState().act({ kind: "edit_pr", pr: prId, ...next }, "pr");
-  const now = useApp.getState().pr;
-  if (ok && now) useApp.setState({ pr: { ...now, ...next } });
-  return ok;
-}
+type Draft = { title: string; body: string };
 
-/** The PR's title, in place: ↵ saves, Esc cancels. */
-function TitleEditor({ prId, onDone }: { prId: string; onDone: () => void }) {
-  const pr = useApp((s) => s.pr)!;
-  const error = useReview((s) => (s.errorAt === "pr" ? s.error : null));
-  const [title, setTitle] = useState(pr.title);
-  const [busy, setBusy] = useState(false);
-  const save = async () => {
-    const t = title.trim();
-    if (busy || !t) return;
-    if (t === pr.title) return onDone();
-    setBusy(true);
-    const ok = await editPR(prId, { title: t });
-    setBusy(false);
-    if (ok) onDone();
-  };
+/** The title or description as text to edit, where it was shown: ⌘↵ saves (↵ too, for the title), Esc cancels. */
+function DraftField({
+  multiline,
+  value,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  multiline: boolean;
+  value: string;
+  onChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
   return (
-    <div className="title-edit">
-      <input
-        // biome-ignore lint/a11y/noAutofocus: opened by a click on Edit
-        autoFocus
-        value={title}
-        aria-label="Title"
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.stopPropagation();
-            onDone();
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            void save();
-          }
-        }}
-      />
-      <div className="conv-edit-f">
-        <button type="button" className="rv-cancel" onClick={onDone}>
-          Cancel
-        </button>
-        <button type="button" className="rv-submit" disabled={busy || !title.trim()} onClick={save}>
-          Save
-        </button>
-      </div>
-      {error && <div className="rv-err">{error}</div>}
-    </div>
+    <textarea
+      className={multiline ? "draft-body" : "draft-title"}
+      // biome-ignore lint/a11y/noAutofocus: opened by a click on Edit
+      autoFocus={!multiline}
+      rows={1}
+      value={value}
+      aria-label={multiline ? "Description" : "Title"}
+      placeholder={multiline ? "Description" : "Title"}
+      ref={(el) => {
+        if (el) autosize(el, multiline ? 40 : 4);
+      }}
+      onChange={(e) => {
+        onChange(multiline ? e.target.value : e.target.value.replace(/\n/g, " "));
+        autosize(e.target, multiline ? 40 : 4);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onCancel();
+        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey || !multiline)) {
+          e.preventDefault();
+          onSave();
+        }
+      }}
+    />
   );
 }
 
-/** The PR's description; its author can edit it. */
+/** The PR's description; its author edits it in place, with the title. */
 function Description({
   own,
-  prId,
-  editing,
-  setEditing,
+  draft,
+  setDraft,
+  onSave,
 }: {
   own: boolean;
-  prId?: string;
-  editing: boolean;
-  setEditing: (on: boolean) => void;
+  draft: Draft | null;
+  setDraft: (d: Draft | null) => void;
+  onSave: () => void;
 }) {
   const pr = useApp((s) => s.pr)!;
   const error = useReview((s) => (s.errorAt === "pr" ? s.error : null));
-  if (editing && prId)
+  const busy = useReview((s) => s.busy);
+  if (draft)
     return (
-      <section className="sec conv-desc">
-        <Editor
-          initial={pr.body}
-          placeholder="Description"
-          onCancel={() => setEditing(false)}
-          onSave={(body) => editPR(prId, { body })}
+      <section className="sec conv-desc editing">
+        <DraftField
+          multiline
+          value={draft.body}
+          onChange={(body) => setDraft({ ...draft, body })}
+          onSave={onSave}
+          onCancel={() => setDraft(null)}
         />
+        <div className="conv-edit-f">
+          <button type="button" className="rv-cancel" onClick={() => setDraft(null)}>
+            Cancel
+          </button>
+          <button type="button" className="rv-submit" disabled={busy || !draft.title.trim()} onClick={onSave}>
+            Save
+          </button>
+        </div>
         {error && <div className="rv-err">{error}</div>}
       </section>
     );
   if (!pr.body.trim() && !own) return null;
   return (
     <section className="sec conv-desc">
-      {own && prId && (
-        // floated, so the text wraps around it rather than under it
-        <button
-          type="button"
-          className="icon-btn sm desc-edit"
-          data-tip="Edit description"
-          onClick={() => setEditing(true)}
-        >
-          {ic(Pencil, 13)}
-        </button>
-      )}
       {pr.body.trim() ? <Markdown text={pr.body} /> : <span className="conv-none">No description</span>}
     </section>
   );

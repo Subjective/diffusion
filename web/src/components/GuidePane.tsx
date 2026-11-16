@@ -134,13 +134,15 @@ function MiniMap() {
 }
 
 /** Things a reviewer should know that the diff doesn't show. Risks first; items with refs link to code. */
-/** The PR's title and stats. ``title``: in place of the title (an editor); ``actions``: buttons at the end of the
- *  stats row, shown on hover. */
+/** The PR's title and stats. ``title``: in place of the title (an editor); ``actions``: buttons beside the title. */
 export function Header({ actions, title }: { actions?: ReactNode; title?: ReactNode } = {}) {
   const pr = useApp((s) => s.pr)!;
   return (
     <div className="pr">
-      {title ?? <h1>{pr.title}</h1>}
+      <div className="pr-title">
+        {title || <h1>{pr.title}</h1>}
+        {actions && <span className="pr-acts">{actions}</span>}
+      </div>
       <div className="meta">
         {/* The branch (or repo) gives way first, so the stats always fit on one line. */}
         {pr.local ? (
@@ -165,7 +167,6 @@ export function Header({ actions, title }: { actions?: ReactNode; title?: ReactN
         </span>
         <span className="n-add">+{pr.additions}</span>
         <span className="n-del">−{pr.deletions}</span>
-        {actions && <span className="pr-acts">{actions}</span>}
       </div>
     </div>
   );
