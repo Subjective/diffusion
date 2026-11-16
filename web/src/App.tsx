@@ -1,5 +1,5 @@
 import { CircleAlert, GitPullRequest } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Anchor, type Question, useChat } from "./chat";
 import { AskPopup } from "./components/AskPopup";
 import { type ChatLinkProps, ChatPanel } from "./components/ChatPanel";
@@ -11,6 +11,7 @@ import { ic } from "./components/icons";
 import { MapPane } from "./components/MapPane";
 import { NotePeek } from "./components/NotePeek";
 import { useQuestionBadges } from "./components/QuestionBadges";
+import { useThreadAsk } from "./components/Threads";
 import { TopBar } from "./components/TopBar";
 import { refsTarget, useHunkIndex, useStepLinking } from "./lib/linking";
 import { usePaneWidths } from "./lib/panes";
@@ -157,6 +158,30 @@ export function App() {
     },
     [open],
   );
+
+  // Ask the agent about a GitHub thread: the line popup on its lines, with the conversation attached.
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    useThreadAsk.setState({
+      ask: (t, x, y) => {
+        if (t.start == null || t.end == null) return;
+        const attr = t.side === "old" ? "data-old" : "data-new";
+        const rows: HTMLElement[] = [];
+        for (let n = t.start; n <= t.end; n++) {
+          const r = document.querySelector<HTMLElement>(`tr.ln[data-file="${CSS.escape(t.path)}"][${attr}="${n}"]`);
+          if (r) rows.push(r);
+        }
+        const first = t.comments[0];
+        const text = t.comments.map((c) => `${c.author}: ${c.body}`).join("\n\n");
+        openRef.current(rows, x, y, {
+          comment: `GitHub review thread.\n\n${text}`,
+          commentTitle: `${first.author}: ${first.body.split("\n")[0]}`,
+        });
+      },
+    });
+    return () => useThreadAsk.setState({ ask: null });
+  }, []);
 
   const askStep = useCallback(
     (s: Step) => {
