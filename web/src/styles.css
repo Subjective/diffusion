@@ -1745,7 +1745,7 @@ tr.qd.sel td.mark {
   align-items: center;
   gap: 6px;
   height: 26px;
-  padding: 0 10px 0 5px;
+  padding: 0 4px 0 5px;
   border-radius: 999px;
   background: var(--chip);
   cursor: pointer;
@@ -1767,20 +1767,12 @@ tr.qd.sel td.mark {
 .note.hover {
   box-shadow: 0 0 0 2px var(--hl-bar);
 }
-/* The remove button takes no room until hover, so a short note isn't padded out by an invisible × */
 .note .x {
-  width: 0;
+  width: 18px;
   height: 18px;
-  margin-left: -6px;
-  overflow: hidden;
   opacity: 0;
 }
-.note:hover {
-  padding-right: 4px;
-}
 .note:hover .x {
-  width: 18px;
-  margin-left: 0;
   opacity: 1;
 }
 /* Messages waiting for the running turn: a panel above the composer, one row each, sent one per turn. */

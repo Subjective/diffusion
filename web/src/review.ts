@@ -20,13 +20,14 @@ interface Review {
   url: string;
   state: ReviewState | null;
   pending: PendingComment[];
-  /** What GitHub said when something you did failed. */
+  /** What GitHub said when something you did failed, and where: "review", or the thread it was in. */
   error: string | null;
+  errorAt: string;
   busy: boolean;
   addPending(c: Omit<PendingComment, "id">): void;
   editPending(id: string, body: string): void;
-  /** Do something on GitHub; resolves false (with `error` set) when GitHub refuses. */
-  act(action: ReviewAct): Promise<boolean>;
+  /** Do something on GitHub; resolves false (with `error` set at `at`) when GitHub refuses. */
+  act(action: ReviewAct, at?: string): Promise<boolean>;
   /** Submit the review: the pending comments, a summary and a verdict. */
   submit(event: Verdict, body: string): Promise<boolean>;
   /** Post one comment now, as a review of its own. */
@@ -41,6 +42,12 @@ interface Review {
 }
 
 const savePending = (url: string, pending: PendingComment[]) => storage.set(`rv-pending:${url}`, pending);
+const dropComment = (s: ReviewState, id: string): ReviewState => ({
+  ...s,
+  threads: s.threads
+    ?.map((t) => ({ ...t, comments: t.comments.filter((c) => c.id !== id) }))
+    .filter((t) => t.comments.length),
+});
 const asComment = ({ id: _, ...c }: PendingComment) => c;
 
 export const useReview = create<Review>((set, get) => ({
@@ -48,6 +55,7 @@ export const useReview = create<Review>((set, get) => ({
   state: null,
   pending: [],
   error: null,
+  errorAt: "",
   busy: false,
   hiddenFiles: [],
   expanded: [],
@@ -63,15 +71,17 @@ export const useReview = create<Review>((set, get) => ({
     savePending(url, next);
     set({ pending: next });
   },
-  async act(action) {
+  async act(action, at = "review") {
     const url = get().url;
     set({ busy: true, error: null });
     try {
-      const state = await reviewAction(url, action);
+      let state = await reviewAction(url, action);
+      // GitHub can answer with the comment still there for a moment after deleting it.
+      if (action.kind === "delete") state = dropComment(state, action.comment);
       if (get().url === url) set({ state, busy: false });
       return true;
     } catch (e) {
-      if (get().url === url) set({ error: String((e as Error).message ?? e), busy: false });
+      if (get().url === url) set({ error: String((e as Error).message ?? e), errorAt: at, busy: false });
       return false;
     }
   },
