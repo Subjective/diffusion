@@ -472,47 +472,59 @@ function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first:
           onClick: () => link.onFocusQ(q),
         }
       : {};
+  // What was typed goes in the one bubble; each line note heads its own part of the answer.
+  const typed = qs.find((q) => !q.anchor);
+  const target = typed ?? qs[0];
+  const editBtn = editable && (
+    <button
+      type="button"
+      className="icon-btn sm edit-sent"
+      title="Edit"
+      onClick={(e) => {
+        e.stopPropagation();
+        useChat.getState().setRewriting(target.id);
+      }}
+    >
+      {ic(Pencil, 13)}
+    </button>
+  );
+  const editingThis = rewriting != null && qs.some((q) => q.id === rewriting);
+  const ordered = [...qs.filter((q) => q.anchor), ...(typed ? [typed] : [])];
   return (
     <>
-      <div className="msg user">
-        {qs.map((q) => (
-          <div key={q.id} className={`q-item${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
-            {q.anchor && <CtxCard a={q.anchor} />}
-            {editable && q === qs[0] && (
-              <button
-                type="button"
-                className="icon-btn sm edit-sent"
-                title="Edit"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  useChat.getState().setRewriting(q.id);
-                }}
-              >
-                {ic(Pencil, 13)}
-              </button>
-            )}
-            <div className={`bubble${rewriting === q.id ? " rewriting" : ""}`}>
-              <Qn q={q} />
-              {q.text}
-            </div>
+      {typed && (
+        <div className="msg user">
+          <div className="q-item">
+            {editBtn}
+            <div className={`bubble${editingThis ? " rewriting" : ""}`}>{typed.text}</div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
       {/* A steered message the session hasn't taken in yet: just the message, for now */}
       {!qs.every((q) => q.status === "steering") && (
-        <div className="msg ai">
+        <div className={`msg ai${typed ? "" : " notes-only"}`}>
           <div className="ai-body">
             <Trace q={qs[0]} pending={pending} />
-            {qs.map((q) => (
+            {ordered.map((q, i) => (
               <div
                 key={q.id}
-                className={`ans${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
+                className={`ans${q.anchor ? " noted" : ""}${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
                 data-ans={q.id}
               >
-                {multi && (
-                  <div className={`ans-h${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
+                {q.anchor && (
+                  <div className={`ans-note${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
+                    <CtxCard a={q.anchor} />
+                    <div className={`note sent${editingThis ? " rewriting" : ""}`}>
+                      <Qn q={q} />
+                      <span className="ref">{q.text}</span>
+                      {!typed && i === 0 && editBtn}
+                    </div>
+                  </div>
+                )}
+                {multi && !q.anchor && q !== typed && (
+                  <div className="ans-h">
                     <Qn q={q} />
-                    {q.anchor ? anchorLabel(q.anchor) : q.text.slice(0, 28)}
+                    {q.text.slice(0, 28)}
                   </div>
                 )}
                 <div className="ans-t">
