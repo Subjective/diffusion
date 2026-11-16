@@ -678,13 +678,19 @@ test("the conversation: description, reviews with the threads they started, comm
       body: "On it now",
     }),
   );
-  // your own PR's title and description are edited from the header, not over the description's text
-  expect(document.querySelector(".conv-desc [data-tip]")).toBeNull();
-  fireEvent.click(document.querySelector<HTMLElement>('.pr .pr-acts [data-tip="Edit title and description"]')!);
-  expect(document.querySelector<HTMLInputElement>(".conv-title-in")!.value).toBe(useApp.getState().pr!.title);
-  expect(document.querySelector(".pr .pr-acts")).toBeNull();
+  // your own PR's title is edited in place, from the header; its description from beside the text
+  fireEvent.click(document.querySelector<HTMLElement>('.pr .pr-acts [data-tip="Edit title"]')!);
+  const ti = document.querySelector<HTMLInputElement>(".title-edit input")!;
+  expect(ti.value).toBe(useApp.getState().pr!.title);
+  fireEvent.change(ti, { target: { value: "New title" } });
+  fireEvent.keyDown(ti, { key: "Enter" });
+  await waitFor(() =>
+    expect(vi.mocked(api.reviewAction).mock.calls.at(-1)![1]).toMatchObject({ kind: "edit_pr", title: "New title" }),
+  );
+  await waitFor(() => expect(document.querySelector(".pr h1")!.textContent).toBe("New title"));
+  fireEvent.click(document.querySelector<HTMLElement>('.conv-desc [data-tip="Edit description"]')!);
   fireEvent.keyDown(document.querySelector(".conv-desc textarea")!, { key: "Escape" });
-  expect(document.querySelector(".pr .pr-acts")).toBeTruthy();
+  expect(document.querySelector(".conv-desc textarea")).toBeNull();
   useUI.getState().setMode("guide");
   vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
 });

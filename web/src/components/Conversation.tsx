@@ -8,7 +8,6 @@ import { useReview } from "../review";
 import { useApp } from "../store";
 import type { Thread, TimelineItem } from "../types";
 import { useUI } from "../ui";
-import { GenerateCard } from "./Generate";
 import { Header } from "./GuidePane";
 import { HarnessMark, ic } from "./icons";
 import { threadKeys, whereText } from "./Threads";
@@ -54,7 +53,6 @@ export function ConversationPane() {
   const files = useApp((s) => s.files);
   const versions = useApp((s) => s.versions);
   const harness = useApp((s) => s.guide?.meta?.harness);
-  const hasGuide = useApp((s) => !!s.guide);
   const state = useReview((s) => s.state);
   const idx = useMemo(() => indexFiles(files), [files]);
   const entries = useMemo(
@@ -76,7 +74,7 @@ export function ConversationPane() {
     }
     return m;
   }, [state]);
-  const [editingPr, setEditingPr] = useState(false);
+  const [editing, setEditing] = useState<"title" | "body" | null>(null);
   // A title or description edited here or on GitHub since the PR loaded.
   useEffect(() => {
     const p = useApp.getState().pr;
@@ -93,23 +91,25 @@ export function ConversationPane() {
   return (
     <aside className="guide conv">
       <Header
+        title={
+          editing === "title" && state?.id ? <TitleEditor prId={state.id} onDone={() => setEditing(null)} /> : undefined
+        }
         actions={
           own &&
           state?.id &&
-          !editingPr && (
-            <button
-              type="button"
-              className="icon-btn sm"
-              data-tip="Edit title and description"
-              onClick={() => setEditingPr(true)}
-            >
+          editing !== "title" && (
+            <button type="button" className="icon-btn sm" data-tip="Edit title" onClick={() => setEditing("title")}>
               {ic(Pencil, 13)}
             </button>
           )
         }
       />
-      {!hasGuide && <GenerateCard url={pr.url} />}
-      <Description own={own} prId={state?.id} editing={editingPr} setEditing={setEditingPr} />
+      <Description
+        own={own}
+        prId={state?.id}
+        editing={editing === "body"}
+        setEditing={(on) => setEditing(on ? "body" : null)}
+      />
       <div className="conv-tl">
         {entries.map((e) =>
           e.kind === "guide" ? (
@@ -223,7 +223,63 @@ function Editor({
   );
 }
 
-/** The PR's description; its author can edit it and the title. */
+/** Saves the PR's title or description; the other is sent as it is. */
+async function editPR(prId: string, edit: { title?: string; body?: string }) {
+  const p = useApp.getState().pr!;
+  const next = { title: edit.title ?? p.title, body: edit.body ?? p.body };
+  const ok = await useReview.getState().act({ kind: "edit_pr", pr: prId, ...next }, "pr");
+  const now = useApp.getState().pr;
+  if (ok && now) useApp.setState({ pr: { ...now, ...next } });
+  return ok;
+}
+
+/** The PR's title, in place: ↵ saves, Esc cancels. */
+function TitleEditor({ prId, onDone }: { prId: string; onDone: () => void }) {
+  const pr = useApp((s) => s.pr)!;
+  const error = useReview((s) => (s.errorAt === "pr" ? s.error : null));
+  const [title, setTitle] = useState(pr.title);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    const t = title.trim();
+    if (busy || !t) return;
+    if (t === pr.title) return onDone();
+    setBusy(true);
+    const ok = await editPR(prId, { title: t });
+    setBusy(false);
+    if (ok) onDone();
+  };
+  return (
+    <div className="title-edit">
+      <input
+        // biome-ignore lint/a11y/noAutofocus: opened by a click on Edit
+        autoFocus
+        value={title}
+        aria-label="Title"
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            onDone();
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            void save();
+          }
+        }}
+      />
+      <div className="conv-edit-f">
+        <button type="button" className="rv-cancel" onClick={onDone}>
+          Cancel
+        </button>
+        <button type="button" className="rv-submit" disabled={busy || !title.trim()} onClick={save}>
+          Save
+        </button>
+      </div>
+      {error && <div className="rv-err">{error}</div>}
+    </div>
+  );
+}
+
+/** The PR's description; its author can edit it. */
 function Description({
   own,
   prId,
@@ -237,32 +293,14 @@ function Description({
 }) {
   const pr = useApp((s) => s.pr)!;
   const error = useReview((s) => (s.errorAt === "pr" ? s.error : null));
-  const [title, setTitle] = useState(pr.title);
-  useEffect(() => {
-    if (editing) setTitle(pr.title);
-  }, [editing, pr.title]);
   if (editing && prId)
     return (
       <section className="sec conv-desc">
         <Editor
           initial={pr.body}
           placeholder="Description"
-          head={
-            <input
-              className="conv-title-in"
-              value={title}
-              placeholder="Title"
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          }
           onCancel={() => setEditing(false)}
-          onSave={async (body) => {
-            const t = title.trim() || pr.title;
-            const ok = await useReview.getState().act({ kind: "edit_pr", pr: prId, title: t, body }, "pr");
-            const p = useApp.getState().pr;
-            if (ok && p) useApp.setState({ pr: { ...p, title: t, body } });
-            return ok;
-          }}
+          onSave={(body) => editPR(prId, { body })}
         />
         {error && <div className="rv-err">{error}</div>}
       </section>
@@ -270,6 +308,17 @@ function Description({
   if (!pr.body.trim() && !own) return null;
   return (
     <section className="sec conv-desc">
+      {own && prId && (
+        // floated, so the text wraps around it rather than under it
+        <button
+          type="button"
+          className="icon-btn sm desc-edit"
+          data-tip="Edit description"
+          onClick={() => setEditing(true)}
+        >
+          {ic(Pencil, 13)}
+        </button>
+      )}
       {pr.body.trim() ? <Markdown text={pr.body} /> : <span className="conv-none">No description</span>}
     </section>
   );
