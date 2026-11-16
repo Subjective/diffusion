@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import shlex
 import tempfile
 import time
 from collections.abc import AsyncIterator, Callable
@@ -46,9 +47,21 @@ BASH = (
 )
 # uvx runs whatever package it's given, so only Diffusion's own (as the skill pins it).
 UVX = re.compile(r"uvx --from diffusion-review(==[\w.]+)? diffusion ")
-CHAINING = (";", "&", "|", "`", "$(", ">", "<", "\n")  # "&" covers "&&" and running in the background
+# Substitutions run even inside double quotes, so they're refused anywhere.
+SUBSTITUTION = ("`", "$(", "<(", ">(", "\n")
 # git's flags that write files (``git diff --output=...``) or run programs.
 WRITES = re.compile(r"(^|\s)(--output|--ext-diff|--textconv|--exec|-o\b)")
+
+
+def one_command(cmd: str) -> bool:
+    """Whether a command line is one command: no ``;``, ``&``, ``|`` or redirect outside quotes (a ``|`` in a quoted
+    grep pattern is fine). Unbalanced quotes count as more than one."""
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|<>")
+    lex.whitespace_split = True
+    try:
+        return not any(t and set(t) <= set(";&|<>") for t in lex)
+    except ValueError:
+        return False
 
 
 def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
@@ -64,7 +77,11 @@ def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
             cmd = str(args.get("command", "")).strip()
             # A whole command, not a prefix: "git diff" mustn't let "git difftool -x ..." through.
             named = any(cmd == b.strip() or cmd.startswith(b.strip() + " ") for b in BASH)
-            ok = (named or bool(UVX.match(cmd))) and not any(c in cmd for c in CHAINING)
+            ok = (
+                (named or bool(UVX.match(cmd)))
+                and not any(c in cmd for c in SUBSTITUTION)
+                and one_command(cmd)
+            )
             ok = ok and not WRITES.search(cmd)
             return "allow" if ok else "deny"
         if name in ("Write", "Edit", "MultiEdit"):
