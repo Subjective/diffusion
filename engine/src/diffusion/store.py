@@ -63,6 +63,10 @@ class Store:
     def _target_path(self, pr_key: str) -> Path:
         return self.root / "targets" / f"{pr_key}.json"
 
+    def saved_at(self, pr_key: str) -> float:
+        """When a guide for this target was last saved (0 if never)."""
+        return (self._read(self._target_path(pr_key)) or {}).get("saved_at") or 0
+
     def latest_head(self, pr_key: str) -> str | None:
         """The head commit the last guide for this target was saved against."""
         t = self._read(self._target_path(pr_key)) or {}

@@ -9,6 +9,7 @@ writing the guide to the temp directory. Anything else is declined."""
 from __future__ import annotations
 
 import asyncio
+import re
 import tempfile
 import time
 from collections.abc import AsyncIterator, Callable
@@ -29,7 +30,6 @@ from .agent import (
 COMMAND = "/diffusion:review"
 READ = {"Read", "Grep", "Glob", "LS", "Skill", "Task", "TodoWrite", "ToolSearch"}
 BASH = (
-    "uvx ",
     "diffusion ",
     "git diff",
     "git log",
@@ -38,8 +38,13 @@ BASH = (
     "gh pr view",
     "gh pr diff",
     "ls ",
+    "cd ",
 )
+# uvx runs whatever package it's given, so only Diffusion's own (as the skill pins it).
+UVX = re.compile(r"uvx --from diffusion-review(==[\w.]+)? diffusion ")
 CHAINING = (";", "&&", "||", "|", "`", "$(", ">", "<", "\n")
+# git's flags that write files (``git diff --output=...``) or run programs.
+WRITES = re.compile(r"(^|\s)(--output|--ext-diff|--textconv|--exec|-o\b)")
 
 
 def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
@@ -52,7 +57,8 @@ def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
             return "allow"
         if name == "Bash":
             cmd = str(args.get("command", "")).strip()
-            ok = cmd.startswith(BASH) and not any(c in cmd for c in CHAINING)
+            ok = (cmd.startswith(BASH) or bool(UVX.match(cmd))) and not any(c in cmd for c in CHAINING)
+            ok = ok and not WRITES.search(cmd)
             return "allow" if ok else "deny"
         if name == "Write":
             p = Path(str(args.get("file_path", "")))
@@ -66,6 +72,7 @@ def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
     return approve
 
 
+NOT_SUBMITTED = "It finished without submitting a review."
 LOG_MAX = 400  # steps kept for the chat to show while it runs
 
 
@@ -101,7 +108,15 @@ class Jobs:
     def running(self, key: str) -> bool:
         return self.get(key)["state"] == "running"
 
-    async def run(self, key: str, events: Callable[[], AsyncIterator[Event]], prompt: str = "") -> None:
+    async def run(
+        self,
+        key: str,
+        events: Callable[[], AsyncIterator[Event]],
+        prompt: str = "",
+        submitted: Callable[[float], bool] | None = None,
+    ) -> None:
+        """Run the agent to the end. ``submitted(since)`` says whether a guide was saved since the start: a run that
+        ends without one failed, whatever the agent said."""
         job = self.jobs[key] = {
             "state": "running", "started_at": time.time(), "prompt": prompt, "doing": "", "error": None,
             "log": [], "text": "",
@@ -126,6 +141,8 @@ class Jobs:
                     job["session"] = ev.session_id
             if job["state"] == "running":
                 job["state"] = "done"
+            if job["state"] == "done" and submitted and not submitted(job["started_at"]):
+                job.update(state="failed", error=NOT_SUBMITTED)
         except asyncio.CancelledError:  # stopped from the UI
             job["state"] = "stopped"
             job["ended_at"] = time.time()

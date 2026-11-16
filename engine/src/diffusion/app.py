@@ -278,7 +278,9 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         prep = await get_prepared(req.url)
         request = generate_request(req.url, prep.checkout.worktree, focus=req.focus)
         runner = d().runner_for("claude-code")
-        task = asyncio.create_task(jobs.run(key, lambda: runner(request), request.prompt))
+        task = asyncio.create_task(
+            jobs.run(key, lambda: runner(request), request.prompt, lambda t: d().store.saved_at(key) >= t)
+        )
         tasks[key] = task
         task.add_done_callback(lambda t: tasks.pop(key, None) if tasks.get(key) is t else None)
         await asyncio.sleep(0)  # let it register as running

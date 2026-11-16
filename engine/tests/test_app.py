@@ -871,11 +871,28 @@ async def test_generate_runs_the_review_command_in_the_background_and_reports_pr
     now = (await client.get("/api/generate", params={"url": URL})).json()
     assert now["doing"] == "Read a.ts"
     assert (await client.get("/api/inbox")).json()["prs"][0]["generating"]["state"] == "running"
+    deps.store.saved_at = lambda key: 9e12  # the agent submitted its review
     release.set()
     for _ in range(20):
         await asyncio.sleep(0)
     assert (await client.get("/api/generate", params={"url": URL})).json()["state"] == "done"
     assert len(seen) == 1
+
+
+async def test_a_run_that_submits_nothing_shows_as_failed(setup):
+    client, runners, _, _ = setup
+
+    async def agent(req):
+        yield TextEvent("I couldn't read the diff.")
+        yield DoneEvent(turns=2, cost_usd=None, is_error=False, session_id="s1")
+
+    runners["chat"] = agent
+    await client.post("/api/generate", json={"url": URL})
+    for _ in range(20):
+        await asyncio.sleep(0)
+    job = (await client.get("/api/generate", params={"url": URL})).json()
+    assert job["state"] == "failed" and job["error"] == "It finished without submitting a review."
+    assert job["text"] == "I couldn't read the diff."
 
 
 async def test_a_review_being_written_can_be_stopped(setup):
