@@ -271,6 +271,8 @@ export interface GenerateJob {
   /** Its steps so far (tool calls, reasoning) and what it has said. */
   log?: ({ tool: string } | { think: string })[];
   text?: string;
+  /** Tool calls waiting on the reviewer, as in a chat turn. */
+  asks?: { id: string; tool: string; summary: string; input: Record<string, unknown> }[];
 }
 
 export interface Inbox {

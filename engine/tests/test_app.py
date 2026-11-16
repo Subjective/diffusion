@@ -586,7 +586,7 @@ async def test_guide_chat_asks_the_reviewer_before_tools_its_settings_dont_allow
     ).status_code == 404
 
 
-async def test_forks_stay_read_only_whatever_mode_is_asked(setup):
+async def test_forks_run_in_the_mode_asked(setup):
     client, runners, deps, prep = setup
     from diffusion.agent import TextEvent
 
@@ -601,7 +601,7 @@ async def test_forks_stay_read_only_whatever_mode_is_asked(setup):
     cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
     body = {"url": URL, "questions": [{"n": 1, "text": "x"}], "mode": "auto"}
     await client.post(f"/api/chats/{cid}/turn", json=body)
-    assert seen == [("read-only", False)]
+    assert seen == [("auto", True)]
 
 
 async def test_stop_ends_a_running_turn_and_closes_the_agent(setup):
@@ -877,6 +877,31 @@ async def test_generate_runs_the_review_command_in_the_background_and_reports_pr
         await asyncio.sleep(0)
     assert (await client.get("/api/generate", params={"url": URL})).json()["state"] == "done"
     assert len(seen) == 1
+
+
+async def test_a_review_being_written_asks_in_the_mode_picked(setup):
+    client, runners, deps, _ = setup
+    said = []
+
+    async def agent(req):
+        said.append((req.mode, await req.approve("Bash", "Run npm test", {"command": "npm test"})))
+        yield DoneEvent(turns=1, cost_usd=None, is_error=False, session_id="s1")
+
+    runners["chat"] = agent
+    deps.store.saved_at = lambda key: 9e12
+    await client.post("/api/generate", json={"url": URL, "mode": "acceptEdits"})
+    for _ in range(5):
+        await asyncio.sleep(0)
+    asks = (await client.get("/api/generate", params={"url": URL})).json()["asks"]
+    assert [(a["tool"], a["summary"]) for a in asks] == [("Bash", "Run npm test")]
+    r = await client.post("/api/generate/approve", json={"id": asks[0]["id"], "decision": "allow"})
+    assert r.json() == {"ok": True}
+    for _ in range(20):
+        await asyncio.sleep(0)
+    job = (await client.get("/api/generate", params={"url": URL})).json()
+    assert said == [("acceptEdits", "allow")] and job["state"] == "done" and job["asks"] == []
+    r = await client.post("/api/generate/approve", json={"id": asks[0]["id"], "decision": "allow"})
+    assert r.status_code == 404
 
 
 async def test_a_run_that_submits_nothing_shows_as_failed(setup):

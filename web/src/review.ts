@@ -1,6 +1,7 @@
 // GitHub's side of the open PR (review threads, reviewers, checks), and how its threads are shown.
 import { create } from "zustand";
 import {
+  answerGenerate,
   fetchGenerate,
   fetchInbox,
   fetchReview,
@@ -195,7 +196,9 @@ export const useInbox = create<InboxStore>((set, get) => ({
 interface GenerateStore {
   jobs: Record<string, GenerateJob>;
   load(url: string): Promise<void>;
-  start(url: string, focus: string): Promise<void>;
+  /** ``mode``: the chat's permission mode, which the run (the guide chat's session to be) starts in. */
+  start(url: string, focus: string, mode?: string): Promise<void>;
+  answer(url: string, id: string, decision: string): Promise<void>;
   stop(url: string): Promise<void>;
 }
 
@@ -211,12 +214,21 @@ export const useGenerate = create<GenerateStore>((set, get) => {
         // the server may be restarting; the next poll tries again
       }
     },
-    async start(url, focus) {
+    async start(url, focus, mode) {
       put(url, { state: "running", started_at: Date.now() / 1000, log: [], text: "" });
       try {
-        put(url, await startGenerate(url, focus));
+        put(url, await startGenerate(url, focus, mode));
       } catch (e) {
         fail(url, e);
+      }
+    },
+    async answer(url, id, decision) {
+      const job = get().jobs[url];
+      if (job) put(url, { ...job, asks: job.asks?.filter((a) => a.id !== id) });
+      try {
+        await answerGenerate(id, decision);
+      } catch {
+        // the run ends on its own if it can't hear back
       }
     },
     async stop(url) {

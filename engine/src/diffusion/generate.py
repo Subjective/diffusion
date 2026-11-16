@@ -2,17 +2,14 @@
 ``/diffusion:review <url>`` in a terminal. The session it starts submits the guide (so it becomes the guide's session,
 continued from the guide chat) and runs in Diffusion's checkout of the PR.
 
-The agent reads someone else's code, which can carry instructions, so it gets the skill's own read-and-submit tools
-and nothing else: reading, git's read commands, ``gh pr view/diff``, ``uvx``/``diffusion`` for submitting, and
-writing the guide to the temp directory. Anything else is declined."""
+It runs in the permission mode the reviewer picked in the chat, with their own Claude Code settings: what those
+don't allow is put to the reviewer, in the chat, as in any guide chat turn."""
 
 from __future__ import annotations
 
 import asyncio
-import re
-import shlex
-import tempfile
 import time
+import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
@@ -22,80 +19,13 @@ from .agent import (
     Decision,
     DoneEvent,
     Event,
+    Mode,
     TextEvent,
     ThinkingEvent,
     ToolEvent,
 )
 
 COMMAND = "/diffusion:review"
-READ = {"Read", "Grep", "Glob", "LS", "Skill", "Task", "TodoWrite", "ToolSearch"}
-BASH = (
-    "diffusion ",
-    "git diff",
-    "git log",
-    "git show",
-    "git status",
-    "gh pr view",
-    "gh pr diff",
-    "ls ",
-    "cd ",
-    "cat ",
-    "grep ",
-    "head ",
-    "tail ",
-    "wc ",
-)
-# uvx runs whatever package it's given, so only Diffusion's own (as the skill pins it).
-UVX = re.compile(r"uvx --from diffusion-review(==[\w.]+)? diffusion ")
-# Substitutions run even inside double quotes, so they're refused anywhere.
-SUBSTITUTION = ("`", "$(", "<(", ">(", "\n")
-# git's flags that write files (``git diff --output=...``) or run programs.
-WRITES = re.compile(r"(^|\s)(--output|--ext-diff|--textconv|--exec|-o\b)")
-
-
-def one_command(cmd: str) -> bool:
-    """Whether a command line is one command: no ``;``, ``&``, ``|`` or redirect outside quotes (a ``|`` in a quoted
-    grep pattern is fine). Unbalanced quotes count as more than one."""
-    lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|<>")
-    lex.whitespace_split = True
-    try:
-        return not any(t and set(t) <= set(";&|<>") for t in lex)
-    except ValueError:
-        return False
-
-
-def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
-    """What the generating agent may do beyond what the reviewer's own settings already allow."""
-    # The temp directory: Python's, the agent's $TMPDIR, or /tmp (on macOS these differ).
-    tmps = {p.resolve() for p in ([tmp] if tmp else [Path(tempfile.gettempdir()), Path("/tmp")])}
-    tree = worktree.resolve()
-
-    async def approve(name: str, _summary: str, args: dict) -> Decision:
-        if name in READ:
-            return "allow"
-        if name == "Bash":
-            cmd = str(args.get("command", "")).strip()
-            # A whole command, not a prefix: "git diff" mustn't let "git difftool -x ..." through.
-            named = any(cmd == b.strip() or cmd.startswith(b.strip() + " ") for b in BASH)
-            ok = (
-                (named or bool(UVX.match(cmd)))
-                and not any(c in cmd for c in SUBSTITUTION)
-                and one_command(cmd)
-            )
-            ok = ok and not WRITES.search(cmd)
-            return "allow" if ok else "deny"
-        if name in ("Write", "Edit", "MultiEdit"):
-            p = Path(str(args.get("file_path", "")))
-            if not p.is_absolute():
-                return "deny"
-            p = p.resolve()
-            inside = any(t in p.parents for t in tmps) and not (tree == p or tree in p.parents)
-            return "allow" if inside else "deny"
-        return "deny"
-
-    return approve
-
-
 NOT_SUBMITTED = "It finished without submitting a review."
 LOG_MAX = 400  # steps kept for the chat to show while it runs
 
@@ -105,15 +35,22 @@ def generate_prompt(url: str, focus: str = "") -> str:
     return f"{COMMAND} {url} {' '.join(focus.split())}".strip()
 
 
-def generate_request(url: str, worktree: Path, model: str = "", focus: str = "") -> AgentRequest:
+def generate_request(
+    url: str,
+    worktree: Path,
+    model: str = "",
+    focus: str = "",
+    mode: Mode = "default",
+    approve: Approver | None = None,
+) -> AgentRequest:
     return AgentRequest(
         system_prompt="",
         prompt=generate_prompt(url, focus),
         model=model,
         cwd=worktree,
         max_turns=200,
-        mode="default",
-        approve=generate_approver(worktree),
+        mode=mode,
+        approve=approve,
         # The review opens where it was asked for (here), so the submit shouldn't open a browser too.
         # Published versions before DIFFUSION_NO_BROWSER still use Python's webbrowser, which runs $BROWSER: make
         # that a no-op too.
@@ -123,10 +60,36 @@ def generate_request(url: str, worktree: Path, model: str = "", focus: str = "")
 
 class Jobs:
     """Reviews being written, by PR key: running, done, failed or stopped, with what the agent is doing now and
-    what it has done (``log``: its steps; ``text``: what it has said), for the chat to show."""
+    what it has done (``log``: its steps; ``text``: what it has said), for the chat to show. ``asks`` are the tool
+    calls waiting on the reviewer."""
 
     def __init__(self) -> None:
         self.jobs: dict[str, dict] = {}
+        self.waiting: dict[str, asyncio.Future[Decision]] = {}
+
+    def approver(self, key: str) -> Approver:
+        """Puts a tool call to the reviewer: it waits in the job's ``asks`` until ``answer``."""
+
+        async def ask(tool: str, summary: str, tool_input: dict) -> Decision:
+            aid = uuid.uuid4().hex[:12]
+            f: asyncio.Future[Decision] = asyncio.get_running_loop().create_future()
+            self.waiting[aid] = f
+            asks = self.jobs[key].setdefault("asks", [])
+            asks.append({"id": aid, "tool": tool, "summary": summary, "input": tool_input})
+            try:
+                return await f
+            finally:
+                self.waiting.pop(aid, None)
+                asks[:] = [a for a in asks if a["id"] != aid]
+
+        return ask
+
+    def answer(self, aid: str, decision: Decision) -> bool:
+        f = self.waiting.get(aid)
+        if not f or f.done():
+            return False
+        f.set_result(decision)
+        return True
 
     def get(self, key: str) -> dict:
         return self.jobs.get(key) or {"state": "none"}
@@ -145,7 +108,7 @@ class Jobs:
         ends without one failed, whatever the agent said."""
         job = self.jobs[key] = {
             "state": "running", "started_at": time.time(), "prompt": prompt, "doing": "", "error": None,
-            "log": [], "text": "",
+            "log": [], "text": "", "asks": [],
         }  # fmt: skip
         log: list = job["log"]
         try:
@@ -177,4 +140,5 @@ class Jobs:
             job.update(state="failed", error=str(e)[:500] or type(e).__name__)
         finally:
             del log[:-LOG_MAX]
+            job["asks"] = []
         job["ended_at"] = time.time()

@@ -1,6 +1,7 @@
 // Writing a review of a GitHub PR from the review page: what to focus on, which agent, and the run while it goes.
 import { Check, ChevronDown, Copy, LoaderCircle, Square } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useChat } from "../chat";
 import { autosize } from "../lib/autosize";
 import { usePopover } from "../lib/usePopover";
 import { useGenerate } from "../review";
@@ -42,7 +43,7 @@ export function GenerateCard({ url }: { url: string }) {
   if (job.state === "running") return <Writing url={url} job={job} />;
   const go = () => {
     useApp.getState().toggleChat(true);
-    void useGenerate.getState().start(url, focus);
+    void useGenerate.getState().start(url, focus, useChat.getState().mode);
   };
   return (
     <div className="gen-card">

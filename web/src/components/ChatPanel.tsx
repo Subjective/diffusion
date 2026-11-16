@@ -38,7 +38,9 @@ import {
   type Anchor,
   type Ask,
   type ChatMode,
+  type Decision,
   EDIT_TOOLS,
+  followDecision,
   guideSessionOf,
   modesFor,
   type Question,
@@ -595,6 +597,18 @@ function GenerateTurn({ job }: { job: GenerateJob }) {
       <div className="msg ai">
         <div className="ai-body">
           <Trace q={q} pending={running} open={running} />
+          {running &&
+            job.asks?.map((a, i) => (
+              <AskCard
+                key={a.id}
+                a={a}
+                first={i === 0}
+                onAnswer={(id, d) => {
+                  followDecision(a, d);
+                  void useGenerate.getState().answer(pr.url, id, d);
+                }}
+              />
+            ))}
           <div className="ans">
             <div className="ans-t">
               {job.text ? (
@@ -785,7 +799,7 @@ function ModeMenu() {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const harness = chat.harness ?? guideHarness;
-  const modes = chat.kind === "guide" ? modesFor(harness) : [];
+  const modes = modesFor(harness);
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
@@ -863,8 +877,10 @@ function editLines(a: Ask): { t: "add" | "del"; s: string }[] {
 
 /** A tool call the session's settings don't allow, put to the reviewer in the conversation, as the terminal does.
  * ↵ allows, Esc denies (the first card, while the composer is empty). */
-function AskCard({ a, first }: { a: Ask; first: boolean }) {
-  const answer = useChat((s) => s.answer);
+/** ``onAnswer``: where the answer goes when it isn't this chat's turn waiting (a review being written). */
+function AskCard({ a, first, onAnswer }: { a: Ask; first: boolean; onAnswer?: (id: string, d: Decision) => void }) {
+  const chatAnswer = useChat((s) => s.answer);
+  const answer = onAnswer ?? chatAnswer;
   const edit = EDIT_TOOLS.includes(a.tool);
   const plan = a.tool === "ExitPlanMode" && typeof a.input.plan === "string" ? a.input.plan : null;
   const path = typeof a.input.file_path === "string" ? a.input.file_path : null;

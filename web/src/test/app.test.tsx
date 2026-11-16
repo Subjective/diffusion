@@ -55,6 +55,7 @@ vi.mock("../api", () => ({
   fetchGenerate: vi.fn(async () => ({ state: "none" })),
   startGenerate: vi.fn(async () => ({ state: "running", doing: "" })),
   stopGenerate: vi.fn(async () => ({ state: "stopped" })),
+  answerGenerate: vi.fn(async () => {}),
   reviewAction: vi.fn(async () => ({ available: true, viewer: "jy", threads: [] })),
   fetchInbox: vi.fn(async () => ({
     login: "jy",
@@ -914,17 +915,24 @@ test("no guide yet: write one from here, watch it in the chat, stop it, and see 
     prompt: `/diffusion:review ${payload.pr.url} the refresh timer`,
     log: [{ tool: "Read session.ts" }],
     text: "Starting with the timer.",
+    asks: [{ id: "g1", tool: "Bash", summary: "Run npm test", input: { command: "npm test" } }],
   };
   vi.mocked(api.fetchGenerate).mockResolvedValue(running);
   vi.mocked(api.startGenerate).mockResolvedValue(running);
   fireEvent.keyDown(focus, { key: "Enter" });
-  expect(api.startGenerate).toHaveBeenCalledWith(payload.pr.url, "the refresh timer");
+  expect(api.startGenerate).toHaveBeenCalledWith(payload.pr.url, "the refresh timer", "default");
   await waitFor(() => expect(document.querySelector(".gen-clock")?.textContent).toBe("1:15"));
   expect(document.querySelector(".chat .bubble")!.textContent).toBe(
     `/diffusion:review ${payload.pr.repo}#${payload.pr.number} the refresh timer`,
   );
   expect(document.querySelector(".chat .trace-tool")!.textContent).toContain("session.ts");
   expect(document.querySelector(".chat .ans-t")!.textContent).toBe("Starting with the timer.");
+  // what the run's mode doesn't allow is asked in the chat, as in a turn
+  expect(document.querySelector(".chat .ask-d")!.textContent).toBe("npm test");
+  vi.mocked(api.fetchGenerate).mockResolvedValue({ ...running, asks: [] });
+  fireEvent.click(screen.getByTitle("Allow (↵)"));
+  expect(api.answerGenerate).toHaveBeenCalledWith("g1", "allow");
+  expect(document.querySelector(".chat .ask-card")).toBeNull();
   // Stop ends the run and brings the card back
   vi.mocked(api.fetchGenerate).mockResolvedValue({ state: "stopped" });
   vi.mocked(api.stopGenerate).mockResolvedValue({ state: "stopped" });

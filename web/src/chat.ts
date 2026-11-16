@@ -77,7 +77,7 @@ export interface ChatSummary {
   harness?: string | null;
 }
 
-/** "guide": the agent session that wrote the guide, continued. "fork": a read-only branch of it. */
+/** "guide": the agent session that wrote the guide, continued. "fork": a branch of it. */
 export type ChatKind = "guide" | "fork";
 
 /** Agents whose sessions chat can fork or continue (the engine's FORKABLE). */
@@ -152,7 +152,7 @@ interface State {
   sendStaged(extra?: string): void;
 }
 
-/** How much the guide session may do: the harness's own permission modes. Forks are always read-only. */
+/** How much a chat's session may do: the harness's own permission modes. */
 export type ChatMode = "default" | "acceptEdits" | "plan" | "auto";
 /** The reviewer's answer to a tool call; "always" also allows its kind for the rest of the session. */
 export type Decision = "allow" | "deny" | "always";
@@ -169,6 +169,14 @@ export interface Ask {
   tool: string;
   summary: string;
   input: Record<string, unknown>;
+}
+
+/** The mode an answer moves the session to, as the terminal does: "Allow edits this session" switches to accepting
+ *  edits, and approving a plan leaves plan mode. */
+export function followDecision(ask: Ask, decision: Decision) {
+  const { setMode } = useChat.getState();
+  if (decision === "always" && EDIT_TOOLS.includes(ask.tool)) setMode("acceptEdits");
+  if (decision !== "deny" && ask.tool === "ExitPlanMode") setMode(decision === "always" ? "acceptEdits" : "default");
 }
 
 let chatSeq = 0;
@@ -274,7 +282,7 @@ export const useChat = create<State>((set, get) => {
           url: get().pr,
           questions: wire,
           version: useApp.getState().guide?.version ?? null,
-          mode: chatRef.kind === "guide" ? get().mode : "read-only",
+          mode: get().mode,
           ...(rewind ? { rewind } : {}),
         },
         ({ event, data }) => {
@@ -418,11 +426,7 @@ export const useChat = create<State>((set, get) => {
     async answer(id, decision) {
       const ask = get().asks.find((a) => a.id === id);
       set((s) => ({ asks: s.asks.filter((a) => a.id !== id) }));
-      // "Allow edits this session" is the terminal's switch to accepting edits: show it in the mode too.
-      if (decision === "always" && ask && EDIT_TOOLS.includes(ask.tool)) get().setMode("acceptEdits");
-      // Approving a plan leaves plan mode, as the terminal does.
-      if (decision !== "deny" && ask?.tool === "ExitPlanMode")
-        get().setMode(decision === "always" ? "acceptEdits" : "default");
+      if (ask) followDecision(ask, decision);
       const chat = get().chat.id;
       if (!chat) return;
       try {

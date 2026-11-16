@@ -43,6 +43,13 @@ INBOX_TTL = 60  # seconds the home page's PR list is reused before asking GitHub
 class GenerateReq(BaseModel):
     url: str
     focus: str = ""
+    # The mode picked in the chat: the run becomes the guide chat's session.
+    mode: Mode = "default"
+
+
+class GenerateAnswer(BaseModel):
+    id: str
+    decision: Decision
 
 
 class ReviewAction(BaseModel):
@@ -94,7 +101,7 @@ def sse_response(events: AsyncIterator[tuple[str, dict]]) -> StreamingResponse:
 
 class ChatCreate(BaseModel):
     url: str
-    # "fork": a read-only branch of the session that wrote the guide. "guide": that session itself, continued.
+    # "fork": a branch of the session that wrote the guide. "guide": that session itself, continued.
     kind: Literal["fork", "guide"] = "fork"
 
 
@@ -110,7 +117,7 @@ class TurnReq(BaseModel):
     url: str
     questions: list[Question]
     version: int | None = None  # the guide version on screen
-    # The guide chat can run as the session itself (see agent.Mode); forks are always read-only.
+    # Any chat runs as the session itself in the mode picked (see agent.Mode); read-only for harnesses without modes.
     mode: Mode = "read-only"
     # Editing an earlier message: the turn replaces it, and everything after it, in the session.
     rewind: Rewind | None = None
@@ -283,7 +290,12 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         finally:
             starting.discard(key)
         # Claude Code (bundled with its SDK) runs the review skill, from the reviewer's installed plugin.
-        request = generate_request(req.url, prep.checkout.worktree, focus=req.focus)
+        mode: Mode = (
+            "default" if req.mode == "read-only" else req.mode
+        )  # a session of its own, so the skill loads
+        request = generate_request(
+            req.url, prep.checkout.worktree, focus=req.focus, mode=mode, approve=jobs.approver(key)
+        )
         runner = d().runner_for("claude-code")
         task = asyncio.create_task(
             jobs.run(key, lambda: runner(request), request.prompt, lambda t: d().store.saved_at(key) >= t)
@@ -296,6 +308,12 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     @app.get("/api/generate")
     async def generating(url: str) -> dict:
         return jobs.get(pr_key(url))
+
+    @app.post("/api/generate/approve")
+    async def approve_generate(req: GenerateAnswer) -> dict:
+        if not jobs.answer(req.id, req.decision):
+            raise HTTPException(404, "nothing is waiting on that")
+        return {"ok": True}
 
     @app.post("/api/generate/stop")
     async def stop_generate(req: GenerateReq) -> dict:
@@ -623,7 +641,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 chat["updated_at"] = record["at"]
                 deps.store.save_chat(key, chat)
                 block = GuideBlock()
-                mode: Mode = req.mode if chat.get("kind") == "guide" else "read-only"
+                # Cursor has no modes: it only reads.
+                mode: Mode = req.mode if harness in ("claude-code", "codex") else "read-only"
                 side: asyncio.Queue = asyncio.Queue()
                 mine: list[str] = []
 
@@ -651,7 +670,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                             async for ev in (evs := merged(run_turn(
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
                                 resume, fork=fork, adopt=adopt, cwd=cwd, block=block, mode=mode, approve=ask,
-                                harness=harness if chat.get("kind") == "guide" else "", steer=inbox,
+                                harness=harness, steer=inbox,
                                 resume_at=resume_at, restore_files=restore,
                             ), side)):  # fmt: skip
                                 if isinstance(ev, Stop):

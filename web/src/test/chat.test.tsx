@@ -456,7 +456,7 @@ test("chat opens on the guide's session; new chats fork it; history keeps the tw
   useApp.setState({ guide: g });
 });
 
-test("the guide session runs in the harness's permission modes and asks in the conversation; forks only read", async () => {
+test("the guide session runs in the harness's permission modes and asks in the conversation, new chats too", async () => {
   await mount();
   const g = useApp.getState().guide!;
   useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "claude-code", session: "s1" } } });
@@ -480,10 +480,9 @@ test("the guide session runs in the harness's permission modes and asks in the c
   expect(document.querySelector(".ask-card")).toBeNull();
   await waitFor(() => expect(approveBodies).toEqual([{ id: "a1", decision: "allow" }]));
   await act(async () => release!());
-  // a fork can only read
+  // a new chat runs in the same mode
   fireEvent.click(screen.getByTitle("New chat"));
-  expect(document.querySelector(".composer .mode")!.textContent).toBe("Read-only");
-  expect(document.querySelector("button.mode")).toBeNull();
+  expect(mode().textContent).toBe("Manual");
   useApp.setState({ guide: g });
 });
 
