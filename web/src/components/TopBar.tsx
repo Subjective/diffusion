@@ -118,7 +118,6 @@ function PRTarget({ pr }: { pr: PRMeta }) {
     if (!useInbox.getState().inbox) void useInbox.getState().load();
   }, []);
   const { layers } = useMemo(() => inboxStack(prs ?? [], pr.owner, pr.repo, pr.number), [prs, pr]);
-  const at = layers.findIndex((p) => p.number === pr.number);
   return (
     <div className="target">
       <a className="icon-btn sm gh-link" href={pr.url} target="_blank" rel="noreferrer" data-tip="Open on GitHub">
@@ -126,12 +125,7 @@ function PRTarget({ pr }: { pr: PRMeta }) {
       </a>
       <b>{pr.repo}</b>
       <Switcher pr={pr} layers={layers} />
-      {layers.length > 0 && (
-        <span className="stk" data-tip={`Stack: ${layers.length - at} of ${layers.length}`}>
-          {ic(Layers2, 13)}
-          {layers.length - at}/{layers.length}
-        </span>
-      )}
+      {layers.length > 0 && <StackChip pr={pr} layers={layers} />}
       {review?.checks && review.checks.state !== "none" && (
         <ChecksChip checks={review.checks} mergeable={review.mergeable} base={review.base_ref ?? pr.base_ref} />
       )}
@@ -326,29 +320,18 @@ const SWITCH_GROUPS = [
 const NO_PRS: InboxPR[] = [];
 
 /** "#42", opening the other PRs you're on: this one's stack first, then the inbox's groups, with a filter. */
-function Switcher({ pr, layers }: { pr: PRMeta; layers: InboxPR[] }) {
-  const prs = useInbox((s) => s.inbox?.prs) ?? NO_PRS;
+/** A PR in the switcher or the stack menu; clicking it opens it. */
+function SwItem({ p, pr, lvl, onGo }: { p: InboxPR; pr: PRMeta; lvl?: number; onGo: () => void }) {
   const go = useApp((s) => s.open);
-  const [open, setOpen, ref] = usePopover();
-  const [q, setQ] = useState("");
-  useEffect(() => {
-    if (!open) return;
-    setQ("");
-    void useInbox.getState().load();
-  }, [open]);
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const match = (p: InboxPR) =>
-    words.every((w) => `${p.repo} #${p.number} ${p.title} ${p.author}`.toLowerCase().includes(w));
-  const inStack = new Set(layers.map((p) => p.url));
-  const item = (p: InboxPR, lvl?: number) => (
+  const cur = p.number === pr.number && p.repo === pr.repo;
+  return (
     <button
-      key={p.url}
       type="button"
       role="menuitem"
-      className={`sw-i${p.number === pr.number && p.repo === pr.repo ? " cur" : ""}`}
+      className={`sw-i${cur ? " cur" : ""}`}
       onClick={() => {
-        setOpen(false);
-        if (!(p.number === pr.number && p.repo === pr.repo)) go(p.url);
+        onGo();
+        if (!cur) go(p.url);
       }}
     >
       {lvl != null && <span className="lvl">{lvl}</span>}
@@ -361,6 +344,65 @@ function Switcher({ pr, layers }: { pr: PRMeta; layers: InboxPR[] }) {
       </span>
     </button>
   );
+}
+
+/** A stack's PRs, top first, down to the branch it's based on. */
+function StackList({ pr, stack, base, onGo }: { pr: PRMeta; stack: InboxPR[]; base: string; onGo: () => void }) {
+  return (
+    <div className="sw-stack">
+      {stack.map((p) => (
+        <SwItem key={p.url} p={p} pr={pr} lvl={p.stack!.index} onGo={onGo} />
+      ))}
+      <div className="sw-base">
+        {ic(GitBranch, 12)}
+        <span>{base}</span>
+      </div>
+    </div>
+  );
+}
+
+/** The stack chip: where this PR sits, and a menu of the stack's PRs. */
+function StackChip({ pr, layers }: { pr: PRMeta; layers: InboxPR[] }) {
+  const [open, setOpen, ref] = usePopover();
+  const at = layers.findIndex((p) => p.number === pr.number);
+  return (
+    <div className="pop-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`stk${open ? " on" : ""}`}
+        aria-expanded={open}
+        data-tip={`Stack: ${layers.length - at} of ${layers.length}`}
+        onClick={() => setOpen(!open)}
+      >
+        {ic(Layers2, 13)}
+        {layers.length - at}/{layers.length}
+      </button>
+      {open && (
+        <div className="sw-pop stk-pop" role="menu">
+          <div className="sw-b">
+            <StackList pr={pr} stack={layers} base={layers[layers.length - 1].base_ref} onGo={() => setOpen(false)} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Switcher({ pr, layers }: { pr: PRMeta; layers: InboxPR[] }) {
+  const prs = useInbox((s) => s.inbox?.prs) ?? NO_PRS;
+  const [open, setOpen, ref] = usePopover();
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setQ("");
+    void useInbox.getState().load();
+  }, [open]);
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const match = (p: InboxPR) =>
+    words.every((w) => `${p.repo} #${p.number} ${p.title} ${p.author}`.toLowerCase().includes(w));
+  const inStack = new Set(layers.map((p) => p.url));
+  const close = () => setOpen(false);
+  const item = (p: InboxPR) => <SwItem key={p.url} p={p} pr={pr} onGo={close} />;
   const stack = layers.filter(match);
   return (
     <div className="pop-anchor" ref={ref}>
@@ -393,13 +435,7 @@ function Switcher({ pr, layers }: { pr: PRMeta; layers: InboxPR[] }) {
                   {ic(Layers2, 12)}
                   Stack
                 </div>
-                <div className="sw-stack">
-                  {stack.map((p) => item(p, p.stack!.index))}
-                  <div className="sw-base">
-                    {ic(GitBranch, 12)}
-                    <span>{layers[layers.length - 1].base_ref}</span>
-                  </div>
-                </div>
+                <StackList pr={pr} stack={stack} base={layers[layers.length - 1].base_ref} onGo={close} />
               </>
             )}
             {SWITCH_GROUPS.map(([g, label]) => {
