@@ -486,6 +486,26 @@ test("the guide session runs in the harness's permission modes and asks in the c
   useApp.setState({ guide: g });
 });
 
+test("switching to Auto mid-turn switches the running session and lets the waiting ask through", async () => {
+  await mount();
+  const g = useApp.getState().guide!;
+  useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "claude-code", session: "s1" } } });
+  const { useChat } = await import("../chat");
+  useChat.getState().setMode("default");
+  await act(async () => useChat.getState().openGuide());
+  type("risky cleanup");
+  await waitFor(() => expect(document.querySelector(".thread .ask-card")).toBeTruthy());
+  const mode = () => document.querySelector<HTMLElement>(".composer button.mode")!;
+  fireEvent.click(mode());
+  fireEvent.click(screen.getByRole("menuitemradio", { name: /Auto/ }));
+  expect(document.querySelector(".ask-card")).toBeNull();
+  const sent = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find(([u]) => String(u).endsWith("/mode"));
+  expect(JSON.parse(String(sent![1].body))).toEqual({ mode: "auto" });
+  await act(async () => release!());
+  useChat.getState().setMode("default");
+  useApp.setState({ guide: g });
+});
+
 test("an edit to approve shows its diff, and allowing edits for the session switches the mode", async () => {
   const { useChat } = await import("../chat");
   useChat.setState({

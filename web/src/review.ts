@@ -9,6 +9,7 @@ import {
   reviewAction,
   startGenerate,
   stopGenerate,
+  switchGenerateMode,
 } from "./api";
 import { storage } from "./lib/storage";
 import type { FileDiff, GenerateJob, Inbox, InboxPR, ReviewState } from "./types";
@@ -199,6 +200,8 @@ interface GenerateStore {
   /** ``mode``: the chat's permission mode, which the run (the guide chat's session to be) starts in. */
   start(url: string, focus: string, mode?: string): Promise<void>;
   answer(url: string, id: string, decision: string): Promise<void>;
+  /** Switch the running review's session to ``mode``; what it now allows that's waiting goes ahead. */
+  switchMode(url: string, mode: string): Promise<void>;
   stop(url: string): Promise<void>;
 }
 
@@ -229,6 +232,15 @@ export const useGenerate = create<GenerateStore>((set, get) => {
         await answerGenerate(id, decision);
       } catch {
         // the run ends on its own if it can't hear back
+      }
+    },
+    async switchMode(url, mode) {
+      try {
+        const answered = new Set(await switchGenerateMode(url, mode));
+        const job = get().jobs[url];
+        if (job && answered.size) put(url, { ...job, asks: job.asks?.filter((a) => !answered.has(a.id)) });
+      } catch {
+        // the next poll shows where it stands
       }
     },
     async stop(url) {

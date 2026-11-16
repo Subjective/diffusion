@@ -20,7 +20,17 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
-from .agent import Decision, DoneEvent, Mode, Runner, ThinkingEvent, ToolEvent, ToolFailedEvent, make_runner
+from .agent import (
+    Decision,
+    DoneEvent,
+    Mode,
+    Runner,
+    ThinkingEvent,
+    ToolEvent,
+    ToolFailedEvent,
+    allowed_in,
+    make_runner,
+)
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
@@ -136,6 +146,11 @@ class Approval(BaseModel):
     decision: Decision
 
 
+class ModeSwitch(BaseModel):
+    mode: Mode
+    url: str = ""  # for a review being written
+
+
 class ApprovalAsked:
     """A tool call waiting on the reviewer, surfaced into a turn's event stream."""
 
@@ -212,6 +227,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     _latest_seen: dict[str, str | None] = {}
     chat_locks: dict[str, asyncio.Lock] = {}
     approvals: dict[str, asyncio.Future[Decision]] = {}  # tool calls waiting on the reviewer, by id
+    # Running turns' mode switches and waiting asks (id -> tool), by chat.
+    switching: dict[str, tuple[asyncio.Queue[Mode], dict[str, str]]] = {}
     app.state.approvals = approvals
     running: dict[str, asyncio.Queue] = {}  # a running turn's side queue, by chat: Stop goes there
     steering: dict[str, asyncio.Queue] = {}  # a running turn's inbox for messages sent into it, by chat
@@ -296,6 +313,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         request = generate_request(
             req.url, prep.checkout.worktree, focus=req.focus, mode=mode, approve=jobs.approver(key)
         )
+        request.modes = jobs.modes(key)
         runner = d().runner_for("claude-code")
         task = asyncio.create_task(
             jobs.run(key, lambda: runner(request), request.prompt, lambda t: d().store.saved_at(key) >= t)
@@ -314,6 +332,10 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         if not jobs.answer(req.id, req.decision):
             raise HTTPException(404, "nothing is waiting on that")
         return {"ok": True}
+
+    @app.post("/api/generate/mode")
+    async def switch_generate_mode(req: ModeSwitch) -> dict:
+        return {"answered": await jobs.switch(pr_key(req.url), req.mode)}
 
     @app.post("/api/generate/stop")
     async def stop_generate(req: GenerateReq) -> dict:
@@ -565,6 +587,22 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         await side.put(Stop())
         return {"ok": True}
 
+    @app.post("/api/chats/{chat_id}/mode")
+    async def switch_mode(chat_id: str, req: ModeSwitch) -> dict:
+        """Switch the running turn's session to another mode, as Shift+Tab does mid-turn; what it now allows and
+        is waiting on goes ahead. ``answered``: those asks' ids."""
+        live = switching.get(chat_id)
+        if live is None:
+            return {"ok": False, "answered": []}
+        modes, mine = live
+        await modes.put(req.mode)
+        answered = []
+        for aid, tool in list(mine.items()):
+            if allowed_in(req.mode, tool) and (f := approvals.get(aid)) and not f.done():
+                f.set_result("allow")
+                answered.append(aid)
+        return {"ok": True, "answered": answered}
+
     @app.post("/api/chats/{chat_id}/approve")
     async def approve(chat_id: str, req: Approval) -> dict:
         f = approvals.get(req.id)
@@ -644,13 +682,15 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 # Cursor has no modes: it only reads.
                 mode: Mode = req.mode if harness in ("claude-code", "codex") else "read-only"
                 side: asyncio.Queue = asyncio.Queue()
-                mine: list[str] = []
+                mine: dict[str, str] = {}  # this turn's asks: id -> tool
+                modes: asyncio.Queue[Mode] = asyncio.Queue()
+                switching[chat_id] = (modes, mine)
 
                 async def ask(tool: str, summary: str, tool_input: dict) -> Decision:
                     aid = uuid.uuid4().hex[:12]
                     f: asyncio.Future[Decision] = asyncio.get_running_loop().create_future()
                     approvals[aid] = f
-                    mine.append(aid)
+                    mine[aid] = tool
                     await side.put(ApprovalAsked(aid, tool, summary, tool_input))
                     try:
                         return await f
@@ -671,7 +711,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                                 prep, guide, req.questions, deps.runner_for(harness), deps.cfg.chat_model(harness),
                                 resume, fork=fork, adopt=adopt, cwd=cwd, block=block, mode=mode, approve=ask,
                                 harness=harness, steer=inbox,
-                                resume_at=resume_at, restore_files=restore,
+                                resume_at=resume_at, restore_files=restore, modes=modes,
                             ), side)):  # fmt: skip
                                 if isinstance(ev, Stop):
                                     await evs.aclose()
@@ -765,6 +805,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 finally:
                     if running.get(chat_id) is side:
                         del running[chat_id]
+                    if switching.get(chat_id, (None,))[0] is modes:
+                        del switching[chat_id]
                     if inbox and steering.get(chat_id) is inbox:
                         del steering[chat_id]
                     while inbox and not inbox.empty():  # sent as the turn ended: the client sends them next

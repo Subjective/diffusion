@@ -138,6 +138,17 @@ export async function startGenerate(url: string, focus = "", mode = "default"): 
   return res.json();
 }
 
+/** Switch the review being written to another mode; returns the waiting asks that went ahead. */
+export async function switchGenerateMode(url: string, mode: string): Promise<string[]> {
+  const res = await fetch("/api/generate/mode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, mode }),
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()).answered ?? [];
+}
+
 /** Answer a tool call the review being written is waiting on. */
 export async function answerGenerate(id: string, decision: string): Promise<void> {
   await fetch("/api/generate/approve", {

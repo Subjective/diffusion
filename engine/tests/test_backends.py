@@ -104,6 +104,11 @@ for line in sys.stdin:
         send({"id": rid, "result": {"turn": {"id": "tu_1"}}})
         for n in script["turn"]:
             send(n)
+            if "id" in n:  # a request of ours: wait for the answer
+                for reply in sys.stdin:
+                    log.write(reply); log.flush()
+                    if json.loads(reply).get("id") == n["id"]:
+                        break
     elif method == "turn/steer":
         if script.get("steer") is None:
             send({"id": rid, "error": {"code": 1, "message": "no active turn"}})
@@ -427,6 +432,42 @@ async def test_claude_answers_a_message_steered_too_late_before_ending(monkeypat
     assert await _steered_run(monkeypatch, tmp_path, late=True) == ["done", "steered answer"]
 
 
+async def test_codex_puts_its_approval_requests_to_the_reviewer(tmp_path, repo):
+    change = {
+        "id": "c1",
+        "type": "fileChange",
+        "changes": [{"path": "src/a.py", "kind": "update", "diff": "-a\n+b"}],
+    }
+    exe = fake_app_server(tmp_path, [
+        {"id": 900, "method": "item/commandExecution/requestApproval",
+         "params": {"threadId": "th_new", "turnId": "tu_1", "itemId": "x1", "command": "npm test"}},
+        n("item/started", item=change),
+        {"id": 901, "method": "item/fileChange/requestApproval",
+         "params": {"threadId": "th_new", "turnId": "tu_1", "itemId": "c1"}},
+        {"id": 902, "method": "item/tool/requestUserInput", "params": {}},
+        {"method": "turn/completed", "params": {"turn": {"id": "tu_1", "status": "completed"}}},
+    ])  # fmt: skip
+    asked = []
+
+    async def approve(tool, summary, args):
+        asked.append((tool, summary, args))
+        return "always" if tool == "Bash" else "deny"
+
+    req = AgentRequest("s", "p", "", repo, mode="default", approve=approve)
+    await collect(codex_runner(str(exe))(req))
+    assert asked == [
+        ("Bash", "Ran npm test", {"command": "npm test"}),
+        ("Edit", "Edit a.py", {"file_path": "src/a.py", "diff": "-a\n+b"}),
+    ]
+    replies = {c["id"]: c for c in calls(tmp_path) if "method" not in c}
+    assert replies[900]["result"] == {"decision": "acceptForSession"}
+    assert replies[901]["result"] == {"decision": "decline"}
+    assert "error" in replies[902]
+    assert next(c for c in calls(tmp_path) if c.get("method") == "thread/start")["params"][
+        "approvalPolicy"
+    ] == ("on-request")
+
+
 def test_codex_modes_are_its_sandboxes(tmp_path):
     def sandbox(mode):
         return thread_params(AgentRequest(system_prompt="", prompt="", model="", cwd=tmp_path, mode=mode))[
@@ -434,6 +475,16 @@ def test_codex_modes_are_its_sandboxes(tmp_path):
         ]
 
     modes = ("read-only", "plan", "default", "acceptEdits", "auto")
+
+    async def approve(*_):
+        return "allow"
+
+    def policy(mode):
+        req = AgentRequest(system_prompt="", prompt="", model="", cwd=tmp_path, mode=mode, approve=approve)
+        return thread_params(req)["approvalPolicy"]
+
+    # Manual and Accept edits ask past the sandbox; the rest never stop
+    assert [policy(m) for m in modes] == ["never", "never", "on-request", "on-request", "never"]
     assert [sandbox(m) for m in modes] == [
         "read-only",
         "read-only",

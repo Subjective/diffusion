@@ -8,14 +8,17 @@ PreToolUse hook; our custom tools are served in-process over the SDK's MCP bridg
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..agent import (
+    EDIT_TOOLS,
     AgentRequest,
     DoneEvent,
     Event,
+    Mode,
     Runner,
     SandboxError,
     SteeredEvent,
@@ -36,7 +39,6 @@ DENY_TOOLS = [
     "Bash", "Write", "Edit", "MultiEdit", "NotebookEdit",
     "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite",
 ]  # fmt: skip
-EDIT_TOOLS = ("Edit", "MultiEdit", "Write", "NotebookEdit")
 MCP_SERVER = "diffusion"
 PATH_ARGS = ("file_path", "path")
 
@@ -234,7 +236,15 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                     if not accepted.done():
                         accepted.set_result(True)
 
+            async def take_modes(modes: asyncio.Queue[Mode]) -> None:
+                while True:
+                    mode = await modes.get()
+                    if mode != "read-only":
+                        with contextlib.suppress(Exception):  # the turn may have just ended
+                            await client.set_permission_mode(mode)
+
             pump = asyncio.create_task(take_steers(req.steer)) if req.steer else None
+            switch = asyncio.create_task(take_modes(req.modes)) if req.modes and req.native else None
             turns, last = 0, None
             try:
                 async for m in client.receive_messages():
@@ -274,6 +284,8 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                             break
             finally:
                 over = True
+                if switch:
+                    switch.cancel()
                 if pump:
                     pump.cancel()
                     while req.steer and not req.steer.empty():

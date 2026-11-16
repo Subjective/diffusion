@@ -586,6 +586,42 @@ async def test_guide_chat_asks_the_reviewer_before_tools_its_settings_dont_allow
     ).status_code == 404
 
 
+async def test_switching_mode_mid_turn_reaches_the_session_and_lets_waiting_asks_through(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+
+    got = []
+
+    async def runner(req):
+        said = await req.approve("Bash", "Ran npm test", {"command": "npm test"})
+        got.append((said, req.modes.get_nowait()))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "test it"}], "mode": "default"}
+    waiting = client._transport.app.state.approvals
+
+    async def reviewer():
+        while not waiting:
+            await asyncio.sleep(0.01)
+        (aid,) = list(waiting)
+        # Accept edits doesn't cover a command; Auto does
+        r = await client.post(f"/api/chats/{cid}/mode", json={"mode": "acceptEdits"})
+        assert r.json() == {"ok": True, "answered": []}
+        r = await client.post(f"/api/chats/{cid}/mode", json={"mode": "auto"})
+        assert r.json() == {"ok": True, "answered": [aid]}
+
+    await asyncio.wait_for(
+        asyncio.gather(client.post(f"/api/chats/{cid}/turn", json=body), reviewer()), timeout=10
+    )
+    assert got == [("allow", "acceptEdits")]
+    assert (await client.post(f"/api/chats/{cid}/mode", json={"mode": "auto"})).json()["ok"] is False
+
+
 async def test_forks_run_in_the_mode_asked(setup):
     client, runners, deps, prep = setup
     from diffusion.agent import TextEvent
@@ -894,8 +930,8 @@ async def test_a_review_being_written_asks_in_the_mode_picked(setup):
         await asyncio.sleep(0)
     asks = (await client.get("/api/generate", params={"url": URL})).json()["asks"]
     assert [(a["tool"], a["summary"]) for a in asks] == [("Bash", "Run npm test")]
-    r = await client.post("/api/generate/approve", json={"id": asks[0]["id"], "decision": "allow"})
-    assert r.json() == {"ok": True}
+    r = await client.post("/api/generate/mode", json={"url": URL, "mode": "auto"})
+    assert r.json() == {"answered": [asks[0]["id"]]}
     for _ in range(20):
         await asyncio.sleep(0)
     job = (await client.get("/api/generate", params={"url": URL})).json()

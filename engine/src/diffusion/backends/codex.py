@@ -27,18 +27,22 @@ from ..agent import (
 )
 from .codex_app import AppServer, AppServerError, text_input
 
-# Codex can't stop mid-run to ask, so its modes are its sandboxes: Plan reads, Auto (Codex's own name for it) writes
-# in the workspace.
+# A mode is a sandbox and whether to ask past it. Manual reads and asks before edits and commands that write; Accept
+# edits writes in the workspace and asks before going past it; Auto writes in the workspace and never asks; Plan (and
+# a chat that can't ask) only reads.
 CODEX_SANDBOX = {"acceptEdits": "workspace-write", "auto": "workspace-write"}
+ASKS = {"default", "acceptEdits"}
+# The reviewer's answers in Codex's words.
+CODEX_DECISION = {"allow": "accept", "always": "acceptForSession", "deny": "decline"}
 
 
 def thread_params(req: AgentRequest) -> dict:
-    """How the thread runs: in the repository, in the mode's sandbox, never stopping to ask (Codex's approvals
-    aren't wired to the reviewer yet), without web search."""
+    """How the thread runs: in the repository, in the mode's sandbox, asking the reviewer where the mode does (and
+    someone is there to answer), without web search."""
     p: dict = {
         "cwd": str(req.cwd),
         "sandbox": CODEX_SANDBOX.get(req.mode, "read-only"),
-        "approvalPolicy": "never",
+        "approvalPolicy": "on-request" if req.approve and req.mode in ASKS else "never",
         "config": {"web_search": "disabled"},
     }
     if req.model:
@@ -57,6 +61,25 @@ def summarize_item(item: dict) -> str | None:
     if t == "fileChange":
         paths = [c.get("path", "") for c in item.get("changes") or []]
         return f"Edit {', '.join(Path(p).name for p in paths)}" if paths else "Edit"
+    return None
+
+
+def approval_ask(method: str, params: dict, items: dict[str, dict]) -> tuple[str, str, dict] | None:
+    """A Codex approval request as the chat's ask: (tool, summary, input), shaped like Claude Code's so the same card
+    shows it. ``items``: what the turn has started, by id (a file change's edits arrive with its item)."""
+    item = items.get(str(params.get("itemId"))) or {}
+    if method == "item/commandExecution/requestApproval":
+        cmd = str(params.get("command") or item.get("command") or "")
+        return (
+            "Bash",
+            ran(cmd),
+            {"command": cmd, **({"reason": params["reason"]} if params.get("reason") else {})},
+        )
+    if method == "item/fileChange/requestApproval":
+        changes = item.get("changes") or []
+        path = str((changes[0] if changes else {}).get("path") or params.get("grantRoot") or "")
+        diff = "\n".join(str(c.get("diff") or "") for c in changes)
+        return "Edit", f"Edit {Path(path).name}" if path else "Edit", {"file_path": path, "diff": diff}
     return None
 
 
@@ -113,7 +136,14 @@ def codex_runner(cli_path: str | None = None) -> Runner:
 
     async def run(req: AgentRequest) -> AsyncIterator[Event]:
         thread_id, turns, error, last_text = req.resume, 0, None, ""
-        async with AppServer(exe, req.cwd) as srv:
+
+        async def on_request(method: str, params: dict) -> dict | None:
+            ask = approval_ask(method, params, srv.items)
+            if ask is None or not req.approve:
+                return None
+            return {"decision": CODEX_DECISION[await req.approve(*ask)]}
+
+        async with AppServer(exe, req.cwd, on_request=on_request) as srv:
             try:
                 params = thread_params(req)
                 if req.resume and req.fork:

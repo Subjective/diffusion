@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { CodeLoc } from "./lib/cite";
 import { errorText, postSSE } from "./lib/sse";
 import { storage } from "./lib/storage";
+import { useGenerate } from "./review";
 import { useApp } from "./store";
 import type { Ref } from "./types";
 import { diffActivity } from "./ui";
@@ -156,10 +157,14 @@ interface State {
 export type ChatMode = "default" | "acceptEdits" | "plan" | "auto";
 /** The reviewer's answer to a tool call; "always" also allows its kind for the rest of the session. */
 export type Decision = "allow" | "deny" | "always";
-/** The modes an agent has, in the order its own Shift+Tab cycles them. Codex can't stop mid-run to ask, so its
- * modes are its sandboxes: Plan reads, Auto writes in the workspace. */
+/** The modes an agent has, in the order Claude Code's Shift+Tab cycles them. For Codex a mode is a sandbox and
+ * whether to ask past it (see the engine's codex backend). Cursor has none: it only reads. */
 export const modesFor = (harness: string | null): ChatMode[] =>
-  harness === "claude-code" ? ["default", "acceptEdits", "plan", "auto"] : harness === "codex" ? ["plan", "auto"] : [];
+  harness === "claude-code" || harness === "codex" ? ["default", "acceptEdits", "plan", "auto"] : [];
+
+/** Whether switching to ``mode`` answers a waiting ask (the engine's allowed_in). */
+export const allowedIn = (mode: ChatMode, tool: string) =>
+  mode === "auto" || (mode === "acceptEdits" && EDIT_TOOLS.includes(tool));
 
 /** A tool call the session wants to make that its settings don't already allow. */
 export const EDIT_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
@@ -422,6 +427,19 @@ export const useChat = create<State>((set, get) => {
     setMode(mode) {
       storage.set("rv-chat-mode", mode);
       set({ mode });
+      // As Shift+Tab mid-turn: the running turn (or review being written) switches now, and what the mode allows
+      // that's waiting goes ahead.
+      const { chat } = get();
+      if (chat.busy && chat.id) {
+        set((s) => ({ asks: s.asks.filter((a) => !allowedIn(mode, a.tool)) }));
+        void fetch(`/api/chats/${chat.id}/mode`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mode }),
+        }).catch(() => {});
+      }
+      const pr = useApp.getState().pr?.url;
+      if (pr && useGenerate.getState().jobs[pr]?.state === "running") void useGenerate.getState().switchMode(pr, mode);
     },
     async answer(id, decision) {
       const ask = get().asks.find((a) => a.id === id);

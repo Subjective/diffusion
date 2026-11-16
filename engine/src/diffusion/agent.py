@@ -109,6 +109,13 @@ Decision = Literal["allow", "deny", "always"]
 Approver = Callable[[str, str, dict], Awaitable[Decision]]
 """Ask the reviewer about a tool call: (tool name, one-line summary, input) -> decision."""
 
+EDIT_TOOLS = ("Edit", "MultiEdit", "Write", "NotebookEdit")
+
+
+def allowed_in(mode: Mode, tool: str) -> bool:
+    """Whether switching to ``mode`` answers a waiting ask for ``tool``: Auto takes anything, Accept edits edits."""
+    return mode == "auto" or (mode == "acceptEdits" and tool in EDIT_TOOLS)
+
 
 @dataclass
 class AgentRequest:
@@ -134,6 +141,8 @@ class AgentRequest:
     restore_files: str | None = None
     # Extra environment for the agent's process (and so for the commands it runs).
     env: dict[str, str] = field(default_factory=dict)
+    # Modes picked while it runs, to switch the running session to (as Shift+Tab does). Only Claude Code reads it.
+    modes: asyncio.Queue[Mode] | None = None
 
     @property
     def native(self) -> bool:

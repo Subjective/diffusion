@@ -23,6 +23,7 @@ from .agent import (
     TextEvent,
     ThinkingEvent,
     ToolEvent,
+    allowed_in,
 )
 
 COMMAND = "/diffusion:review"
@@ -66,6 +67,23 @@ class Jobs:
     def __init__(self) -> None:
         self.jobs: dict[str, dict] = {}
         self.waiting: dict[str, asyncio.Future[Decision]] = {}
+        self._modes: dict[str, asyncio.Queue[Mode]] = {}
+
+    def modes(self, key: str) -> asyncio.Queue[Mode]:
+        """Where modes picked while the run goes are sent, for its session to switch to."""
+        q = self._modes[key] = asyncio.Queue()
+        return q
+
+    async def switch(self, key: str, mode: Mode) -> list[str]:
+        """Switch the running review's session to ``mode``; asks it now allows go ahead (their ids)."""
+        if not self.running(key) or key not in self._modes:
+            return []
+        await self._modes[key].put(mode)
+        answered = []
+        for a in list(self.get(key).get("asks") or []):
+            if allowed_in(mode, a["tool"]) and self.answer(a["id"], "allow"):
+                answered.append(a["id"])
+        return answered
 
     def approver(self, key: str) -> Approver:
         """Puts a tool call to the reviewer: it waits in the job's ``asks`` until ``answer``."""

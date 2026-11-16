@@ -870,14 +870,19 @@ function editLines(a: Ask): { t: "add" | "del"; s: string }[] {
     ...lines(e.new_string).map((s) => ({ t: "add" as const, s })),
   ];
   if (a.tool === "Write") return lines(a.input.content).map((s) => ({ t: "add" as const, s }));
+  // Codex sends a unified diff
+  if (typeof a.input.diff === "string")
+    return lines(a.input.diff)
+      .filter((s) => /^[+-]/.test(s) && !/^(\+\+\+|---) /.test(s))
+      .map((s) => ({ t: s[0] === "+" ? ("add" as const) : ("del" as const), s: s.slice(1) }));
   if (a.tool === "MultiEdit" && Array.isArray(a.input.edits))
     return (a.input.edits as Record<string, unknown>[]).flatMap(pair);
   return pair(a.input);
 }
 
 /** A tool call the session's settings don't allow, put to the reviewer in the conversation, as the terminal does.
- * ↵ allows, Esc denies (the first card, while the composer is empty). */
-/** ``onAnswer``: where the answer goes when it isn't this chat's turn waiting (a review being written). */
+ * ↵ allows, Esc denies (the first card, while the composer is empty). ``onAnswer``: where the answer goes when it
+ * isn't this chat's turn waiting (a review being written). */
 function AskCard({ a, first, onAnswer }: { a: Ask; first: boolean; onAnswer?: (id: string, d: Decision) => void }) {
   const chatAnswer = useChat((s) => s.answer);
   const answer = onAnswer ?? chatAnswer;
