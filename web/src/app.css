@@ -1584,8 +1584,19 @@ tr.th-row > td {
   font-variant-numeric: tabular-nums;
 }
 .th-pop-b {
-  overflow: auto;
+  overflow: hidden auto;
   padding: 0 2px;
+}
+/* A file's hide button: its tip opens to the left, inside the list (which clips anything past its edges) */
+.th-pop-b .tl-hide[data-tip]::after {
+  top: 50%;
+  bottom: auto;
+  left: auto;
+  right: calc(100% + 6px);
+  transform: translate(2px, -50%);
+}
+.th-pop-b .tl-hide[data-tip]:hover::after {
+  transform: translate(0, -50%);
 }
 .tl-f {
   display: flex;
