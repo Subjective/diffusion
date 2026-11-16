@@ -1139,6 +1139,8 @@ tr.cmt-row.closed > td {
   color: var(--text);
 }
 .target .stk {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
   height: 22px;
   padding: 0 8px;
