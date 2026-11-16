@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   BookOpen,
   Check,
   ChevronDown,
@@ -12,11 +13,11 @@ import {
   MessageSquare,
   X,
 } from "lucide-react";
-import { type MouseEvent, useMemo, useState } from "react";
+import { type MouseEvent, type ReactNode, useMemo, useState } from "react";
 import { storage } from "../lib/storage";
 import { ago, dateText } from "../lib/time";
 import type { InboxPR, Reviewer } from "../types";
-import { GithubIcon, ic } from "./icons";
+import { ic } from "./icons";
 
 const GROUPS = [
   ["review", "Needs your review"],
@@ -130,29 +131,36 @@ const Comments = ({ n }: { n: number }) => (
   </span>
 );
 
-/** The age, and in its place on hover a button that opens the PR on GitHub (so it costs the row no room). */
-const Age = ({ t, url }: { t: number; url?: string }) => (
+const Age = ({ t }: { t: number }) => (
   <span className="age">
     <span className="ago" data-tip={`Updated ${dateText(t)}`}>
       {t ? ago(t) : ""}
     </span>
-    {url && (
-      <button
-        type="button"
-        className="icon-btn sm on-gh"
-        data-tip="Open on GitHub"
-        aria-label="Open on GitHub"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          window.open(url, "_blank", "noopener");
-        }}
-      >
-        <GithubIcon size={14} />
-      </button>
-    )}
   </span>
 );
+
+/** A PR's number, linking to it on GitHub (the rest of the row opens it here). Not an <a>: it sits inside one. */
+const OnGitHub = ({ url, children }: { url: string; children: ReactNode }) => {
+  const open = (e: { preventDefault(): void; stopPropagation(): void }) => {
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(url, "_blank", "noopener");
+  };
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: an <a> can't sit inside the row's <a> or the stack's <button>
+    <span
+      className="on-gh"
+      role="link"
+      tabIndex={0}
+      title="Open on GitHub"
+      onClick={open}
+      onKeyDown={(e) => e.key === "Enter" && open(e)}
+    >
+      {children}
+      {ic(ArrowUpRight, 12)}
+    </span>
+  );
+};
 
 const GuideMark = ({ p }: { p: InboxPR }) => (
   <span className="gd">{p.guides > 0 && <span data-tip="Review ready">{ic(BookOpen, 15)}</span>}</span>
@@ -222,14 +230,16 @@ export function Inbox({ prs, q, onOpen }: Props) {
                     <span className="t">
                       <span title={p.title}>{p.title}</span>
                       <span className="w">
-                        {p.repo} #{p.number}
+                        <OnGitHub url={p.url}>
+                          {p.repo} #{p.number}
+                        </OnGitHub>
                         {p.group === "review" && ` · ${p.author}`}
                       </span>
                     </span>
                     {cols.rv && <Reviewers list={p.reviewers} />}
                     {cols.ci && <Checks c={p.checks} />}
                     {cols.cm && <Comments n={p.comments} />}
-                    <Age t={p.updated_at} url={p.url} />
+                    <Age t={p.updated_at} />
                     {cols.gd && <GuideMark p={p} />}
                   </a>
                 );
@@ -252,7 +262,8 @@ export function Inbox({ prs, q, onOpen }: Props) {
                         <span className="chev">{ic(expanded ? ChevronDown : ChevronRight, 13)}</span>
                       </span>
                       <span className="w">
-                        {top.repo} #{bottom.number} → #{top.number} · {s.length} PRs
+                        {top.repo} <OnGitHub url={bottom.url}>#{bottom.number}</OnGitHub> →{" "}
+                        <OnGitHub url={top.url}>#{top.number}</OnGitHub> · {s.length} PRs
                         {g === "review" && ` · ${top.author}`}
                       </span>
                     </span>
@@ -269,12 +280,14 @@ export function Inbox({ prs, q, onOpen }: Props) {
                           <span className="lvl">{p.stack!.index}</span>
                           <span className="t">
                             <span title={p.title}>{p.title}</span>
-                            <span className="w">#{p.number}</span>
+                            <span className="w">
+                              <OnGitHub url={p.url}>#{p.number}</OnGitHub>
+                            </span>
                           </span>
                           {cols.rv && <Reviewers list={p.reviewers} />}
                           {cols.ci && <Checks c={p.checks} />}
                           {cols.cm && <Comments n={p.comments} />}
-                          <Age t={0} url={p.url} />
+                          <Age t={0} />
                           {cols.gd && <GuideMark p={p} />}
                         </a>
                       ))}
