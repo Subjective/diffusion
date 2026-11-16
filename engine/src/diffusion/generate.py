@@ -21,7 +21,6 @@ from .agent import (
     Decision,
     DoneEvent,
     Event,
-    Runner,
     TextEvent,
     ThinkingEvent,
     ToolEvent,
@@ -49,7 +48,8 @@ WRITES = re.compile(r"(^|\s)(--output|--ext-diff|--textconv|--exec|-o\b)")
 
 def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
     """What the generating agent may do beyond what the reviewer's own settings already allow."""
-    tmp = (tmp or Path(tempfile.gettempdir())).resolve()
+    # The temp directory: Python's, the agent's $TMPDIR, or /tmp (on macOS these differ).
+    tmps = {p.resolve() for p in ([tmp] if tmp else [Path(tempfile.gettempdir()), Path("/tmp")])}
     tree = worktree.resolve()
 
     async def approve(name: str, _summary: str, args: dict) -> Decision:
@@ -65,7 +65,7 @@ def generate_approver(worktree: Path, tmp: Path | None = None) -> Approver:
             if not p.is_absolute():
                 return "deny"
             p = p.resolve()
-            inside = (tmp == p.parent or tmp in p.parents) and not (tree == p or tree in p.parents)
+            inside = any(t in p.parents for t in tmps) and not (tree == p or tree in p.parents)
             return "allow" if inside else "deny"
         return "deny"
 
@@ -152,7 +152,3 @@ class Jobs:
         finally:
             del log[:-LOG_MAX]
         job["ended_at"] = time.time()
-
-
-def run_generate(runner: Runner, req: AgentRequest) -> Callable[[], AsyncIterator[Event]]:
-    return lambda: runner(req)

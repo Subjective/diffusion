@@ -266,16 +266,23 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     review_cache: dict[str, dict] = {}
     jobs = Jobs()
     tasks: dict[str, asyncio.Task] = {}
+    starting: set[str] = set()
 
     @app.post("/api/generate")
     async def generate(req: GenerateReq) -> dict:
         """Write a review of the PR with the reviewer's own agent, in the background. Its progress is
         ``GET /api/generate``; the guide shows up like any submitted one."""
         key = pr_key(req.url)
+        if key in starting:
+            return {"state": "running", "started_at": time.time()}
         if jobs.running(key):
             return jobs.get(key)
+        starting.add(key)  # a second click while the checkout is prepared doesn't start a second agent
+        try:
+            prep = await get_prepared(req.url)
+        finally:
+            starting.discard(key)
         # Claude Code (bundled with its SDK) runs the review skill, from the reviewer's installed plugin.
-        prep = await get_prepared(req.url)
         request = generate_request(req.url, prep.checkout.worktree, focus=req.focus)
         runner = d().runner_for("claude-code")
         task = asyncio.create_task(

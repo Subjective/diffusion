@@ -181,7 +181,6 @@ function ScopeChip() {
   );
 }
 
-/** Guides are written by the reviewer's coding agent; this page shows one as soon as it's submitted. */
 /** No review of this PR yet: write one here with your agent (or ask for one from a terminal). */
 export function NoGuide({ landing = false }: { landing?: boolean }) {
   const [copied, setCopied] = useState(false);

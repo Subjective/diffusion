@@ -85,3 +85,16 @@ def test_a_run_that_ends_without_submitting_a_review_failed():
 def test_the_prompt_carries_what_to_focus_on():
     assert generate_prompt("u", "  the  retry\nlogic ") == "/diffusion:review u the retry logic"
     assert generate_prompt("u") == "/diffusion:review u"
+
+
+def test_the_agent_may_write_to_any_of_the_temp_directories(tmp_path):
+    import tempfile
+
+    ok = generate_approver(tmp_path / "wt")
+
+    def say(path):
+        return asyncio.run(ok("Write", "", {"file_path": path}))
+
+    assert say("/tmp/guide.json") == "allow"
+    assert say(str(Path(tempfile.gettempdir()) / "guide.json")) == "allow"
+    assert say(str(Path.home() / "guide.json")) == "deny"
