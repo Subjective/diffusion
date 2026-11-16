@@ -20,6 +20,28 @@ def test_detect_harness():
     assert detect_harness({"CURSOR_AGENT": "1", "CODEX_THREAD_ID": "t"}) == "codex"
 
 
+def test_detect_harness_trusts_the_nearest_agent_when_more_than_one_has_left_its_variables():
+    # Codex run in a tmux whose server a Claude Code session started: the server keeps CLAUDECODE for every pane
+    both = {"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "c", "CODEX_THREAD_ID": "t"}
+    codex_tree = [
+        "/bin/zsh -c uvx --from diffusion-review diffusion submit g.json",
+        "/opt/homebrew/lib/node_modules/@openai/codex/vendor/aarch64-apple-darwin/codex/codex",
+        "node /opt/homebrew/bin/codex",
+        "-zsh",
+        "tmux new-session -s work",
+    ]
+    assert detect_harness(both, lambda: codex_tree) == "codex"
+    claude_tree = [
+        "/bin/zsh -c diffusion submit g.json",
+        "/Users/me/.local/share/claude/versions/2.1.3",
+        "-zsh",
+    ]
+    assert detect_harness(both, lambda: claude_tree) == "claude-code"
+    assert detect_harness(both, lambda: ["claude --resume x"]) == "claude-code"
+    # nothing to go by: the old order
+    assert detect_harness(both, lambda: []) == "claude-code"
+
+
 def test_harness_session():
     env = {"CLAUDE_CODE_SESSION_ID": "c1", "CODEX_THREAD_ID": "t1", "CURSOR_CONVERSATION_ID": "u1"}
     assert harness_session("claude-code", env) == "c1"
