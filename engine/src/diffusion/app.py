@@ -35,7 +35,7 @@ from .agent import (
 from .chat_agent import SHOW_REMINDER, ChatDelta, ChatFocus, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
 from .config import FORKABLE, Config, installed_harness, load_config
-from .generate import Jobs, generate_request
+from .generate import Jobs, generate_request, uv_dirs
 from .github import GitHubError, PRRef, fetch_inbox, fetch_review_state, write_review
 from .pipeline import Prepared, prepare, target_ref
 from .repo import RepoError
@@ -316,7 +316,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         cache = Path(d().cfg.cache_dir)
         request = generate_request(
             req.url, prep.checkout.worktree, focus=req.focus, mode=mode, approve=jobs.approver(key),
-            harness=req.harness, writable=[cache, cache.parent],  # Diffusion's cache, and uv's beside it
+            harness=req.harness, writable=[cache, *uv_dirs(dict(os.environ))],
         )  # fmt: skip
         request.modes = jobs.modes(key)
         runner = d().runner_for(req.harness)

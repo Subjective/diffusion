@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 
 from diffusion.agent import DoneEvent, TextEvent, ToolEvent
-from diffusion.generate import NOT_SUBMITTED, Jobs, generate_prompt, generate_request
+from diffusion.generate import NOT_SUBMITTED, Jobs, generate_prompt, generate_request, uv_dirs
 
 
 def test_the_request_runs_the_review_command_in_the_checkout_without_opening_a_browser():
@@ -53,3 +53,12 @@ def test_a_run_that_ends_without_submitting_a_review_failed():
 def test_the_prompt_carries_what_to_focus_on():
     assert generate_prompt("u", "  the  retry\nlogic ") == "/diffusion:review u the retry logic"
     assert generate_prompt("u") == "/diffusion:review u"
+
+
+def test_a_sandboxed_agent_may_write_where_uvx_does():
+    assert uv_dirs({"HOME": "/Users/me"}) == [
+        Path("/Users/me/.cache/uv"),
+        Path("/Users/me/.local/share/uv/tools"),
+        Path("/Users/me/.local/share/uv"),
+    ]
+    assert uv_dirs({"HOME": "/h", "UV_CACHE_DIR": "/c", "UV_TOOL_DIR": "/t"})[:2] == [Path("/c"), Path("/t")]

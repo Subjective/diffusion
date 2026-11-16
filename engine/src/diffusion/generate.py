@@ -34,6 +34,14 @@ NOT_SUBMITTED = "It finished without submitting a review."
 LOG_MAX = 400  # steps kept for the chat to show while it runs
 
 
+def uv_dirs(environ: dict[str, str]) -> list[Path]:
+    """Where ``uvx`` writes when the skill submits: its cache and its tools folder (as uv finds them)."""
+    home = Path(environ.get("HOME") or Path.home())
+    cache = environ.get("UV_CACHE_DIR") or Path(environ.get("XDG_CACHE_HOME") or home / ".cache") / "uv"
+    data = Path(environ.get("XDG_DATA_HOME") or home / ".local" / "share") / "uv"
+    return [Path(cache), Path(environ.get("UV_TOOL_DIR") or data / "tools"), data]
+
+
 def generate_prompt(url: str, focus: str = "", harness: str = "claude-code") -> str:
     """What the reviewer would type: the command, the PR, and what to focus on, if anything."""
     return f"{COMMANDS[harness]} {url} {' '.join(focus.split())}".strip()
