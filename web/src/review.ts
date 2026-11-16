@@ -2,7 +2,20 @@
 import { create } from "zustand";
 import { fetchInbox, fetchReview, type ReviewAct, reviewAction } from "./api";
 import { storage } from "./lib/storage";
-import type { Inbox, InboxPR, ReviewState } from "./types";
+import type { FileDiff, Inbox, InboxPR, ReviewState } from "./types";
+
+/** Whether GitHub takes a comment on these lines: they must all be in one hunk of the PR's diff, on that side.
+ *  Files the PR doesn't change, and lines outside its hunks (expanded context), can't be commented on. */
+export function commentable(files: FileDiff[], path: string, side: "old" | "new", start: number, end: number) {
+  const f = files.find((x) => x.path === path);
+  return !!f?.hunks.some((h) => {
+    const ns = h.lines.flatMap((l) => {
+      const n = side === "new" ? (l.type === "del" ? null : l.new) : l.type === "add" ? null : l.old;
+      return n == null ? [] : [n];
+    });
+    return ns.includes(start) && ns.includes(end);
+  });
+}
 
 /** A comment written for your next review, kept here until it's submitted. */
 export interface PendingComment {

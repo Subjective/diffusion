@@ -56,7 +56,7 @@ import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
 import { cachedTree } from "../lib/tree";
 import { complete, rankCommands, rankFiles, type Trigger, trigger } from "../lib/typeahead";
-import { useReview } from "../review";
+import { commentable, useReview } from "../review";
 import { useApp } from "../store";
 import type { StepKind } from "../types";
 import { useUI } from "../ui";
@@ -566,7 +566,9 @@ function AnswerActions({ q }: { q: Question }) {
     setTimeout(() => setDone(null), 1200);
   };
   const a = q.anchor;
-  const onLines = !!a?.file && a.start > 0;
+  const files = useApp((s) => s.files);
+  // On lines GitHub takes comments on; anything else goes in the review's summary.
+  const onLines = !!a?.file && a.start > 0 && commentable(files, a.file, a.side, a.start, a.end);
   const toReview = () => {
     const r = useReview.getState();
     const body = q.answer.trim();

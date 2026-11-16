@@ -5,6 +5,7 @@ import { useChat } from "../chat";
 import { autosize } from "../lib/autosize";
 import { rangeText } from "../lib/selection";
 import { storage } from "../lib/storage";
+import { commentable } from "../review";
 import { useApp } from "../store";
 import { GithubIcon, HarnessMark, ic } from "./icons";
 
@@ -70,7 +71,9 @@ export function AskPopup({
   const a = state.anchor;
   const editing = state.edit;
   // Comments go on lines of the diff; asking about a guide comment or editing a note stays with the agent.
-  const canComment = !!github && !editing && !a.comment;
+  // GitHub only takes comments on lines of the PR's diff.
+  const canComment =
+    !!github && !editing && !a.comment && commentable(useApp.getState().files, a.file, a.side, a.start, a.end);
   const gh = canComment && mode === "github";
   const submit = (stage: boolean) => {
     if (editing) {
