@@ -229,8 +229,8 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
     [onDiff, idx, hiddenFiles, hideComments],
   );
   const fileThreads = useMemo(
-    () => (hideComments ? [] : threads.filter((t) => !hiddenFiles.includes(t.path))),
-    [threads, hiddenFiles, hideComments],
+    () => (hideComments ? [] : onDiff.filter((t) => !hiddenFiles.includes(t.path))),
+    [onDiff, hiddenFiles, hideComments],
   );
   const after = useMemo(() => {
     const own = hideComments ? undefined : commentRows(guide?.comments ?? [], idx, resolved, onAskComment);
