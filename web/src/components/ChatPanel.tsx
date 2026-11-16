@@ -111,7 +111,8 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
   const genUrl = useApp((s) => (s.pr && !s.pr.local && !s.guide ? s.pr.url : null));
   const gen = useGenerate((s) => (genUrl ? s.jobs[genUrl] : undefined));
   const generating = gen?.state === "running" || gen?.state === "failed" ? gen : null;
-  // The conversation the session had in the terminal before this chat: folded to one line until opened.
+  // The conversation the session had before this chat (in the terminal, or writing the review): folded to one line
+  // until opened.
   let earlier = turns.findIndex((qs) => !qs.every((q) => q.fromSession));
   if (earlier < 0) earlier = turns.length;
   const [showEarlier, setShowEarlier] = useState(false);
@@ -191,9 +192,9 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
                   aria-expanded={showEarlier}
                   onClick={() => setShowEarlier(!showEarlier)}
                 >
-                  {ic(SquareTerminal, 14)}
+                  {ic(History, 14)}
                   <span>
-                    {earlier} {earlier === 1 ? "turn" : "turns"} in the terminal
+                    {earlier} earlier {earlier === 1 ? "turn" : "turns"}
                   </span>
                   <span className="grow" />
                   {ic(ChevronDown, 14)}
@@ -1363,7 +1364,14 @@ function Composer({ link }: { link: ChatLinkProps }) {
               {ic(Square, 12)}
             </button>
           ) : (
-            <button type="button" id="chatSend" className="icon-btn solid" title="Send" onClick={send}>
+            <button
+              type="button"
+              id="chatSend"
+              className="icon-btn solid"
+              title="Send"
+              disabled={!text.trim() && !staged.length}
+              onClick={send}
+            >
               {ic(ArrowUp, 16)}
             </button>
           )}

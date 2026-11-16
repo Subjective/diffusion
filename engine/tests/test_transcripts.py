@@ -83,6 +83,42 @@ def test_reads_a_codex_session_as_turns(tmp_path):
     assert t["trace"] == [{"think": "**Reading**"}, {"tool": "Ran rg foo", "id": "c1"}]
 
 
+def test_reads_newer_codex_exec_scripts_and_skill_runs(tmp_path):
+    def item(payload):
+        return {"type": "response_item", "payload": payload}
+
+    def say(role, text, **kw):
+        return item(
+            {"type": "message", "role": role, "content": [{"type": "input_text", "text": text}], **kw}
+        )
+
+    p = tmp_path / "rollout-2026-11-15T23-42-18-th_7.jsonl"
+    write(p, [
+        say("user", "# AGENTS.md instructions for /repo"),
+        say("user", "$diffusion:review https://github.com/o/r/pull/1"),
+        say("user", "<skill>\n<name>diffusion:review</name>\nWrite a guide.\n</skill>"),
+        say("assistant", "Reading the skill.", phase="commentary"),
+        item({"type": "custom_tool_call", "name": "exec", "call_id": "x1",
+              "input": 'text(await tools.exec_command({cmd:"cat SKILL.md; ls \\"a b\\""}));'}),
+        item({"type": "custom_tool_call", "name": "exec", "call_id": "x2",
+              "input": 'for (const cmd of ["gh pr view 1", \'cat PORTING.md\']) text(await tools.exec_command({cmd}));'}),
+        item({"type": "custom_tool_call", "name": "exec", "call_id": "x3",
+              "input": "text(await tools.write_stdin({session_id:1,chars:''}));"}),
+        item({"type": "custom_tool_call", "name": "exec", "call_id": "x4", "input": "const n = 1 + 1;"}),
+        say("assistant", "[Open the review](http://x)\n\n<oai-mem-citation>\nMEMORY.md:1\n</oai-mem-citation>",
+            phase="final_answer"),
+    ])  # fmt: skip
+    (t,) = read_codex(p)
+    assert t["questions"][0]["text"] == "$diffusion:review https://github.com/o/r/pull/1"
+    assert t["answers"]["0"] == "Reading the skill.\n\n[Open the review](http://x)"
+    assert [x["tool"] for x in t["trace"]] == [
+        'Ran cat SKILL.md; ls "a b"',
+        "Ran gh pr view 1",
+        "Ran cat PORTING.md",
+        "Ran a script",
+    ]
+
+
 def test_codex_messages_carry_their_turn_id_to_revert_to(tmp_path):
     def item(text):
         return {
