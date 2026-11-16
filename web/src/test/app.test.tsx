@@ -149,6 +149,21 @@ test("home lists past reviews, filters them, opens one, and the brand goes back"
   expect(location.search).toBe("");
 });
 
+test("home's agent button picks the agent that writes reviews from here", async () => {
+  useApp.setState({ url: "", pr: null });
+  const { useGenerate } = await import("../review");
+  useGenerate.setState({ harness: "claude-code" });
+  render(<App />);
+  await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
+  fireEvent.click(screen.getByRole("button", { name: "Agent" }));
+  const items = () => [...document.querySelectorAll(".agent-menu [role=menuitemradio]")];
+  await waitFor(() => expect(items().map((i) => i.textContent)).toEqual(["Claude Code", "Codex"]));
+  fireEvent.click(items()[1]);
+  expect(useGenerate.getState().harness).toBe("codex");
+  expect(document.querySelector(".agent-menu .gen-menu")).toBeNull();
+  useGenerate.getState().pick("claude-code");
+});
+
 test("home's pull requests: grouped like GitHub, stacks as one row, remembered, and a row opens the review", async () => {
   useApp.setState({ url: "", pr: null });
   render(<App />);

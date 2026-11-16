@@ -24,7 +24,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "../chat";
 import { ago } from "../lib/time";
 import { usePopover } from "../lib/usePopover";
-import { inboxStack, useInbox, useReview, type Verdict } from "../review";
+import { inboxStack, useGenerate, useInbox, useReview, type Verdict } from "../review";
 import { useApp } from "../store";
 import type { Check as CheckRun, InboxPR, PRMeta } from "../types";
 import { useUI } from "../ui";
@@ -57,16 +57,63 @@ export function TopBar() {
         <button type="button" className="icon-btn" title="Theme" onClick={toggleTheme}>
           {ic(theme === "dark" ? Sun : Moon, 17)}
         </button>
-        <button
-          type="button"
-          className={`icon-btn${chatOpen ? " on" : ""}`}
-          title={harnessName(harness)}
-          onClick={() => toggleChat()}
-        >
-          <HarnessMark harness={harness} size={16} />
-        </button>
+        {url ? (
+          <button
+            type="button"
+            className={`icon-btn${chatOpen ? " on" : ""}`}
+            title={harnessName(harness)}
+            onClick={() => toggleChat()}
+          >
+            <HarnessMark harness={harness} size={16} />
+          </button>
+        ) : (
+          <AgentMenu />
+        )}
       </div>
     </header>
+  );
+}
+
+/** On home, where there's no chat to open: the agent that writes reviews from here (the inbox's Write a review, and
+ *  the review page's card, start on it). */
+function AgentMenu() {
+  const [open, setOpen, ref] = usePopover();
+  const { harness, harnesses, pick, loadHarnesses } = useGenerate();
+  useEffect(() => void loadHarnesses(), [loadHarnesses]);
+  return (
+    <div className="pop-anchor agent-menu" ref={ref}>
+      <button
+        type="button"
+        className={`icon-btn${open ? " on" : ""}`}
+        data-tip="Agent"
+        aria-label="Agent"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <HarnessMark harness={harness} size={16} />
+      </button>
+      {open && (
+        <div className="gen-menu" role="menu">
+          {harnesses.map((h) => (
+            <button
+              key={h}
+              type="button"
+              role="menuitemradio"
+              aria-checked={h === harness}
+              onClick={() => {
+                pick(h);
+                setOpen(false);
+              }}
+            >
+              <HarnessMark harness={h} size={14} />
+              <span className="grow">{harnessName(h)}</span>
+              {h === harness && ic(Check, 14)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
