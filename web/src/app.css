@@ -2152,19 +2152,238 @@ tr.th-row > td {
   font: 13.5px / 1.5 var(--sans);
 }
 
-/* Editing your comments, review summaries, and the title and description of your PR */
-.conv-desc {
-  position: relative;
+/* Writing a review from the review page: what to focus on, which agent, and the run */
+.gen-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 12px 12px 10px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface);
 }
-.conv-desc > .conv-acts {
+.gen-card textarea {
+  width: 100%;
+  min-height: 24px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: 14px / 1.5 var(--sans);
+}
+.gen-card textarea::placeholder {
+  color: var(--subtle);
+}
+.gen-f {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.gen-h {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin-left: -6px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  font: 500 13px var(--sans);
+}
+.gen-h:hover,
+.gen-h.on {
+  background: var(--hover);
+  color: var(--text);
+}
+.gen-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px 0 12px;
+  border-radius: 999px;
+  background: var(--solid);
+  color: var(--solid-fg);
+  font: 500 13.5px var(--sans);
+}
+.gen-go:hover {
+  opacity: 0.88;
+}
+.gen-menu {
   position: absolute;
-  top: -4px;
-  right: 0;
+  top: calc(100% + 4px);
+  left: -6px;
+  z-index: 30;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.gen-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--text);
+  font: 13px var(--sans);
+  text-align: left;
+}
+.gen-menu button:hover {
+  background: var(--hover);
+}
+.gen-menu .gen-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.gen-card.writing {
+  gap: 12px;
+  padding: 12px 12px 14px 16px;
+}
+.gen-w {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 500 14px var(--sans);
+}
+.gen-w .spin {
+  color: var(--muted);
+}
+.gen-clock {
+  color: var(--subtle);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+/* No real progress to show: a bar that keeps moving while it runs. */
+.gen-bar {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--chip);
+}
+.gen-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  border-radius: 2px;
+  background: var(--muted);
+  animation: gen-bar 1.8s ease-in-out infinite;
+}
+@keyframes gen-bar {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+/* The mark spins; its tooltip stays put, ending at the mark and cut short if the step is long. */
+.ib-r .gen.run {
+  display: inline-grid;
+}
+.ib-r .gen.run > * {
+  animation: spin 2.4s linear infinite;
+}
+.ib-r .gen.run::after {
+  left: auto;
+  right: -6px;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateY(2px);
+}
+.ib-r .gen.run:hover::after {
+  transform: none;
+}
+.write-err {
+  color: var(--del-fg);
+  font-size: 12.5px;
+}
+.ib-r .gd .gen {
+  color: var(--muted);
+}
+.ib-r .gd button.gen {
+  visibility: hidden;
+  /* its mark lines up with the book and the running mark, which sit at the column's right edge */
+  margin: -6px -5.5px -6px 0;
+}
+.ib-r:hover .gd button.gen,
+.ib-r .gd button.gen.failed {
+  visibility: visible;
+}
+.ib-r .gd button.gen.failed {
+  color: var(--del-fg);
+}
+
+/* Editing your comments, review summaries, and the title and description of your PR */
+.pr-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.pr-title > h1 {
+  flex: 1;
+  min-width: 0;
+}
+.pr-acts {
+  display: inline-flex;
+  flex: none;
+  margin-top: -2px;
   opacity: 0;
 }
-.conv-desc:hover > .conv-acts,
-.conv-desc > .conv-acts:focus-within {
+.conv:has(> .pr:hover, > .conv-desc:hover) .pr-acts,
+.pr-acts:focus-within {
   opacity: 1;
+}
+/* Editing in place: the same text where it was, in a light box; the box's padding and border sit in the margin */
+:is(.draft-title, .draft-body) {
+  display: block;
+  resize: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  outline: 0;
+  background: var(--surface);
+  color: var(--text);
+}
+:is(.draft-title, .draft-body):focus {
+  border-color: var(--subtle);
+}
+.draft-title {
+  flex: 1;
+  min-width: 0;
+  margin: -3px 0 5px;
+  padding: 2px 3px;
+  font: 600 17px / 1.35 var(--sans);
+  letter-spacing: -0.01em;
+}
+.draft-body {
+  width: calc(100% + 8px);
+  margin: -4px -4px 0;
+  padding: 3px;
+  font: inherit;
+}
+.conv-desc.editing .conv-edit-f {
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+/* right-aligned, so the pane's edge doesn't cut the tip off */
+.pr-acts [data-tip]::after {
+  left: auto;
+  right: 0;
+  transform: translateY(2px);
+}
+.pr-acts [data-tip]:hover::after {
+  transform: none;
 }
 .conv-c .h .conv-acts {
   display: inline-flex;
@@ -2186,16 +2405,6 @@ tr.th-row > td {
 }
 .conv-edit textarea {
   min-height: 60px;
-}
-.conv-title-in {
-  width: 100%;
-  padding: 2px 0 8px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  outline: 0;
-  background: none;
-  color: var(--text);
-  font: 600 15px / 1.4 var(--sans);
 }
 .conv-edit-f {
   display: flex;
@@ -2220,9 +2429,25 @@ a.conv-link:hover {
   text-decoration: underline;
 }
 
-/* Under a chat answer: copy, and draft it into your GitHub review */
+/* Under a chat answer: copy */
 .ans-acts {
   display: flex;
   gap: 2px;
   margin: 6px 0 0 -6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+/* Shown with the answer under the pointer (or a key, or a "done" check), as in Codex and Cursor */
+.ans:hover .ans-acts,
+.ans-acts:focus-within,
+.ans-acts.done {
+  opacity: 1;
+}
+/* At the panel's left edge: tips open rightward from the button, not centered on it */
+.ans-acts [data-tip]::after {
+  left: 0;
+  transform: translateY(2px);
+}
+.ans-acts [data-tip]:hover::after {
+  transform: none;
 }

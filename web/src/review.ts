@@ -1,8 +1,19 @@
 // GitHub's side of the open PR (review threads, reviewers, checks), and how its threads are shown.
 import { create } from "zustand";
-import { fetchInbox, fetchReview, type ReviewAct, reviewAction } from "./api";
+import {
+  answerGenerate,
+  fetchGenerate,
+  fetchGenerateHarnesses,
+  fetchInbox,
+  fetchReview,
+  type ReviewAct,
+  reviewAction,
+  startGenerate,
+  stopGenerate,
+  switchGenerateMode,
+} from "./api";
 import { storage } from "./lib/storage";
-import type { FileDiff, Inbox, InboxPR, ReviewState } from "./types";
+import type { FileDiff, GenerateJob, Inbox, InboxPR, ReviewState } from "./types";
 
 /** Whether GitHub takes a comment on these lines: they must all be in one hunk of the PR's diff, on that side.
  *  Files the PR doesn't change, and lines outside its hunks (expanded context), can't be commented on. */
@@ -156,6 +167,9 @@ interface InboxStore {
   /** The last inbox fetched, kept so going home or opening the switcher shows it at once. */
   inbox: Inbox | null;
   load(refresh?: boolean): Promise<void>;
+  /** Write a review of a PR from here; the inbox shows its progress until it's saved. */
+  /** ``mode``: the chat's permission mode, for the run to start in. */
+  generate(url: string, mode?: string): Promise<void>;
 }
 
 export const useInbox = create<InboxStore>((set, get) => ({
@@ -167,7 +181,99 @@ export const useInbox = create<InboxStore>((set, get) => ({
       set({ inbox: get().inbox ?? { login: "", prs: [], error: String((e as Error).message ?? e) } });
     }
   },
+  async generate(url, mode) {
+    const mark = (generating: InboxPR["generating"]) => {
+      const inbox = get().inbox;
+      if (inbox) set({ inbox: { ...inbox, prs: inbox.prs.map((p) => (p.url === url ? { ...p, generating } : p)) } });
+    };
+    mark({ state: "running" });
+    try {
+      mark(await startGenerate(url, "", mode, useGenerate.getState().harness));
+    } catch (e) {
+      mark({ state: "failed", error: String((e as Error).message ?? e) });
+    }
+  },
 }));
+
+/** Reviews being written from the review page, by PR URL: shared by its card and the chat, which shows the run. */
+interface GenerateStore {
+  jobs: Record<string, GenerateJob>;
+  /** The agents that can write a review here, and the one picked (remembered). */
+  harnesses: string[];
+  harness: string;
+  loadHarnesses(): Promise<void>;
+  pick(harness: string): void;
+  load(url: string): Promise<void>;
+  /** ``mode``: the chat's permission mode, which the run (the guide chat's session to be) starts in. */
+  start(url: string, focus: string, mode?: string): Promise<void>;
+  answer(url: string, id: string, decision: string): Promise<void>;
+  /** Switch the running review's session to ``mode``; what it now allows that's waiting goes ahead. */
+  switchMode(url: string, mode: string): Promise<void>;
+  stop(url: string): Promise<void>;
+}
+
+export const useGenerate = create<GenerateStore>((set, get) => {
+  const put = (url: string, job: GenerateJob) => set({ jobs: { ...get().jobs, [url]: job } });
+  const fail = (url: string, e: unknown) => put(url, { state: "failed", error: String((e as Error).message ?? e) });
+  return {
+    jobs: {},
+    harnesses: ["claude-code"],
+    harness: storage.get("rv-gen-harness", "claude-code"),
+    async loadHarnesses() {
+      try {
+        const harnesses = await fetchGenerateHarnesses();
+        set({ harnesses, harness: harnesses.includes(get().harness) ? get().harness : harnesses[0] });
+      } catch {
+        // keep Claude Code
+      }
+    },
+    pick(harness) {
+      storage.set("rv-gen-harness", harness);
+      set({ harness });
+    },
+    async load(url) {
+      try {
+        put(url, await fetchGenerate(url));
+      } catch {
+        // the server may be restarting; the next poll tries again
+      }
+    },
+    async start(url, focus, mode) {
+      const { harness } = get();
+      put(url, { state: "running", started_at: Date.now() / 1000, log: [], text: "", harness });
+      try {
+        put(url, await startGenerate(url, focus, mode, harness));
+      } catch (e) {
+        fail(url, e);
+      }
+    },
+    async answer(url, id, decision) {
+      const job = get().jobs[url];
+      if (job) put(url, { ...job, asks: job.asks?.filter((a) => a.id !== id) });
+      try {
+        await answerGenerate(id, decision);
+      } catch {
+        // the run ends on its own if it can't hear back
+      }
+    },
+    async switchMode(url, mode) {
+      try {
+        const answered = new Set(await switchGenerateMode(url, mode));
+        const job = get().jobs[url];
+        if (job && answered.size) put(url, { ...job, asks: job.asks?.filter((a) => !answered.has(a.id)) });
+      } catch {
+        // the next poll shows where it stands
+      }
+    },
+    async stop(url) {
+      try {
+        put(url, await stopGenerate(url));
+      } catch (e) {
+        fail(url, e);
+      }
+    },
+  };
+});
 
 /** The inbox PR for owner/repo#number, and the stack it's in (top layer first), if any. */
 export function inboxStack(prs: InboxPR[], owner: string, repo: string, number: number) {

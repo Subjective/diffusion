@@ -1900,7 +1900,7 @@ tr.qd.sel td.mark {
   transition: background 0.12s;
 }
 .resizer:hover::after,
-body.resizing .resizer::after {
+.resizer.active::after {
   background: var(--hl-bar);
 }
 /* biome-ignore-start lint/complexity/noImportantStyles: while resizing, the cursor must override every element's own. */

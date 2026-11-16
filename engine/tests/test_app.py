@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from diffusion.agent import DoneEvent, ToolEvent
+from diffusion.agent import DoneEvent, TextEvent, ToolEvent
 from diffusion.app import Deps, create_app
 from diffusion.config import Config
 from diffusion.github import GitHubError, PRMeta, PRRef
@@ -586,7 +586,53 @@ async def test_guide_chat_asks_the_reviewer_before_tools_its_settings_dont_allow
     ).status_code == 404
 
 
-async def test_forks_stay_read_only_whatever_mode_is_asked(setup):
+async def test_switching_mode_mid_turn_reaches_the_session_and_lets_waiting_asks_through(setup):
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep), harness="claude-code", session="s1")
+
+    got = []
+
+    async def runner(req):
+        said = await req.approve("Bash", "Ran npm test", {"command": "npm test"})
+        got.append((said, req.modes.get_nowait()))
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "s1")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL, "kind": "guide"})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "test it"}], "mode": "default"}
+    waiting = client._transport.app.state.approvals
+
+    async def reviewer():
+        while not waiting:
+            await asyncio.sleep(0.01)
+        (aid,) = list(waiting)
+        # Accept edits doesn't cover a command; Auto does
+        r = await client.post(f"/api/chats/{cid}/mode", json={"mode": "acceptEdits"})
+        assert r.json() == {"ok": True, "answered": []}
+        r = await client.post(f"/api/chats/{cid}/mode", json={"mode": "auto"})
+        assert r.json() == {"ok": True, "answered": [aid]}
+
+    await asyncio.wait_for(
+        asyncio.gather(client.post(f"/api/chats/{cid}/turn", json=body), reviewer()), timeout=10
+    )
+    assert got == [("allow", "acceptEdits")]
+    assert (await client.post(f"/api/chats/{cid}/mode", json={"mode": "auto"})).json()["ok"] is False
+
+
+def test_each_agent_runs_in_its_own_modes():
+    from diffusion.agent import mode_for
+
+    assert mode_for("claude-code", "plan") == "plan"
+    assert mode_for("claude-code", "full-access") == "default"  # not one of Claude Code's
+    assert mode_for("codex", "full-access") == "full-access"
+    assert mode_for("codex", "default") == "auto"  # Codex's default
+    assert mode_for("cursor", "auto") == "read-only"
+
+
+async def test_forks_run_in_the_mode_asked(setup):
     client, runners, deps, prep = setup
     from diffusion.agent import TextEvent
 
@@ -601,7 +647,7 @@ async def test_forks_stay_read_only_whatever_mode_is_asked(setup):
     cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
     body = {"url": URL, "questions": [{"n": 1, "text": "x"}], "mode": "auto"}
     await client.post(f"/api/chats/{cid}/turn", json=body)
-    assert seen == [("read-only", False)]
+    assert seen == [("auto", True)]
 
 
 async def test_stop_ends_a_running_turn_and_closes_the_agent(setup):
@@ -848,3 +894,112 @@ async def test_review_actions_go_to_github_and_return_fresh_state(setup):
         "/api/review", json={"url": "local:/tmp/x#main..dev", "action": {"kind": "resolve"}}
     )
     assert r.status_code == 400
+
+
+async def test_generate_runs_the_review_command_in_the_background_and_reports_progress(setup):
+    client, runners, deps, prep = setup
+    seen, release = [], asyncio.Event()
+
+    async def agent(req):
+        seen.append((req.prompt, req.cwd))
+        yield ToolEvent("Read", "Read a.ts")
+        await release.wait()
+        yield DoneEvent(turns=2, cost_usd=None, is_error=False, session_id="s1")
+
+    runners["chat"] = agent
+    deps.inbox = lambda: {"login": "jy", "prs": [{"url": URL, "title": "T"}]}
+    job = (await client.post("/api/generate", json={"url": URL})).json()
+    assert job["state"] == "running"
+    await asyncio.sleep(0)
+    assert seen == [(f"/diffusion:review {URL}", prep.checkout.worktree)]
+    # asking again while it runs doesn't start another
+    assert (await client.post("/api/generate", json={"url": URL})).json()["state"] == "running"
+    now = (await client.get("/api/generate", params={"url": URL})).json()
+    assert now["doing"] == "Read a.ts"
+    assert (await client.get("/api/inbox")).json()["prs"][0]["generating"]["state"] == "running"
+    deps.store.saved_at = lambda key: 9e12  # the agent submitted its review
+    release.set()
+    for _ in range(20):
+        await asyncio.sleep(0)
+    assert (await client.get("/api/generate", params={"url": URL})).json()["state"] == "done"
+    assert len(seen) == 1
+
+
+async def test_a_review_being_written_asks_in_the_mode_picked(setup):
+    client, runners, deps, _ = setup
+    said = []
+
+    async def agent(req):
+        said.append((req.mode, await req.approve("Bash", "Run npm test", {"command": "npm test"})))
+        yield DoneEvent(turns=1, cost_usd=None, is_error=False, session_id="s1")
+
+    runners["chat"] = agent
+    deps.store.saved_at = lambda key: 9e12
+    await client.post("/api/generate", json={"url": URL, "mode": "acceptEdits"})
+    for _ in range(5):
+        await asyncio.sleep(0)
+    asks = (await client.get("/api/generate", params={"url": URL})).json()["asks"]
+    assert [(a["tool"], a["summary"]) for a in asks] == [("Bash", "Run npm test")]
+    r = await client.post("/api/generate/mode", json={"url": URL, "mode": "auto"})
+    assert r.json() == {"answered": [asks[0]["id"]]}
+    for _ in range(20):
+        await asyncio.sleep(0)
+    job = (await client.get("/api/generate", params={"url": URL})).json()
+    assert said == [("acceptEdits", "allow")] and job["state"] == "done" and job["asks"] == []
+    r = await client.post("/api/generate/approve", json={"id": asks[0]["id"], "decision": "allow"})
+    assert r.status_code == 404
+
+
+async def test_codex_can_write_the_review(setup):
+    client, runners, deps, _ = setup
+    seen = []
+
+    async def agent(req):
+        seen.append(req.prompt)
+        yield DoneEvent(turns=1, cost_usd=None, is_error=False, session_id="th_1")
+
+    runners["chat"] = agent
+    deps.store.saved_at = lambda key: 9e12
+    job = (await client.post("/api/generate", json={"url": URL, "harness": "codex"})).json()
+    assert job["harness"] == "codex"
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert seen == [f"$diffusion:review {URL}"]
+    assert (await client.get("/api/generate/harnesses")).json()["harnesses"][0] == "claude-code"
+
+
+async def test_a_run_that_submits_nothing_shows_as_failed(setup):
+    client, runners, _, _ = setup
+
+    async def agent(req):
+        yield TextEvent("I couldn't read the diff.")
+        yield DoneEvent(turns=2, cost_usd=None, is_error=False, session_id="s1")
+
+    runners["chat"] = agent
+    await client.post("/api/generate", json={"url": URL})
+    for _ in range(20):
+        await asyncio.sleep(0)
+    job = (await client.get("/api/generate", params={"url": URL})).json()
+    assert job["state"] == "failed" and job["error"] == "It finished without submitting a review."
+    assert job["text"] == "I couldn't read the diff."
+
+
+async def test_a_review_being_written_can_be_stopped(setup):
+    client, runners, deps, _ = setup
+    seen = []
+
+    async def agent(req):
+        seen.append(req.prompt)
+        yield TextEvent("Looking at the diff")
+        await asyncio.Event().wait()  # runs until stopped
+        yield DoneEvent(turns=1, cost_usd=None, is_error=False, session_id="s1")
+
+    runners["chat"] = agent
+    job = (await client.post("/api/generate", json={"url": URL, "focus": "the retry loop"})).json()
+    assert job["state"] == "running"
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert seen == [f"/diffusion:review {URL} the retry loop"]
+    assert (await client.get("/api/generate", params={"url": URL})).json()["text"] == "Looking at the diff"
+    stopped = (await client.post("/api/generate/stop", json={"url": URL})).json()
+    assert stopped["state"] == "stopped"

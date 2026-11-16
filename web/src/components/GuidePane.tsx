@@ -14,7 +14,7 @@ import {
   MessageCircle,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { layoutView } from "../lib/layout";
 import { readingOrder, refsOf, refsTarget, useHunkIndex, useStepLinking } from "../lib/linking";
 import { Inline } from "../lib/md";
@@ -25,6 +25,7 @@ import { useApp } from "../store";
 import type { Ref, Step } from "../types";
 import { useUI } from "../ui";
 import { ConversationPane } from "./Conversation";
+import { GenerateCard } from "./Generate";
 import { ic, SKIP_ICON, STEP_ICON } from "./icons";
 import { MapCanvas } from "./MapCanvas";
 
@@ -83,7 +84,7 @@ function GuideBody({ onAskStep }: GuidePaneProps) {
       ) : (
         <>
           <Header />
-          <NoGuide />
+          {pr.local ? <NoGuide /> : <GenerateCard url={pr.url} />}
         </>
       )}
     </aside>
@@ -133,11 +134,15 @@ function MiniMap() {
 }
 
 /** Things a reviewer should know that the diff doesn't show. Risks first; items with refs link to code. */
-export function Header() {
+/** The PR's title and stats. ``title``: in place of the title (an editor); ``actions``: buttons beside the title. */
+export function Header({ actions, title }: { actions?: ReactNode; title?: ReactNode } = {}) {
   const pr = useApp((s) => s.pr)!;
   return (
     <div className="pr">
-      <h1>{pr.title}</h1>
+      <div className="pr-title">
+        {title || <h1>{pr.title}</h1>}
+        {actions && <span className="pr-acts">{actions}</span>}
+      </div>
       <div className="meta">
         {/* The branch (or repo) gives way first, so the stats always fit on one line. */}
         {pr.local ? (
@@ -180,7 +185,7 @@ function ScopeChip() {
   );
 }
 
-/** Guides are written by the reviewer's coding agent; this page shows one as soon as it's submitted. */
+/** No review of this PR yet: write one here with your agent (or ask for one from a terminal). */
 export function NoGuide({ landing = false }: { landing?: boolean }) {
   const [copied, setCopied] = useState(false);
   const cmd = "/diffusion:review";

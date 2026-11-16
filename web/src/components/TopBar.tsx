@@ -28,6 +28,7 @@ import { inboxStack, useInbox, useReview, type Verdict } from "../review";
 import { useApp } from "../store";
 import type { Check as CheckRun, InboxPR, PRMeta } from "../types";
 import { useUI } from "../ui";
+import { useGeneratingHarness } from "./Generate";
 import { Reviewers } from "./Inbox";
 import { GithubIcon, HarnessMark, harnessName, ic, Logo } from "./icons";
 
@@ -35,7 +36,8 @@ export function TopBar() {
   const { theme, toggleTheme, chatOpen, toggleChat, url, home } = useApp();
   const chatHarness = useChat((s) => s.chat.harness);
   const guideHarness = useApp((s) => s.guide?.meta?.harness);
-  const harness = chatHarness ?? guideHarness ?? null;
+  const genHarness = useGeneratingHarness();
+  const harness = chatHarness ?? guideHarness ?? genHarness;
   return (
     <header className="top">
       {url ? (

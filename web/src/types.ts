@@ -256,6 +256,25 @@ export interface InboxPR {
   stack?: { id: string; index: number; size: number };
   /** Guide versions saved for it. */
   guides: number;
+  /** A review Diffusion is writing (or wrote, or failed to) for it from here. */
+  generating?: GenerateJob;
+}
+
+export interface GenerateJob {
+  state: "none" | "running" | "done" | "failed" | "stopped";
+  /** What the agent is doing now. */
+  doing?: string;
+  error?: string | null;
+  /** When it started (epoch seconds), and what it was asked. */
+  started_at?: number;
+  prompt?: string;
+  /** Its steps so far (tool calls, reasoning) and what it has said. */
+  log?: ({ tool: string } | { think: string })[];
+  text?: string;
+  /** The agent writing it. */
+  harness?: string;
+  /** Tool calls waiting on the reviewer, as in a chat turn. */
+  asks?: { id: string; tool: string; summary: string; input: Record<string, unknown> }[];
 }
 
 export interface Inbox {

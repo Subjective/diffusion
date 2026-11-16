@@ -1,5 +1,5 @@
 import { errorText } from "./lib/sse";
-import type { Guide, GuideVersion, Inbox, PRPayload, ReviewState, Target } from "./types";
+import type { GenerateJob, Guide, GuideVersion, Inbox, PRPayload, ReviewState, Target } from "./types";
 
 /** The diff and a guide: version `v`, or the latest. */
 export async function fetchPR(url: string, v?: number | null): Promise<PRPayload> {
@@ -123,6 +123,66 @@ export async function reviewAction(url: string, action: ReviewAct): Promise<Revi
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url, action }),
   });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+/** Start writing a review of the PR with the reviewer's agent, in the background. */
+export async function startGenerate(
+  url: string,
+  focus = "",
+  mode = "default",
+  harness = "claude-code",
+): Promise<GenerateJob> {
+  const res = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, focus, mode, harness }),
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+/** The agents that can write a review from here. */
+export async function fetchGenerateHarnesses(): Promise<string[]> {
+  const res = await fetch("/api/generate/harnesses");
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()).harnesses;
+}
+
+/** Switch the review being written to another mode; returns the waiting asks that went ahead. */
+export async function switchGenerateMode(url: string, mode: string): Promise<string[]> {
+  const res = await fetch("/api/generate/mode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, mode }),
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()).answered ?? [];
+}
+
+/** Answer a tool call the review being written is waiting on. */
+export async function answerGenerate(id: string, decision: string): Promise<void> {
+  await fetch("/api/generate/approve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, decision }),
+  });
+}
+
+/** Stop it: the agent stops and nothing is saved. */
+export async function stopGenerate(url: string): Promise<GenerateJob> {
+  const res = await fetch("/api/generate/stop", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
+
+export async function fetchGenerate(url: string): Promise<GenerateJob> {
+  const res = await fetch(`/api/generate?${new URLSearchParams({ url })}`);
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }

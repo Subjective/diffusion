@@ -99,11 +99,16 @@ for line in sys.stdin:
     elif method in ("thread/start", "thread/resume", "thread/fork"):
         send({"id": rid, "result": {"thread": {"id": p.get("threadId", "th_new") + ("_fork" if method == "thread/fork" else "")}}})
     elif method == "skills/list":
-        send({"id": rid, "result": {"data": [{"cwd": ".", "skills": [{"name": "release", "description": "d", "path": "/s/release/SKILL.md", "enabled": True}]}]}})
+        send({"id": rid, "result": {"data": [{"cwd": ".", "skills": [{"name": "release", "description": "d", "path": "/s/release/SKILL.md", "enabled": True}, {"name": "review", "description": "r", "path": "/p/diffusion/skills/review/SKILL.md", "enabled": True}]}]}})
     elif method == "turn/start":
         send({"id": rid, "result": {"turn": {"id": "tu_1"}}})
         for n in script["turn"]:
             send(n)
+            if "id" in n:  # a request of ours: wait for the answer
+                for reply in sys.stdin:
+                    log.write(reply); log.flush()
+                    if json.loads(reply).get("id") == n["id"]:
+                        break
     elif method == "turn/steer":
         if script.get("steer") is None:
             send({"id": rid, "error": {"code": 1, "message": "no active turn"}})
@@ -179,6 +184,26 @@ async def test_codex_runs_a_skill_by_name(tmp_path, repo):
     await collect(codex_runner(str(exe))(AgentRequest("s", "$release cut 1.2", "", repo, resume="th_1")))
     start = next(c for c in calls(tmp_path) if c["method"] == "turn/start")["params"]["input"]
     assert start[1] == {"type": "skill", "name": "release", "path": "/s/release/SKILL.md"}
+
+
+async def test_codex_writes_a_review_with_the_plugins_skill_and_room_to_submit(tmp_path, repo):
+    from diffusion.generate import generate_request
+
+    exe = fake_app_server(
+        tmp_path, [{"method": "turn/completed", "params": {"turn": {"id": "tu_1", "status": "completed"}}}]
+    )
+    req = generate_request(
+        "https://github.com/a/b/pull/1", repo, mode="auto", harness="codex", writable=[tmp_path / "cache"]
+    )
+    await collect(codex_runner(str(exe))(req))
+    sent = {c["method"]: c.get("params") for c in calls(tmp_path) if "method" in c}
+    # the command alone (no system prompt ahead of it), with the plugin's skill named
+    assert sent["turn/start"]["input"] == [
+        {"type": "text", "text": "$diffusion:review https://github.com/a/b/pull/1", "text_elements": []},
+        {"type": "skill", "name": "review", "path": "/p/diffusion/skills/review/SKILL.md"},
+    ]
+    box = sent["thread/start"]["config"]["sandbox_workspace_write"]
+    assert str(tmp_path / "cache") in box["writable_roots"] and box["network_access"] is True
 
 
 async def test_codex_takes_a_steered_message_into_the_running_turn(tmp_path, repo):
@@ -427,17 +452,54 @@ async def test_claude_answers_a_message_steered_too_late_before_ending(monkeypat
     assert await _steered_run(monkeypatch, tmp_path, late=True) == ["done", "steered answer"]
 
 
-def test_codex_modes_are_its_sandboxes(tmp_path):
-    def sandbox(mode):
-        return thread_params(AgentRequest(system_prompt="", prompt="", model="", cwd=tmp_path, mode=mode))[
-            "sandbox"
-        ]
+async def test_codex_puts_its_approval_requests_to_the_reviewer(tmp_path, repo):
+    change = {
+        "id": "c1",
+        "type": "fileChange",
+        "changes": [{"path": "src/a.py", "kind": "update", "diff": "-a\n+b"}],
+    }
+    exe = fake_app_server(tmp_path, [
+        {"id": 900, "method": "item/commandExecution/requestApproval",
+         "params": {"threadId": "th_new", "turnId": "tu_1", "itemId": "x1", "command": "npm test"}},
+        n("item/started", item=change),
+        {"id": 901, "method": "item/fileChange/requestApproval",
+         "params": {"threadId": "th_new", "turnId": "tu_1", "itemId": "c1"}},
+        {"id": 902, "method": "item/tool/requestUserInput", "params": {}},
+        {"method": "turn/completed", "params": {"turn": {"id": "tu_1", "status": "completed"}}},
+    ])  # fmt: skip
+    asked = []
 
-    modes = ("read-only", "plan", "default", "acceptEdits", "auto")
-    assert [sandbox(m) for m in modes] == [
-        "read-only",
-        "read-only",
-        "read-only",
-        "workspace-write",
-        "workspace-write",
+    async def approve(tool, summary, args):
+        asked.append((tool, summary, args))
+        return "always" if tool == "Bash" else "deny"
+
+    req = AgentRequest("s", "p", "", repo, mode="default", approve=approve)
+    await collect(codex_runner(str(exe))(req))
+    assert asked == [
+        ("Bash", "Ran npm test", {"command": "npm test"}),
+        ("Edit", "Edit a.py", {"file_path": "src/a.py", "diff": "-a\n+b"}),
     ]
+    replies = {c["id"]: c for c in calls(tmp_path) if "method" not in c}
+    assert replies[900]["result"] == {"decision": "acceptForSession"}
+    assert replies[901]["result"] == {"decision": "decline"}
+    assert "error" in replies[902]
+    assert next(c for c in calls(tmp_path) if c.get("method") == "thread/start")["params"][
+        "approvalPolicy"
+    ] == ("on-request")
+
+
+def test_codex_modes_are_its_own_presets(tmp_path):
+    async def approve(*_):
+        return "allow"
+
+    def params(mode, asks=True):
+        req = AgentRequest("", "", "", tmp_path, mode=mode, approve=approve if asks else None)
+        p = thread_params(req)
+        return p["sandbox"], p["approvalPolicy"]
+
+    # Read Only, Auto and Full Access, as Codex's /approvals sets them
+    assert params("read-only") == ("read-only", "on-request")
+    assert params("auto") == ("workspace-write", "on-request")
+    assert params("full-access") == ("danger-full-access", "never")
+    # nobody to answer: it stays inside the sandbox
+    assert params("auto", asks=False) == ("workspace-write", "never")

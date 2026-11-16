@@ -65,6 +65,14 @@ export function Home() {
     void useInbox.getState().load();
   }, []);
 
+  // While a review is being written from here, keep the list fresh so it shows up when it's saved.
+  const writing = inbox?.prs.some((p) => p.generating?.state === "running");
+  useEffect(() => {
+    if (!writing) return;
+    const t = setInterval(() => void useInbox.getState().load(), 4000);
+    return () => clearInterval(t);
+  }, [writing]);
+
   const show = (v: View) => {
     setView(v);
     storage.set("rv-home-view", v);

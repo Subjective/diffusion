@@ -114,9 +114,9 @@ export function HarnessMark({ harness, size = 15 }: { harness: string | null | u
       height={size}
       viewBox="0 0 24 24"
       fill={m.color ?? "currentColor"}
+      role="img"
       aria-label={m.name}
     >
-      <title>{m.name}</title>
       <path d={m.d} />
     </svg>
   );

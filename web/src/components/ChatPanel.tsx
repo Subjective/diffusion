@@ -21,6 +21,7 @@ import {
   Pencil,
   Search,
   ShieldAlert,
+  ShieldOff,
   Sparkles,
   Square,
   SquarePen,
@@ -38,7 +39,9 @@ import {
   type Anchor,
   type Ask,
   type ChatMode,
+  type Decision,
   EDIT_TOOLS,
+  followDecision,
   guideSessionOf,
   modesFor,
   type Question,
@@ -56,11 +59,12 @@ import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
 import { cachedTree } from "../lib/tree";
 import { complete, rankCommands, rankFiles, type Trigger, trigger } from "../lib/typeahead";
-import { commentable, useReview } from "../review";
+import { useGenerate } from "../review";
 import { useApp } from "../store";
-import type { StepKind } from "../types";
+import type { GenerateJob, StepKind } from "../types";
 import { useUI } from "../ui";
-import { GithubIcon, HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
+import { useGeneratingHarness } from "./Generate";
+import { HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
 
 export interface ChatLinkProps {
   /** Hover a question (by local id) to highlight its lines; null clears. */
@@ -77,7 +81,8 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
   const { chat, historyOpen, setHistoryOpen, newChat, error } = useChat();
   const toggleChat = useApp((s) => s.toggleChat);
   const meta = useApp((s) => s.guide?.meta);
-  const guideHarness = meta?.harness ?? null;
+  const genHarness = useGeneratingHarness();
+  const guideHarness = meta?.harness ?? genHarness;
   // Back from the terminal: show what was said to the guide's session there.
   useEffect(() => {
     const sync = () => document.visibilityState === "visible" && void useChat.getState().syncGuide();
@@ -102,7 +107,12 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
 
   const turns = groupTurns(sent);
   const asks = useChat((s) => s.asks);
-  // The conversation the session had in the terminal before this chat: folded to one line until opened.
+  // A review being written from the review page: its run, until the guide (and its session) arrives.
+  const genUrl = useApp((s) => (s.pr && !s.pr.local && !s.guide ? s.pr.url : null));
+  const gen = useGenerate((s) => (genUrl ? s.jobs[genUrl] : undefined));
+  const generating = gen?.state === "running" || gen?.state === "failed" ? gen : null;
+  // The conversation the session had before this chat (in the terminal, or writing the review): folded to one line
+  // until opened.
   let earlier = turns.findIndex((qs) => !qs.every((q) => q.fromSession));
   if (earlier < 0) earlier = turns.length;
   const [showEarlier, setShowEarlier] = useState(false);
@@ -164,7 +174,13 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
       >
-        {!turns.length ? (
+        {generating ? (
+          <InlineCodeContext.Provider value={Cite}>
+            <div className="thread">
+              <GenerateTurn job={generating} />
+            </div>
+          </InlineCodeContext.Provider>
+        ) : !turns.length ? (
           <Empty />
         ) : (
           <InlineCodeContext.Provider value={Cite}>
@@ -176,9 +192,9 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
                   aria-expanded={showEarlier}
                   onClick={() => setShowEarlier(!showEarlier)}
                 >
-                  {ic(SquareTerminal, 14)}
+                  {ic(History, 14)}
                   <span>
-                    {earlier} {earlier === 1 ? "turn" : "turns"} in the terminal
+                    {earlier} earlier {earlier === 1 ? "turn" : "turns"}
                   </span>
                   <span className="grow" />
                   {ic(ChevronDown, 14)}
@@ -556,55 +572,80 @@ function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first:
   );
 }
 
-/** Under an answer: copy it, and on a GitHub PR, draft it into your review: a pending comment on the lines it was
- *  asked about, else a paragraph of the review's summary. */
-function AnswerActions({ q }: { q: Question }) {
-  const [done, setDone] = useState<"copy" | "review" | null>(null);
-  const reviewable = useReview((s) => !!s.state?.available && !s.state.error && !!s.state.viewer);
-  const flash = (d: "copy" | "review") => {
-    setDone(d);
-    setTimeout(() => setDone(null), 1200);
-  };
-  const a = q.anchor;
-  const files = useApp((s) => s.files);
-  // On lines GitHub takes comments on; anything else goes in the review's summary.
-  const onLines = !!a?.file && a.start > 0 && commentable(files, a.file, a.side, a.start, a.end);
-  const toReview = () => {
-    const r = useReview.getState();
-    const body = q.answer.trim();
-    if (onLines) r.addPending({ path: a!.file, side: a!.side, start: a!.start, end: a!.end, body });
-    else r.setSummary(r.summary.trim() ? `${r.summary.trim()}\n\n${body}` : body);
-    flash("review");
+/** The agent writing a review, as a turn: the command it was given, its steps (open while it runs), and what it
+ *  says. */
+function GenerateTurn({ job }: { job: GenerateJob }) {
+  const pr = useApp((s) => s.pr)!;
+  const running = job.state === "running";
+  const q: Question = {
+    id: "generate",
+    n: null,
+    text: "",
+    anchor: null,
+    status: running ? "pending" : "answered",
+    answer: job.text ?? "",
+    tools: [],
+    turn: 0,
+    shows: [],
+    trace: job.log ?? [],
   };
   return (
-    <div className="ans-acts">
+    <>
+      <div className="msg user">
+        <div className="q-item">
+          <div className="bubble">{(job.prompt || "/diffusion:review").replace(pr.url, `${pr.repo}#${pr.number}`)}</div>
+        </div>
+      </div>
+      <div className="msg ai">
+        <div className="ai-body">
+          <Trace q={q} pending={running} open={running} />
+          {running &&
+            job.asks?.map((a, i) => (
+              <AskCard
+                key={a.id}
+                a={a}
+                first={i === 0}
+                onAnswer={(id, d) => {
+                  followDecision(a, d, job.harness ?? "claude-code");
+                  void useGenerate.getState().answer(pr.url, id, d);
+                }}
+              />
+            ))}
+          <div className="ans">
+            <div className="ans-t">
+              {job.text ? (
+                <div className={running ? "streaming" : undefined}>
+                  <Markdown text={job.text} />
+                </div>
+              ) : (
+                running && <span className="cursor" />
+              )}
+              {job.state === "failed" && <div className="chat-err">{job.error}</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Under an answer: copy it. */
+function AnswerActions({ q }: { q: Question }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div className={`ans-acts${done ? " done" : ""}`}>
       <button
         type="button"
         className="icon-btn sm"
-        data-tip={done === "copy" ? "Copied" : "Copy"}
+        data-tip={done ? "Copied" : "Copy"}
         onClick={() => {
           void navigator.clipboard?.writeText(q.answer.trim());
-          flash("copy");
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
         }}
       >
-        {ic(done === "copy" ? Check : Copy, 14)}
+        {ic(done ? Check : Copy, 14)}
       </button>
-      {reviewable && (
-        <button
-          type="button"
-          className="icon-btn sm"
-          data-tip={
-            done === "review"
-              ? "Added to your review"
-              : onLines
-                ? "Draft a review comment"
-                : "Add to your review's summary"
-          }
-          onClick={toReview}
-        >
-          {done === "review" ? ic(Check, 14) : <GithubIcon size={14} />}
-        </button>
-      )}
     </div>
   );
 }
@@ -651,8 +692,8 @@ function ToolRow({ summary, failed }: { summary: string; failed?: boolean }) {
 
 /** What the agent did for a turn, folded into one quiet line that opens to a timeline: reasoning and tool calls in
  * the order they happened. While it runs, the line shows the latest step. */
-function Trace({ q, pending }: { q: Question; pending: boolean }) {
-  const [open, setOpen] = useState(false);
+function Trace({ q, pending, open: openFirst = false }: { q: Question; pending: boolean; open?: boolean }) {
+  const [open, setOpen] = useState(openFirst);
   const trace = q.trace ?? [];
   if (!trace.length) return null;
   const thought = trace.some((t) => "think" in t);
@@ -717,16 +758,31 @@ const MODE_UI: Record<ChatMode, { icon: typeof Lock; label: string; hint: string
   acceptEdits: { icon: FilePen, label: "Accept edits", hint: "Edits files without asking; asks before commands" },
   plan: { icon: ListChecks, label: "Plan", hint: "Reads and plans; changes nothing until you approve" },
   auto: { icon: Zap, label: "Auto", hint: "Acts without asking; a safety check blocks risky actions" },
+  "read-only": { icon: Lock, label: "Read Only", hint: "Reads files; asks before edits and commands" },
+  "full-access": {
+    icon: ShieldOff,
+    label: "Full Access",
+    hint: "Edits and runs anything, network included, without asking",
+  },
 };
+/** Codex's own words for its presets, where they differ. */
+const CODEX_UI: Partial<typeof MODE_UI> = {
+  auto: { icon: Zap, label: "Auto", hint: "Edits and runs commands in the workspace; asks to go past it" },
+};
+const modeUI = (harness: string, m: ChatMode) => (harness === "codex" && CODEX_UI[m]) || MODE_UI[m];
 
 /** The guide session's permission mode, as in the harness. New chats fork the session and can only read. */
 function ModeMenu() {
-  const { chat, mode, setMode } = useChat();
-  const guideHarness = useApp((s) => s.guide?.meta?.harness ?? null);
+  const { chat, setMode } = useChat();
+  // While a review is being written there's no guide yet to say whose session it is: the agent writing it. With
+  // no guide at all, chat runs on Claude Code (bundled with the engine), as a review written from here would.
+  const genHarness = useGeneratingHarness();
+  const guideHarness = useApp((s) => s.guide?.meta?.harness ?? null) ?? genHarness ?? "claude-code";
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const harness = chat.harness ?? guideHarness;
-  const modes = chat.kind === "guide" ? modesFor(harness) : [];
+  const modes = modesFor(harness);
+  const mode = useChat((s) => s.modeOf(harness));
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
@@ -747,7 +803,7 @@ function ModeMenu() {
     );
   }
   const cur = modes.includes(mode) ? mode : modes[0];
-  const ui = MODE_UI[cur];
+  const ui = modeUI(harness, cur);
   return (
     <div className="mode-box" ref={box}>
       {open && (
@@ -759,14 +815,14 @@ function ModeMenu() {
               role="menuitemradio"
               aria-checked={m === cur}
               className={`mode-item${m === cur ? " on" : ""}`}
-              title={MODE_UI[m].hint}
+              title={modeUI(harness, m).hint}
               onClick={() => {
-                setMode(m);
+                setMode(m, harness);
                 setOpen(false);
               }}
             >
-              {ic(MODE_UI[m].icon, 14)}
-              <span>{MODE_UI[m].label}</span>
+              {ic(modeUI(harness, m).icon, 14)}
+              <span>{modeUI(harness, m).label}</span>
               <span className="grow" />
               {m === cur && ic(Check, 14)}
             </button>
@@ -797,15 +853,22 @@ function editLines(a: Ask): { t: "add" | "del"; s: string }[] {
     ...lines(e.new_string).map((s) => ({ t: "add" as const, s })),
   ];
   if (a.tool === "Write") return lines(a.input.content).map((s) => ({ t: "add" as const, s }));
+  // Codex sends a unified diff
+  if (typeof a.input.diff === "string")
+    return lines(a.input.diff)
+      .filter((s) => /^[+-]/.test(s) && !/^(\+\+\+|---) /.test(s))
+      .map((s) => ({ t: s[0] === "+" ? ("add" as const) : ("del" as const), s: s.slice(1) }));
   if (a.tool === "MultiEdit" && Array.isArray(a.input.edits))
     return (a.input.edits as Record<string, unknown>[]).flatMap(pair);
   return pair(a.input);
 }
 
 /** A tool call the session's settings don't allow, put to the reviewer in the conversation, as the terminal does.
- * ↵ allows, Esc denies (the first card, while the composer is empty). */
-function AskCard({ a, first }: { a: Ask; first: boolean }) {
-  const answer = useChat((s) => s.answer);
+ * ↵ allows, Esc denies (the first card, while the composer is empty). ``onAnswer``: where the answer goes when it
+ * isn't this chat's turn waiting (a review being written). */
+function AskCard({ a, first, onAnswer }: { a: Ask; first: boolean; onAnswer?: (id: string, d: Decision) => void }) {
+  const chatAnswer = useChat((s) => s.answer);
+  const answer = onAnswer ?? chatAnswer;
   const edit = EDIT_TOOLS.includes(a.tool);
   const plan = a.tool === "ExitPlanMode" && typeof a.input.plan === "string" ? a.input.plan : null;
   const path = typeof a.input.file_path === "string" ? a.input.file_path : null;
@@ -1301,7 +1364,14 @@ function Composer({ link }: { link: ChatLinkProps }) {
               {ic(Square, 12)}
             </button>
           ) : (
-            <button type="button" id="chatSend" className="icon-btn solid" title="Send" onClick={send}>
+            <button
+              type="button"
+              id="chatSend"
+              className="icon-btn solid"
+              title="Send"
+              disabled={!text.trim() && !staged.length}
+              onClick={send}
+            >
               {ic(ArrowUp, 16)}
             </button>
           )}

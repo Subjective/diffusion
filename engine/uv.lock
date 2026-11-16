@@ -278,7 +278,7 @@ requires-dist = [
     { name = "claude-agent-sdk", specifier = ">=0.2.128,<0.3" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pydantic", specifier = ">=2.12" },
     { name = "tree-sitter", specifier = ">=0.25,<0.26" },
     { name = "tree-sitter-c", specifier = ">=0.24.2" },
     { name = "tree-sitter-c-sharp", specifier = ">=0.23.5" },
