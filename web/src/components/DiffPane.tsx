@@ -379,7 +379,7 @@ function mergeRows(a: Map<string, ReactNode> | undefined, b: Map<string, ReactNo
   return out;
 }
 
-/** The comments button once GitHub has threads on the PR: the open count, and every thread in a popover. */
+/** The comments button on a GitHub PR: the open count, and every thread and pending comment in a popover. */
 function ThreadsButton({
   idx,
   onJump,
@@ -388,8 +388,13 @@ function ThreadsButton({
   onJump: Parameters<typeof ThreadsPopover>[0]["onJump"];
 }) {
   const state = useReview((s) => s.state);
+  const pending = useReview((s) => s.pending);
   const [open, setOpen, ref] = usePopover();
-  const threads = state?.threads ?? [];
+  // Your pending comments first, then GitHub's: everything on the PR in one list.
+  const threads = useMemo(
+    () => [...pendingThreads(pending, state?.viewer ?? ""), ...(state?.threads ?? [])],
+    [pending, state],
+  );
   const n = threads.filter((t) => !t.resolved).length;
   return (
     <div className="th-anchor" ref={ref}>
