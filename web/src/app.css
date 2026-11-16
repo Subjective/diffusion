@@ -1114,6 +1114,17 @@ tr.cmt-row.closed > td {
 [aria-expanded="true"][data-tip]::after {
   display: none;
 }
+/* In the threads popover: above the buttons and right-aligned, so the pane's edge doesn't cut them off */
+.th-pop-h [data-tip]::after {
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: auto;
+  right: 0;
+  transform: translateY(2px);
+}
+.th-pop-h [data-tip]:hover::after {
+  transform: none;
+}
 
 /* GitHub PR in the top bar: repo, #n switcher, stack, link out, checks, reviewers */
 .target {
