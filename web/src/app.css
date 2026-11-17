@@ -1087,6 +1087,17 @@ tr.cmt-row.closed > td {
 .pop-anchor {
   position: relative;
 }
+.target > a.repo-link {
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 7px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.target > a.repo-link:hover {
+  background: var(--hover);
+}
 .sw-btn {
   display: inline-flex;
   align-items: center;

@@ -173,7 +173,9 @@ function PRTarget({ pr }: { pr: PRMeta }) {
       <a className="icon-btn sm gh-link" href={pr.url} target="_blank" rel="noreferrer" data-tip="Open on GitHub">
         <GithubIcon size={15} />
       </a>
-      <b>{pr.repo}</b>
+      <a className="repo-link" href={`https://github.com/${pr.owner}/${pr.repo}`} target="_blank" rel="noreferrer">
+        {pr.repo}
+      </a>
       <Switcher pr={pr} layers={layers} />
       {layers.length > 0 && <StackChip pr={pr} layers={layers} />}
       {review?.checks && review.checks.state !== "none" && (
