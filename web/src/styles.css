@@ -2258,6 +2258,12 @@ body.resizing * {
 .rail-f.gone .nm {
   text-decoration: line-through;
 }
+/* A new file's name is tinted, as editors show it. */
+.rail-f.new .nm,
+.rail-f.new.skip .nm,
+.rail-f.new.viewed .nm {
+  color: var(--add-fg);
+}
 .rail-rule {
   height: 1px;
   margin: 6px 8px;

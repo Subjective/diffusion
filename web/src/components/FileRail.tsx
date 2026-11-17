@@ -160,6 +160,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
       f && viewed[p] && "viewed",
       f && skip.has(p) && "skip",
       f?.status === "deleted" && "gone",
+      f?.status === "added" && "new",
       !f && "plain",
     ]
       .filter(Boolean)
