@@ -814,7 +814,21 @@ svg.dim .m-region {
   background: var(--hover);
   color: var(--muted);
 }
+.skip-row .nm {
+  flex: none;
+}
+/* The folder of a name that repeats: dimmer, and cut from the left so its nearest folders stay. */
+.skip-row .dir {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+  opacity: 0.6;
+}
 .skip-row .cnt {
+  flex: none;
   margin-left: auto;
 }
 
