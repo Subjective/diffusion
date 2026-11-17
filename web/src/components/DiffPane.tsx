@@ -280,11 +280,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
             <button
               type="button"
               className="icon-btn sm"
-              title={
-                order === "guide"
-                  ? "In the guide's order · click for the file tree's order"
-                  : "In the file tree's order · click for the guide's order"
-              }
+              title={order === "guide" ? "Guide order" : "File order"}
               onClick={() => setOrder(order === "guide" ? "alpha" : "guide")}
             >
               {ic(order === "guide" ? Route : FolderTree, 15)}
@@ -342,7 +338,14 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
       </div>
       <div className="diff-body">
         {rail && (
-          <FileRail files={files} skip={skipFiles} fileSteps={fileSteps} current={tab ?? current} onPick={pickFile} />
+          <FileRail
+            files={ordered}
+            order={order}
+            skip={skipFiles}
+            fileSteps={fileSteps}
+            current={tab ?? current}
+            onPick={pickFile}
+          />
         )}
         {tab != null && (
           <FileView

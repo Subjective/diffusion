@@ -22,9 +22,11 @@ import { GUIDE_W, startResize } from "../lib/panes";
 import { refLabel } from "../lib/refs";
 import { storage } from "../lib/storage";
 import { useApp } from "../store";
-import type { Ref, Step } from "../types";
+import type { Ref, SkipReason, Step } from "../types";
 import { useUI } from "../ui";
 import { ConversationPane } from "./Conversation";
+import { Counts } from "./Counts";
+import { treeOrder } from "./FileRail";
 import { GenerateCard } from "./Generate";
 import { ic, SKIP_ICON, STEP_ICON } from "./icons";
 import { MapCanvas } from "./MapCanvas";
@@ -436,31 +438,58 @@ function useOpenFile() {
   };
 }
 
+/** Each skippable file once, in the file tree's order, counting only the lines skipped. A name that repeats
+ *  carries its folder, so `mod.rs` and `mod.rs` read as two files. */
 function Skippable() {
   const { guide, files } = useApp();
   const open = useOpenFile();
-  if (!guide?.skippable.length) return null;
-  const counts = new Map(files.map((f) => [f.path, f]));
+  const rows = useMemo(() => {
+    const byFile = new Map<string, { file: string; hunks: Set<string>; reason: SkipReason }>();
+    for (const s of guide?.skippable ?? []) {
+      const r = byFile.get(s.file) ?? { file: s.file, hunks: new Set<string>(), reason: s.reason };
+      for (const h of s.hunks) r.hunks.add(h);
+      byFile.set(s.file, r);
+    }
+    const byPath = new Map(files.map((f) => [f.path, f]));
+    const names = new Map<string, number>();
+    for (const p of byFile.keys()) names.set(base(p), (names.get(base(p)) ?? 0) + 1);
+    return treeOrder([...byFile.keys()]).map((p) => {
+      const r = byFile.get(p)!;
+      const f = byPath.get(p);
+      // Some hunks of a file (imports, formatting): their lines. All of it: the file's.
+      const part = f?.hunks.filter((h) => r.hunks.has(h.id)) ?? [];
+      const whole = !f || !part.length || part.length === f.hunks.length;
+      const count = (t: string) => part.reduce((n, h) => n + h.lines.filter((l) => l.type === t).length, 0);
+      return {
+        ...r,
+        name: base(p),
+        dir: (names.get(base(p)) ?? 0) > 1 ? p.slice(0, Math.max(0, p.lastIndexOf("/"))) : "",
+        f,
+        cnt: whole ? undefined : ([count("add"), count("del")] as [number, number]),
+      };
+    });
+  }, [guide, files]);
+  if (!rows.length) return null;
   return (
     <section className="sec">
       <div className="sec-h">{ic(EyeOff, 13)}Skippable</div>
-      {guide.skippable.map((s) => {
-        const f = counts.get(s.file);
-        return (
-          <div key={s.file + s.reason} className="skip-row" title={s.reason} onClick={() => open(s.file)}>
-            {ic(SKIP_ICON[s.reason] ?? EyeOff, 13)}
-            <span>{s.file.split("/").pop()}</span>
-            {f && (
-              <span className="cnt">
-                <span className="n-add">+{f.additions}</span> <span className="n-del">−{f.deletions}</span>
-              </span>
-            )}
-          </div>
-        );
-      })}
+      {rows.map((r) => (
+        <div key={r.file} className="skip-row" title={`${r.file} · ${r.reason}`} onClick={() => open(r.file)}>
+          {ic(SKIP_ICON[r.reason] ?? EyeOff, 13)}
+          <span className="nm">{r.name}</span>
+          {r.dir && (
+            <span className="dir">
+              <bdi>{r.dir}</bdi>
+            </span>
+          )}
+          {r.f && <Counts file={r.f} lines={r.cnt} cls={["n-add", "n-del"]} />}
+        </div>
+      ))}
     </section>
   );
 }
+
+const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
 function Uncovered() {
   const guide = useApp((s) => s.guide);

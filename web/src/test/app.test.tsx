@@ -759,8 +759,23 @@ test("a GitHub PR's top bar: switcher with its stack, checks, reviewers", async 
   vi.mocked(api.fetchReview).mockResolvedValue({ available: false } as never);
 });
 
-test("file list toggles, nests directories, and opens a picked file", async () => {
+test("in guide order, the file list runs flat as the diff does, skippable files last", async () => {
   await mount();
+  if (!document.querySelector(".rail")) fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
+  const rail = document.querySelector(".rail")!;
+  const shown = [...rail.querySelectorAll(".rail-f, .rail-rule")].map((r) => r.getAttribute("data-path") ?? "—");
+  expect(shown).toEqual(["src/auth/types.ts", "src/auth/session.ts", "—", "package-lock.json"]);
+  expect(rail.querySelector(".rail-dir")).toBeNull();
+  expect(rail.querySelector('[data-path="src/auth/types.ts"] .dir')!.textContent).toBe("src/auth");
+  fireEvent.click(screen.getByTitle("Guide order"));
+  expect(rail.querySelector(".rail-dir")).toBeTruthy();
+});
+
+test("file list toggles, nests directories, and opens a picked file", async () => {
+  const { useUI } = await import("../ui");
+  useUI.getState().setOrder("alpha");
+  await mount();
+  if (document.querySelector(".rail")) fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
   expect(document.querySelector(".rail")).toBeNull();
   fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
   const rail = document.querySelector(".rail")!;

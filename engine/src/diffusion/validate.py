@@ -151,9 +151,16 @@ def validate(draft: GuideDraft, idx: DiffIndex) -> Guide:
     for j, g in enumerate(draft.skippable, start=1):
         mapped, _ = map_ref(g, idx, f"skippable {j}", issues)
         ids = [r.hunk for r in mapped if r.hunk not in skip_ids and r.hunk not in covered]
-        if ids:
-            skippable.append(SkipGroup(file=idx.by_id[ids[0]].file, hunks=ids, reason=g.reason))
-            skip_ids.update(ids)
+        if not ids:
+            continue
+        # One group per file: several skipped ranges in a file join its group, not list the file again.
+        file = idx.by_id[ids[0]].file
+        same = next((s for s in skippable if s.file == file and s.reason == g.reason), None)
+        if same:
+            same.hunks += ids
+        else:
+            skippable.append(SkipGroup(file=file, hunks=ids, reason=g.reason))
+        skip_ids.update(ids)
 
     views: list[View] = []
     for i, d in enumerate(draft.views, start=1):
