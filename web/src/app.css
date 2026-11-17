@@ -1088,15 +1088,24 @@ tr.cmt-row.closed > td {
   position: relative;
 }
 .target > a.repo-link {
+  gap: 2px;
   height: 26px;
-  padding: 0 6px;
+  padding: 0 2px 0 6px;
   border-radius: 7px;
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
 }
+.target > a.repo-link svg {
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
 .target > a.repo-link:hover {
   background: var(--hover);
+}
+.target > a.repo-link:hover svg {
+  opacity: 1;
 }
 .sw-btn {
   display: inline-flex;
