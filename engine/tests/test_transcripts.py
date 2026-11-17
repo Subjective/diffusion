@@ -1,6 +1,6 @@
 import json
 
-from diffusion.chat_agent import SHOW_REMINDER
+from diffusion.chat_agent import TURN_NOTE
 from diffusion.transcripts import find_transcript, merge, read_claude, read_codex, session_turns
 
 
@@ -83,6 +83,42 @@ def test_reads_a_codex_session_as_turns(tmp_path):
     assert t["trace"] == [{"think": "**Reading**"}, {"tool": "Ran rg foo", "id": "c1"}]
 
 
+def test_reads_newer_codex_exec_scripts_and_skill_runs(tmp_path):
+    def item(payload):
+        return {"type": "response_item", "payload": payload}
+
+    def say(role, text, **kw):
+        return item(
+            {"type": "message", "role": role, "content": [{"type": "input_text", "text": text}], **kw}
+        )
+
+    p = tmp_path / "rollout-2026-11-15T23-42-18-th_7.jsonl"
+    write(p, [
+        say("user", "# AGENTS.md instructions for /repo"),
+        say("user", "$diffusion:review https://github.com/o/r/pull/1"),
+        say("user", "<skill>\n<name>diffusion:review</name>\nWrite a guide.\n</skill>"),
+        say("assistant", "Reading the skill.", phase="commentary"),
+        item({"type": "custom_tool_call", "name": "exec", "call_id": "x1",
+              "input": 'text(await tools.exec_command({cmd:"cat SKILL.md; ls \\"a b\\""}));'}),
+        item({"type": "custom_tool_call", "name": "exec", "call_id": "x2",
+              "input": 'for (const cmd of ["gh pr view 1", \'cat PORTING.md\']) text(await tools.exec_command({cmd}));'}),
+        item({"type": "custom_tool_call", "name": "exec", "call_id": "x3",
+              "input": "text(await tools.write_stdin({session_id:1,chars:''}));"}),
+        item({"type": "custom_tool_call", "name": "exec", "call_id": "x4", "input": "const n = 1 + 1;"}),
+        say("assistant", "[Open the review](http://x)\n\n<oai-mem-citation>\nMEMORY.md:1\n</oai-mem-citation>",
+            phase="final_answer"),
+    ])  # fmt: skip
+    (t,) = read_codex(p)
+    assert t["questions"][0]["text"] == "$diffusion:review https://github.com/o/r/pull/1"
+    assert t["answers"]["0"] == "Reading the skill.\n\n[Open the review](http://x)"
+    assert [x["tool"] for x in t["trace"]] == [
+        'Ran cat SKILL.md; ls "a b"',
+        "Ran gh pr view 1",
+        "Ran cat PORTING.md",
+        "Ran a script",
+    ]
+
+
 def test_codex_messages_carry_their_turn_id_to_revert_to(tmp_path):
     def item(text):
         return {
@@ -151,17 +187,17 @@ def test_merge_keeps_diffusions_own_record_of_its_turns():
     def t(text):
         return {"questions": [{"n": 1, "text": text}], "answers": {}}
 
-    session = [t("terminal"), t(f"About `a.ts:3`\nwhy?\n\n{SHOW_REMINDER}"), t("terminal again")]
+    session = [t("terminal"), t(f"About `a.ts:3`\nwhy?\n\n{TURN_NOTE}"), t("terminal again")]
     session[1]["trace"] = [{"tool": "post_message", "id": "t1", "failed": True}]
-    stored = [{**t("why?"), "shows": ["x"], "trace": [{"tool": "post_message"}]}, t("still streaming")]
-    out = merge(session, stored, lambda text: text.endswith(SHOW_REMINDER))
+    stored = [{**t("why?"), "guide_version": 2, "trace": [{"tool": "post_message"}]}, t("still streaming")]
+    out = merge(session, stored, lambda text: text.endswith(TURN_NOTE))
     assert [q["questions"][0]["text"] for q in out] == [
         "terminal",
         "why?",
         "terminal again",
         "still streaming",
     ]
-    assert out[1]["shows"] == ["x"] and out[1]["trace"][0]["failed"]
+    assert out[1]["guide_version"] == 2 and out[1]["trace"][0]["failed"]
     assert merge(None, stored, lambda _: False) == stored
 
 
@@ -195,8 +231,8 @@ def test_merge_keeps_a_steered_message_in_the_turn_it_joined():
 
     # the transcript has the steered message as a prompt of its own
     session = [
-        t(f"why?\n\n{SHOW_REMINDER}", [{"tool": "Read a"}]),
-        t(f"and b?\n\n{SHOW_REMINDER}"),
+        t(f"why?\n\n{TURN_NOTE}", [{"tool": "Read a"}]),
+        t(f"and b?\n\n{TURN_NOTE}"),
         t("later"),
     ]
     mine = {
@@ -205,7 +241,7 @@ def test_merge_keeps_a_steered_message_in_the_turn_it_joined():
         "steers": 1,
         "trace": [{"tool": "Read a"}, {"steered": 1}, {"tool": "Read b"}],
     }
-    out = merge(session, [mine], lambda text: text.endswith(SHOW_REMINDER))
+    out = merge(session, [mine], lambda text: text.endswith(TURN_NOTE))
     assert [len(x["questions"]) for x in out] == [2, 1]
     assert out[0]["trace"] == mine["trace"] and out[1]["questions"][0]["text"] == "later"
 

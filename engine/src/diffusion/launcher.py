@@ -127,9 +127,10 @@ def start(port: int, log_dir: Path) -> Server:
 
 
 def can_open_browser(environ: dict[str, str] | None = None, platform: str = sys.platform) -> bool:
-    """False over SSH or on a Linux box with no display, where opening a browser would fail or open remotely."""
+    """False over SSH or on a Linux box with no display, where opening a browser would fail or open remotely, and
+    when Diffusion itself started the agent (``DIFFUSION_NO_BROWSER``), which already shows the review."""
     env = os.environ if environ is None else environ
-    if env.get("SSH_CONNECTION") or env.get("SSH_TTY"):
+    if env.get("DIFFUSION_NO_BROWSER") or env.get("SSH_CONNECTION") or env.get("SSH_TTY"):
         return False
     if platform.startswith("linux"):
         return bool(env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"))

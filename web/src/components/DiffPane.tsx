@@ -8,18 +8,21 @@ import {
   PanelLeft,
   Route,
 } from "lucide-react";
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { backStack, wordAtPoint } from "../lib/definition";
 import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
+import { usePopover } from "../lib/usePopover";
+import { useReview } from "../review";
 import { useApp } from "../store";
-import type { FileDiff as FD, Guide, Ref } from "../types";
+import type { FileDiff as FD, Guide, Ref, Thread } from "../types";
 import { diffActivity, markDiffActivity, useUI } from "../ui";
 import { type AskComment, commentRows } from "./Comments";
 import { type Dot, FileDiff, type Gutter } from "./FileDiff";
 import { FileRail, fileInView, treeOrder } from "./FileRail";
 import { ic } from "./icons";
 import { FileView, TabBar } from "./Tabs";
+import { checkThreads, pendingThreads, ThreadsPopover, threadLayout } from "./Threads";
 
 /** Files in guide order: by first step that references them, then unreferenced, then skippable. */
 export function guideOrder(files: FD[], guide: Guide | null): FD[] {
@@ -212,11 +215,31 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
 
   const comments = guide?.comments ?? [];
   const open = comments.filter((c) => !resolved[c.title]).length;
-  const after = useMemo(
-    () => (hideComments ? undefined : commentRows(guide?.comments ?? [], idx, resolved, onAskComment)),
-    [guide, idx, resolved, hideComments, onAskComment],
+  const review = useReview((s) => s.state);
+  const hiddenFiles = useReview((s) => s.hiddenFiles);
+  const pending = useReview((s) => s.pending);
+  const threads = review?.threads ?? NO_THREADS;
+  // GitHub's threads, your pending comments, and failing checks' notes, all on the diff alike.
+  const onDiff = useMemo(
+    () => [...threads, ...pendingThreads(pending, review?.viewer ?? ""), ...checkThreads(review?.checks?.list ?? [])],
+    [threads, pending, review],
   );
-  const gutter: Gutter = useMemo(() => ({ dots, extras, after }), [dots, extras, after]);
+  const layout = useMemo(
+    () => (hideComments || !onDiff.length ? null : threadLayout(onDiff, idx, hiddenFiles)),
+    [onDiff, idx, hiddenFiles, hideComments],
+  );
+  const fileThreads = useMemo(
+    () => (hideComments ? [] : onDiff.filter((t) => !hiddenFiles.includes(t.path))),
+    [onDiff, hiddenFiles, hideComments],
+  );
+  const after = useMemo(() => {
+    const own = hideComments ? undefined : commentRows(guide?.comments ?? [], idx, resolved, onAskComment);
+    return layout ? mergeRows(own, layout.after) : own;
+  }, [guide, idx, resolved, hideComments, onAskComment, layout]);
+  const gutter: Gutter = useMemo(
+    () => ({ dots, extras, after, ranged: layout?.ranged, top: layout?.top }),
+    [dots, extras, after, layout],
+  );
   const allCollapsed = useUI((s) => files.length > 0 && files.every((f) => s.collapsed[f.path]));
 
   return (
@@ -256,16 +279,29 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
             >
               {ic(EyeOff, 15)}
             </button>
-            {comments.length > 0 && (
-              <button
-                type="button"
-                className={`icon-btn sm cmt-tg${hideComments ? "" : " on"}`}
-                title={hideComments ? "Show comments" : "Hide comments"}
-                onClick={toggleHideComments}
-              >
-                {ic(MessageCircle, 15)}
-                {open > 0 && <span>{open}</span>}
-              </button>
+            {review?.available && !review.error ? (
+              <ThreadsButton
+                onJump={(t, keys) => {
+                  if (hideComments) toggleHideComments();
+                  if (hiddenFiles.includes(t.path)) useReview.getState().toggleFile(t.path);
+                  useReview.getState().expand(t.id);
+                  if (keys.length) useUI.getState().focus(keys, [t.path]);
+                  else pickFile(t.path);
+                }}
+                idx={idx}
+              />
+            ) : (
+              comments.length > 0 && (
+                <button
+                  type="button"
+                  className={`icon-btn sm cmt-tg${hideComments ? "" : " on"}`}
+                  title={hideComments ? "Show comments" : "Hide comments"}
+                  onClick={toggleHideComments}
+                >
+                  {ic(MessageCircle, 15)}
+                  {open > 0 && <span>{open}</span>}
+                </button>
+              )
             )}
             <button
               type="button"
@@ -291,7 +327,15 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
           <FileRail files={files} skip={skipFiles} fileSteps={fileSteps} current={tab ?? current} onPick={pickFile} />
         )}
         {tab != null && (
-          <FileView key={tab} path={tab} dots={dots} extras={extras} onNav={onNavClick} onShowInDiff={pickFile} />
+          <FileView
+            key={tab}
+            path={tab}
+            dots={dots}
+            extras={extras}
+            onNav={onNavClick}
+            onShowInDiff={pickFile}
+            threads={fileThreads}
+          />
         )}
         {/* Kept mounted behind a file tab, so the diff keeps its place. */}
         <div className="diffwrap" hidden={tab != null}>
@@ -311,6 +355,71 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
         </div>
       </div>
     </section>
+  );
+}
+
+const NO_THREADS: Thread[] = [];
+
+/** Two sets of rows under lines, as one: both kinds under a line that has both. */
+function mergeRows(a: Map<string, ReactNode> | undefined, b: Map<string, ReactNode>): Map<string, ReactNode> {
+  if (!a?.size) return b;
+  const out = new Map(a);
+  for (const [k, v] of b)
+    out.set(
+      k,
+      out.has(k) ? (
+        <>
+          <Fragment key="a">{out.get(k)}</Fragment>
+          <Fragment key="b">{v}</Fragment>
+        </>
+      ) : (
+        v
+      ),
+    );
+  return out;
+}
+
+/** The comments button on a GitHub PR: the open count, and every thread and pending comment in a popover. */
+function ThreadsButton({
+  idx,
+  onJump,
+}: {
+  idx: ReturnType<typeof indexFiles>;
+  onJump: Parameters<typeof ThreadsPopover>[0]["onJump"];
+}) {
+  const state = useReview((s) => s.state);
+  const pending = useReview((s) => s.pending);
+  const [open, setOpen, ref] = usePopover();
+  // Your pending comments first, then GitHub's: everything on the PR in one list.
+  const threads = useMemo(
+    () => [...pendingThreads(pending, state?.viewer ?? ""), ...(state?.threads ?? [])],
+    [pending, state],
+  );
+  const n = threads.filter((t) => !t.resolved).length;
+  return (
+    <div className="th-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`icon-btn sm cmt-tg${open ? " on" : ""}`}
+        data-tip="Comments"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {ic(MessageCircle, 15)}
+        {n > 0 && <span>{n}</span>}
+      </button>
+      {open && (
+        <ThreadsPopover
+          threads={threads}
+          viewer={state?.viewer ?? ""}
+          idx={idx}
+          onJump={(t, keys) => {
+            setOpen(false);
+            onJump(t, keys);
+          }}
+        />
+      )}
+    </div>
   );
 }
 

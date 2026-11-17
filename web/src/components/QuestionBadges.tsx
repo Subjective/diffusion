@@ -12,11 +12,14 @@ export function useQuestionBadges(
   revealQ: (id: string) => void,
 ): Map<string, ReactNode> {
   const questions = useChat((s) => s.chat.questions);
+  // A sent message being edited: its notes show once, as the staged notes put back in the composer.
+  const editedTurn = useChat((s) => s.chat.questions.find((q) => q.id === s.rewriting)?.turn ?? null);
   const idx = useHunkIndex();
   return useMemo(() => {
     const byRow = new Map<string, typeof questions>();
     for (const q of questions) {
       if (!q.anchor || q.n == null || q.anchor.step != null) continue;
+      if (editedTurn != null && q.turn != null && q.turn >= editedTurn) continue;
       const { keys } = questionRows(q, idx);
       if (!keys.length) continue;
       const k = keys[0];
@@ -52,5 +55,5 @@ export function useQuestionBadges(
     }
     void rowKey;
     return out;
-  }, [questions, idx, hoverQ, onHoverQ, revealQ]);
+  }, [questions, editedTurn, idx, hoverQ, onHoverQ, revealQ]);
 }

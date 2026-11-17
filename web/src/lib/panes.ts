@@ -50,6 +50,8 @@ export function startResize(
   if (e.button !== 0) return;
   e.preventDefault();
   document.body.classList.add("resizing");
+  const edge = e.currentTarget as HTMLElement;
+  edge.classList.add("active"); // only the edge being dragged lights up
   let last: number | null = null;
   const move = (ev: MouseEvent) => {
     last = toWidth(ev.clientX);
@@ -57,6 +59,7 @@ export function startResize(
   };
   const up = () => {
     document.body.classList.remove("resizing");
+    edge.classList.remove("active");
     removeEventListener("mousemove", move);
     removeEventListener("mouseup", up);
     if (last != null) storage.set(key, last);

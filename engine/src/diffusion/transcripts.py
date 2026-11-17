@@ -14,13 +14,15 @@ import os
 import re
 from pathlib import Path
 
-from .agent import summarize_tool
+from .agent import ran, summarize_tool
 from .commands import TERMINAL_ONLY
 
 _REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 # Text the CLI injects as a "user" message: slash-command echoes, local command output, interrupts, context.
 _INJECTED = ("<command-", "<local-command-", "Caveat:", "[Request interrupted", "<environment_context>",
-             "<user_instructions>", "# AGENTS.md", "<turn_aborted>")  # fmt: skip
+             "<user_instructions>", "# AGENTS.md", "<turn_aborted>", "<skill>")  # fmt: skip
+"""Prompts a harness adds to the person's own (Codex puts a skill's instructions after the ``$skill`` that ran it):
+left out, with the reply kept on the person's turn."""
 
 
 def find_transcript(harness: str, session: str, home: Path | None = None) -> Path | None:
@@ -64,7 +66,7 @@ def _codex_entries(path: Path, limit: int | None = None) -> list[dict]:
 
 def _turn(text: str) -> dict:
     return {"questions": [{"n": 0, "text": text, "anchor": None}], "answers": {"0": ""}, "tools": [],
-            "trace": [], "shows": [], "status": "done", "source": "session"}  # fmt: skip
+            "trace": [], "status": "done", "source": "session"}  # fmt: skip
 
 
 _TAG = re.compile(r"^<([A-Za-z][\w-]*)[\s>]")
@@ -198,6 +200,34 @@ def rewind_point(path: Path, uuid: str) -> str | None:
     return None
 
 
+_CITATIONS = re.compile(r"<oai-mem-citation>.*?(?:</oai-mem-citation>|\Z)", re.S)
+"""Codex's notes of which memories an answer drew on, for its own app."""
+_JS_STR = r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|`(?:[^`\\]|\\.)*`'
+_JS_CMD = re.compile(rf"\bcmd\s*:\s*({_JS_STR})")
+_JS_LIST = re.compile(rf"\bof\s*\[((?:\s*(?:{_JS_STR})\s*,?)+)\]")
+
+
+def _js_string(lit: str) -> str:
+    body = lit[1:-1]
+    if lit[0] == '"':
+        try:
+            return json.loads(lit)
+        except ValueError:
+            return body
+    return body.replace("\\" + lit[0], lit[0]).replace("\\n", "\n")
+
+
+def exec_commands(script: str) -> list[str]:
+    """The shell commands in a script Codex ran through its ``exec`` tool (newer Codex writes its shell work as a
+    little JavaScript program calling ``tools.exec_command({cmd: …})``): each ``cmd`` given, or, where the commands
+    come from a loop, the list it loops over."""
+    cmds = [_js_string(m.group(1)) for m in _JS_CMD.finditer(script)]
+    if not cmds:
+        for m in _JS_LIST.finditer(script):
+            cmds += [_js_string(x) for x in re.findall(_JS_STR, m.group(1))]
+    return [c for c in cmds if c.strip()]
+
+
 def read_codex(path: Path) -> list[dict]:
     b = _Builder()
     turn_id, given = None, set()  # the running turn; turns whose first message has its id (to revert to it)
@@ -221,10 +251,16 @@ def read_codex(path: Path) -> list[dict]:
                     given.add(uuid)
                 b.ask(q, uuid)
             elif p.get("role") == "assistant":
-                b.say(text)
+                b.say(_CITATIONS.sub("", text))
         elif kind == "reasoning":
             for s in p.get("summary") or []:
                 b.think(s.get("text", ""))
+        elif kind == "custom_tool_call" and p.get("name") == "exec" and isinstance(p.get("input"), str):
+            cmds = exec_commands(p["input"])
+            if not cmds and "write_stdin" in p["input"]:
+                continue  # polling a command that's still running: the command has its row
+            for i, cmd in enumerate(cmds or [""]):
+                b.tool(ran(cmd) if cmd else "Ran a script", p.get("call_id") if i == 0 else None)
         elif kind in ("function_call", "custom_tool_call", "local_shell_call"):
             args = p.get("arguments") or p.get("input") or p.get("action") or {}
             if isinstance(args, str):
@@ -255,9 +291,9 @@ def session_turns(harness: str, session: str, home: Path | None = None) -> list[
 
 
 def merge(session: list[dict] | None, stored: list[dict], asked_here) -> list[dict]:
-    """The transcript's turns, with each one Diffusion asked replaced by its own record (anchors, shown code, guide
-    versions). ``asked_here(text)`` says whether a transcript prompt came from Diffusion. Stored turns the
-    transcript doesn't have yet (one still streaming) go last; ones it no longer has (rewound away) are dropped."""
+    """The transcript's turns, with each one Diffusion asked replaced by its own record (anchors, guide versions).
+    ``asked_here(text)`` says whether a transcript prompt came from Diffusion. Stored turns the transcript doesn't
+    have yet (one still streaming) go last; ones it no longer has (rewound away) are dropped."""
     if session is None:
         return stored
     rest = list(enumerate(stored))

@@ -182,6 +182,12 @@ def serve(
     """Run the local web UI and API on 127.0.0.1."""
     import uvicorn
 
+    from .launcher import HARNESS_ENV
+
+    # Started from an agent's shell (or a tmux it began), the server would hand that session's variables to every
+    # agent it runs, and a review written here would be filed under the wrong agent and session.
+    for k in HARNESS_ENV:
+        os.environ.pop(k, None)
     _err(f"Diffusion on http://127.0.0.1:{port}")
     uvicorn.run("diffusion.app:create_app", factory=True, host="127.0.0.1", port=port, reload=reload)
 

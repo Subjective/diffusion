@@ -8,14 +8,17 @@ PreToolUse hook; our custom tools are served in-process over the SDK's MCP bridg
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..agent import (
+    EDIT_TOOLS,
     AgentRequest,
     DoneEvent,
     Event,
+    Mode,
     Runner,
     SandboxError,
     SteeredEvent,
@@ -29,14 +32,13 @@ from ..agent import (
 )
 
 if TYPE_CHECKING:
-    from claude_agent_sdk.types import HookContext, HookInput, HookJSONOutput
+    from claude_agent_sdk.types import HookContext, HookInput, HookJSONOutput, PermissionMode
 
 READ_TOOLS = ["Read", "Grep", "Glob"]
 DENY_TOOLS = [
     "Bash", "Write", "Edit", "MultiEdit", "NotebookEdit",
     "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite",
 ]  # fmt: skip
-EDIT_TOOLS = ("Edit", "MultiEdit", "Write", "NotebookEdit")
 MCP_SERVER = "diffusion"
 PATH_ARGS = ("file_path", "path")
 
@@ -46,7 +48,7 @@ def mcp_name(tool: str) -> str:
 
 
 def tool_names_note(tools: list[ToolSpec]) -> str:
-    """Prompts name engine tools plainly (`show_code`); here they're namespaced, and models sometimes call the
+    """Prompts name engine tools plainly (`get_hunk`); here they're namespaced, and models sometimes call the
     plain name, fail, and give up. Spell out the mapping."""
     if not tools:
         return ""
@@ -78,6 +80,11 @@ def user_text(content: Any) -> str | None:
         if parts and all(isinstance(p, str) for p in parts):
             return "".join(parts)  # type: ignore[arg-type]
     return None
+
+
+def claude_mode(mode: Mode) -> PermissionMode:
+    """Claude Code's own mode for ``mode``; anything else (another agent's) asks, as Manual does."""
+    return mode if mode in ("default", "acceptEdits", "plan", "auto") else "default"  # type: ignore[return-value]
 
 
 def claude_code_runner(cli_path: str | None = None) -> Runner:
@@ -187,9 +194,10 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                     "snapshot": False,  # carry the chat's instructions on resume, not just the first request
                 },
                 allowed_tools=[mcp_name(t.name) for t in req.tools],
-                permission_mode="default" if req.mode == "read-only" else req.mode,
+                permission_mode=claude_mode(req.mode),
                 can_use_tool=can_use,
                 setting_sources=["user", "project", "local"],
+                env=req.env,
                 enable_file_checkpointing=True,  # so an edited message can put the code back too
             )
         else:
@@ -202,7 +210,11 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                 permission_mode="dontAsk",
                 setting_sources=[],  # don't pick up the user's hooks, CLAUDE.md, or permissions
                 hooks={"PreToolUse": [HookMatcher(matcher="Read|Grep|Glob", hooks=[guard])]},
-                env={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "ENABLE_TOOL_SEARCH": "false"},
+                env={
+                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+                    "ENABLE_TOOL_SEARCH": "false",
+                    **req.env,
+                },
             )
         async with ClaudeSDKClient(options=opts) as client:
             if req.restore_files:
@@ -229,7 +241,15 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                     if not accepted.done():
                         accepted.set_result(True)
 
+            async def take_modes(modes: asyncio.Queue[Mode]) -> None:
+                while True:
+                    mode = await modes.get()
+                    if mode != "read-only":
+                        with contextlib.suppress(Exception):  # the turn may have just ended
+                            await client.set_permission_mode(claude_mode(mode))
+
             pump = asyncio.create_task(take_steers(req.steer)) if req.steer else None
+            switch = asyncio.create_task(take_modes(req.modes)) if req.modes and req.native else None
             turns, last = 0, None
             try:
                 async for m in client.receive_messages():
@@ -269,6 +289,8 @@ def claude_code_runner(cli_path: str | None = None) -> Runner:
                             break
             finally:
                 over = True
+                if switch:
+                    switch.cancel()
                 if pump:
                     pump.cancel()
                     while req.steer and not req.steer.empty():

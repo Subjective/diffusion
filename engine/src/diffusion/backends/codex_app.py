@@ -10,6 +10,8 @@ import asyncio
 import contextlib
 import itertools
 import json
+import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -22,11 +24,23 @@ class AppServerError(RuntimeError):
 
 class AppServer:
     """A running ``codex app-server``: ``request`` sends a call and waits for its answer; notifications go to
-    ``notes``. Requests the server makes of us (approvals, which our approval policy shouldn't produce) are
-    declined, so nothing waits on them."""
+    ``notes``. Requests the server makes of us (approvals) go to ``on_request``, which answers with the result, or
+    None for ones it doesn't take; without it they're refused, so nothing waits on them."""
 
-    def __init__(self, exe: str, cwd: Path | None = None, args: list[str] | None = None):
+    def __init__(
+        self,
+        exe: str,
+        cwd: Path | None = None,
+        args: list[str] | None = None,
+        on_request: Callable[[str, dict], Awaitable[dict | None]] | None = None,
+        env: dict[str, str] | None = None,
+    ):
         self.exe, self.cwd, self.args = exe, cwd, args or []
+        self.env = {**os.environ, **env} if env else None
+        self.on_request = on_request
+        # The items the server has started, by id, as of the latest message read (an approval names its item).
+        self.items: dict[str, dict] = {}
+        self._answering: set[asyncio.Task] = set()
         self.notes: asyncio.Queue[dict] = asyncio.Queue()
         self._ids = itertools.count(1)
         self._waiting: dict[int, asyncio.Future] = {}
@@ -38,6 +52,7 @@ class AppServer:
         self._proc = await asyncio.create_subprocess_exec(
             self.exe, "app-server", *self.args,
             cwd=str(self.cwd) if self.cwd else None,
+            env=self.env,
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             limit=PROTOCOL_LIMIT,
         )  # fmt: skip
@@ -56,6 +71,8 @@ class AppServer:
         proc = self._proc
         if self._reader:
             self._reader.cancel()
+        for t in self._answering:
+            t.cancel()
         if proc and proc.returncode is None:
             with contextlib.suppress(ProcessLookupError):
                 if proc.stdin:
@@ -89,8 +106,14 @@ class AppServer:
                 except ValueError:
                     continue
                 if "method" in msg and "id" in msg:  # the server asks us something
-                    await self._send({"id": msg["id"], "error": {"code": -32601, "message": "not supported"}})
+                    # Answered on the side: an approval waits on the reviewer, and the turn goes on meanwhile.
+                    t = asyncio.create_task(self._answer(msg))
+                    self._answering.add(t)
+                    t.add_done_callback(self._answering.discard)
                 elif "method" in msg:
+                    item = (msg.get("params") or {}).get("item") or {}
+                    if item.get("id"):
+                        self.items[str(item["id"])] = item
                     await self.notes.put(msg)
                 elif (fut := self._waiting.pop(msg.get("id"), None)) and not fut.done():
                     if "error" in msg:
@@ -108,6 +131,17 @@ class AppServer:
                     fut.set_exception(gone)
             self._waiting.clear()
             await self.notes.put({"method": "_exited", "params": {"message": str(gone)}})
+
+    async def _answer(self, msg: dict) -> None:
+        result = None
+        if self.on_request:
+            with contextlib.suppress(Exception):
+                result = await self.on_request(msg["method"], msg.get("params") or {})
+        with contextlib.suppress(Exception):
+            if result is None:
+                await self._send({"id": msg["id"], "error": {"code": -32601, "message": "not supported"}})
+            else:
+                await self._send({"id": msg["id"], "result": result})
 
 
 def text_input(text: str) -> dict:

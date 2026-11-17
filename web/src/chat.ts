@@ -1,11 +1,10 @@
 // Chat state: one active chat at a time; each chat owns its questions, anchors, queue, and thread.
 import { create } from "zustand";
-import type { CodeLoc } from "./lib/cite";
 import { errorText, postSSE } from "./lib/sse";
 import { storage } from "./lib/storage";
+import { useGenerate } from "./review";
 import { useApp } from "./store";
 import type { Ref } from "./types";
-import { diffActivity } from "./ui";
 
 export interface Anchor {
   file: string;
@@ -37,8 +36,6 @@ export interface Question {
   answer: string;
   tools: string[];
   turn: number | null;
-  /** Diff regions the model chose to show for this question (`show_code`). */
-  shows: Show[];
   /** What the agent did this turn, in order: reasoning as its CLI reports it, and tool calls (shared by the turn's
    * questions). */
   trace?: TraceItem[];
@@ -63,10 +60,6 @@ export function extendTrace(trace: TraceItem[] = [], item: TraceItem): TraceItem
   return [...trace, item];
 }
 
-export interface Show extends CodeLoc {
-  label: string;
-}
-
 export interface ChatSummary {
   id: string;
   title: string;
@@ -77,7 +70,7 @@ export interface ChatSummary {
   harness?: string | null;
 }
 
-/** "guide": the agent session that wrote the guide, continued. "fork": a read-only branch of it. */
+/** "guide": the agent session that wrote the guide, continued. "fork": a branch of it. */
 export type ChatKind = "guide" | "fork";
 
 /** Agents whose sessions chat can fork or continue (the engine's FORKABLE). */
@@ -107,8 +100,11 @@ interface State {
   history: ChatSummary[];
   historyOpen: boolean;
   error: string | null;
-  mode: ChatMode;
-  setMode(mode: ChatMode): void;
+  /** The mode picked for each agent, as each has its own. */
+  modes: Record<string, ChatMode>;
+  modeOf(harness: string): ChatMode;
+  /** Picks ``mode`` for ``harness`` (by default the session in front of the reviewer). */
+  setMode(mode: ChatMode, harness?: string): void;
   /** Tool calls waiting on the reviewer in the running turn. */
   asks: Ask[];
   answer(id: string, decision: Decision): Promise<void>;
@@ -123,15 +119,15 @@ interface State {
   steer(batch: string): Promise<void>;
   /** The queued message being edited in the composer: the queue holds until the edit is saved or cancelled. */
   editing: string | null;
-  /** A sent message being edited in the composer (its question id). */
+  /** A sent message being edited in the composer (one of its question ids). Its line notes are back in the
+   *  composer as staged notes; any notes staged before are set aside in ``held`` until the edit ends. */
   rewriting: string | null;
+  held: Question[];
   setRewriting(id: string | null): void;
-  /** Send an edited version of a sent message: the session rewinds to just before it (``code``: the files too),
-   *  and it and everything after it go. */
+  /** Send an edited version of a sent message (``text`` and its staged notes): the session rewinds to just before
+   *  it (``code``: the files too), and it and everything after it go. */
   editSent(id: string, text: string, code: boolean): void;
   setEditing(batch: string | null): void;
-  /** The diff should jump to this show: the model's first `show_code` of a turn, if the diff wasn't touched since asking. */
-  autoShow: { q: string; i: number; n: number } | null;
 
   reset(pr: string): void;
   /** Open the guide's own session, continued where it (or this chat) left off. */
@@ -152,14 +148,32 @@ interface State {
   sendStaged(extra?: string): void;
 }
 
-/** How much the guide session may do: the harness's own permission modes. Forks are always read-only. */
-export type ChatMode = "default" | "acceptEdits" | "plan" | "auto";
+/** How much a chat's session may do: the harness's own permission modes. Claude Code's are default, acceptEdits,
+ *  plan and auto; Codex's are its /approvals presets read-only, auto and full-access. */
+export type ChatMode = "default" | "acceptEdits" | "plan" | "auto" | "read-only" | "full-access";
 /** The reviewer's answer to a tool call; "always" also allows its kind for the rest of the session. */
 export type Decision = "allow" | "deny" | "always";
-/** The modes an agent has, in the order its own Shift+Tab cycles them. Codex can't stop mid-run to ask, so its
- * modes are its sandboxes: Plan reads, Auto writes in the workspace. */
-export const modesFor = (harness: string | null): ChatMode[] =>
-  harness === "claude-code" ? ["default", "acceptEdits", "plan", "auto"] : harness === "codex" ? ["plan", "auto"] : [];
+/** The modes an agent has, in the order it lists them: Claude Code's Shift+Tab cycle, Codex's /approvals. Cursor
+ *  has none: it only reads. */
+const HARNESS_MODES: Record<string, ChatMode[]> = {
+  "claude-code": ["default", "acceptEdits", "plan", "auto"],
+  codex: ["read-only", "auto", "full-access"],
+};
+const DEFAULT_MODE: Record<string, ChatMode> = { "claude-code": "default", codex: "auto" };
+export const modesFor = (harness: string | null): ChatMode[] => HARNESS_MODES[harness ?? ""] ?? [];
+
+/** Whose session the reviewer is talking to: the chat's, else the guide's, else the agent writing the review. With
+ *  none, chat runs on Claude Code (bundled with the engine), as a review written from here would. */
+export function sessionHarness(chat: { harness?: string | null } = useChat.getState().chat): string {
+  const pr = useApp.getState().pr?.url;
+  const job = pr ? useGenerate.getState().jobs[pr] : undefined;
+  const writing = job && job.state !== "none" ? (job.harness ?? "claude-code") : null;
+  return chat.harness ?? useApp.getState().guide?.meta?.harness ?? writing ?? "claude-code";
+}
+
+/** Whether switching to ``mode`` answers a waiting ask (the engine's allowed_in). */
+export const allowedIn = (mode: ChatMode, tool: string) =>
+  mode === "auto" || mode === "full-access" || (mode === "acceptEdits" && EDIT_TOOLS.includes(tool));
 
 /** A tool call the session wants to make that its settings don't already allow. */
 export const EDIT_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
@@ -169,6 +183,15 @@ export interface Ask {
   tool: string;
   summary: string;
   input: Record<string, unknown>;
+}
+
+/** The mode an answer moves the session to, as the terminal does: "Allow edits this session" switches to accepting
+ *  edits, and approving a plan leaves plan mode. */
+export function followDecision(ask: Ask, decision: Decision, harness = sessionHarness()) {
+  if (harness !== "claude-code") return; // Codex's "for this session" doesn't change its preset
+  const setMode = (m: ChatMode) => useChat.getState().setMode(m, harness);
+  if (decision === "always" && EDIT_TOOLS.includes(ask.tool)) setMode("acceptEdits");
+  if (decision !== "deny" && ask.tool === "ExitPlanMode") setMode(decision === "always" ? "acceptEdits" : "default");
 }
 
 let chatSeq = 0;
@@ -265,7 +288,6 @@ export const useChat = create<State>((set, get) => {
     const ctrl = new AbortController();
     ctrls.add(ctrl);
     const askedAt = Date.now();
-    let autoShown = false;
     try {
       const id = await ensureChat();
       await postSSE(
@@ -274,7 +296,7 @@ export const useChat = create<State>((set, get) => {
           url: get().pr,
           questions: wire,
           version: useApp.getState().guide?.version ?? null,
-          mode: chatRef.kind === "guide" ? get().mode : "read-only",
+          mode: get().modeOf(sessionHarness(get().chat)),
           ...(rewind ? { rewind } : {}),
         },
         ({ event, data }) => {
@@ -282,22 +304,6 @@ export const useChat = create<State>((set, get) => {
           if (event === "delta") {
             const target = byN.get(d.n as number);
             if (target) patch(get().chat, [target], (q) => ({ answer: q.answer + (d.text as string) }));
-          } else if (event === "focus") {
-            const target = byN.get(d.n as number);
-            if (!target) return;
-            const show: Show = {
-              file: String(d.file),
-              start: Number(d.start),
-              end: Number(d.end),
-              side: d.side === "old" ? "old" : "new",
-              label: String(d.label ?? ""),
-            };
-            const i = get().chat.questions.find((q) => q.id === target)?.shows.length ?? 0;
-            patch(get().chat, [target], (q) => ({ shows: [...q.shows, show] }));
-            if (!autoShown && diffActivity.at < askedAt && get().chat.key === chatRef.key) {
-              autoShown = true;
-              set((s) => ({ autoShow: { q: target, i, n: (s.autoShow?.n ?? 0) + 1 } }));
-            }
           } else if (event === "guide") {
             const target = byN.get(d.n as number);
             const v = Number(d.version);
@@ -371,58 +377,106 @@ export const useChat = create<State>((set, get) => {
     history: [],
     historyOpen: false,
     error: null,
-    autoShow: null,
-    mode: ((m) => (modesFor("claude-code").includes(m) ? m : "default"))(
-      storage.get<ChatMode>("rv-chat-mode", "default"),
+    modes: Object.fromEntries(
+      Object.entries(DEFAULT_MODE).map(([h, d]) => {
+        const m = storage.get<ChatMode>(`rv-chat-mode:${h}`, d);
+        return [h, modesFor(h).includes(m) ? m : d];
+      }),
     ),
+    modeOf(harness) {
+      return get().modes[harness] ?? DEFAULT_MODE[harness] ?? "read-only";
+    },
     asks: [],
     editing: null,
     rewriting: null,
+    held: [],
     setRewriting(id) {
-      set({ rewriting: id });
-    },
-    editSent(id, text, code) {
-      const { chat } = get();
+      const { chat, rewriting, held } = get();
+      // Whatever an earlier edit put back goes; notes staged before it come back.
+      const rest = rewriting ? chat.questions.filter((q) => q.status !== "staged") : chat.questions;
+      if (!id) return set({ rewriting: null, held: [], chat: { ...chat, questions: [...rest, ...held] } });
       const q = chat.questions.find((x) => x.id === id);
-      if (!q?.uuid || q.turn == null || chat.busy || !text.trim()) return;
-      set((s) => ({
-        rewriting: null,
-        chat: { ...s.chat, questions: s.chat.questions.filter((x) => x.turn == null || x.turn < q.turn!) },
-      }));
-      void send(
-        [
-          {
+      if (q?.turn == null) return;
+      const notes = chat.questions
+        .filter((x) => x.turn === q.turn && x.anchor)
+        .map(
+          (x): Question => ({
             id: qid(),
-            n: q.n,
-            text: text.trim(),
-            anchor: q.anchor,
-            status: "pending",
+            n: x.n,
+            text: x.text,
+            anchor: x.anchor,
+            status: "staged",
             answer: "",
             tools: [],
             turn: null,
-            shows: [],
-          },
-        ],
-        { uuid: q.uuid, code },
-      );
+          }),
+        );
+      set({
+        rewriting: id,
+        held: rewriting ? held : rest.filter((x) => x.status === "staged"),
+        chat: { ...chat, questions: [...rest.filter((x) => x.status !== "staged"), ...notes] },
+      });
+    },
+    editSent(id, text, code) {
+      const { chat, held } = get();
+      const q = chat.questions.find((x) => x.id === id);
+      const notes = chat.questions.filter((x) => x.status === "staged");
+      // The session's id for the message sits on its first question, which may be a note or the typed text.
+      const uuid = q?.turn == null ? undefined : chat.questions.find((x) => x.turn === q.turn && x.uuid)?.uuid;
+      if (!q || !uuid || q.turn == null || chat.busy || (!text.trim() && !notes.length)) return;
+      const qs = [...notes];
+      if (text.trim())
+        qs.push({
+          id: qid(),
+          n: null,
+          text: text.trim(),
+          anchor: null,
+          status: "pending",
+          answer: "",
+          tools: [],
+          turn: null,
+        });
+      set((s) => ({
+        rewriting: null,
+        held: [],
+        chat: {
+          ...s.chat,
+          questions: s.chat.questions.filter((x) => x.status !== "staged" && (x.turn == null || x.turn < q.turn!)),
+        },
+      }));
+      void send(qs, { uuid, code });
+      // Notes staged before the edit wait for the next message again.
+      set((s) => ({ chat: { ...s.chat, questions: [...s.chat.questions, ...held] } }));
     },
 
     setEditing(batch) {
       set({ editing: batch });
       if (!batch) sendNext();
     },
-    setMode(mode) {
-      storage.set("rv-chat-mode", mode);
-      set({ mode });
+    setMode(mode, harness = sessionHarness(get().chat)) {
+      if (!modesFor(harness).includes(mode)) return;
+      storage.set(`rv-chat-mode:${harness}`, mode);
+      set((s) => ({ modes: { ...s.modes, [harness]: mode } }));
+      // As Shift+Tab mid-turn: the running turn (or review being written) switches now, and what the mode allows
+      // that's waiting goes ahead.
+      const { chat } = get();
+      if (chat.busy && chat.id && sessionHarness(chat) === harness) {
+        set((s) => ({ asks: s.asks.filter((a) => !allowedIn(mode, a.tool)) }));
+        void fetch(`/api/chats/${chat.id}/mode`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mode }),
+        }).catch(() => {});
+      }
+      const pr = useApp.getState().pr?.url;
+      const job = pr ? useGenerate.getState().jobs[pr] : undefined;
+      if (pr && job?.state === "running" && (job.harness ?? "claude-code") === harness)
+        void useGenerate.getState().switchMode(pr, mode);
     },
     async answer(id, decision) {
       const ask = get().asks.find((a) => a.id === id);
       set((s) => ({ asks: s.asks.filter((a) => a.id !== id) }));
-      // "Allow edits this session" is the terminal's switch to accepting edits: show it in the mode too.
-      if (decision === "always" && ask && EDIT_TOOLS.includes(ask.tool)) get().setMode("acceptEdits");
-      // Approving a plan leaves plan mode, as the terminal does.
-      if (decision !== "deny" && ask?.tool === "ExitPlanMode")
-        get().setMode(decision === "always" ? "acceptEdits" : "default");
+      if (ask) followDecision(ask, decision);
       const chat = get().chat.id;
       if (!chat) return;
       try {
@@ -459,7 +513,6 @@ export const useChat = create<State>((set, get) => {
             answer: "",
             tools: [],
             turn: null,
-            shows: [],
             batch,
           };
           out = [...qs.slice(0, at + 1), q, ...qs.slice(at + 1)];
@@ -614,7 +667,6 @@ export const useChat = create<State>((set, get) => {
         answer: "",
         tools: [],
         turn: null,
-        shows: [],
       };
       set((s) => ({ chat: { ...s.chat, questions: [...s.chat.questions, q], nextN: s.chat.nextN + 1 } }));
       return q;
@@ -632,7 +684,7 @@ export const useChat = create<State>((set, get) => {
     ask(text, anchor = null) {
       const n = anchor ? get().chat.nextN : null;
       if (anchor) set((s) => ({ chat: { ...s.chat, nextN: s.chat.nextN + 1 } }));
-      void send([{ id: qid(), n, text, anchor, status: "pending", answer: "", tools: [], turn: null, shows: [] }]);
+      void send([{ id: qid(), n, text, anchor, status: "pending", answer: "", tools: [], turn: null }]);
     },
     sendStaged(extra) {
       const staged = get().chat.questions.filter((q) => q.status === "staged");
@@ -647,7 +699,6 @@ export const useChat = create<State>((set, get) => {
           answer: "",
           tools: [],
           turn: null,
-          shows: [],
         });
       void send(qs);
     },
@@ -678,7 +729,6 @@ interface WireChat {
     }[];
     answers: Record<string, string>;
     tools: string[];
-    shows?: (Show & { n: number })[];
     guide_version?: number;
     source?: string;
     uuid?: string;
@@ -736,7 +786,6 @@ export function fromWire(c: WireChat): Chat {
         status: t.status === "error" ? "error" : t.status === "done" ? "answered" : "answered",
         answer: t.answers[String(q.n)] ?? "",
         tools: t.tools,
-        shows: (t.shows ?? []).filter((x) => x.n === q.n).map(({ n: _, ...x }) => x),
         guideVersion: q === t.questions.at(-1) ? t.guide_version : undefined,
         uuid: q.uuid ?? (q === t.questions[0] ? t.uuid : undefined),
         fromSession: t.source === "session",

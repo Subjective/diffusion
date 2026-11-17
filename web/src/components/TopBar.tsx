@@ -1,16 +1,43 @@
-import { Check, GitBranch, History, ListOrdered, Map as MapIcon, Moon, Sun } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  CircleCheck,
+  CircleDashed,
+  CircleX,
+  GitBranch,
+  GitMerge,
+  GitPullRequest,
+  History,
+  Layers2,
+  ListOrdered,
+  LoaderCircle,
+  Map as MapIcon,
+  MessageSquare,
+  Moon,
+  Search,
+  Sun,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "../chat";
 import { ago } from "../lib/time";
+import { usePopover } from "../lib/usePopover";
+import { inboxStack, useGenerate, useInbox, useReview, type Verdict } from "../review";
 import { useApp } from "../store";
+import type { Check as CheckRun, InboxPR, PRMeta } from "../types";
 import { useUI } from "../ui";
+import { useGeneratingHarness } from "./Generate";
+import { Reviewers } from "./Inbox";
 import { GithubIcon, HarnessMark, harnessName, ic, Logo } from "./icons";
 
 export function TopBar() {
   const { theme, toggleTheme, chatOpen, toggleChat, url, home } = useApp();
   const chatHarness = useChat((s) => s.chat.harness);
   const guideHarness = useApp((s) => s.guide?.meta?.harness);
-  const harness = chatHarness ?? guideHarness ?? null;
+  const genHarness = useGeneratingHarness();
+  const harness = chatHarness ?? guideHarness ?? genHarness;
   return (
     <header className="top">
       {url ? (
@@ -24,73 +51,478 @@ export function TopBar() {
       )}
       <Target />
       <div className="top-r">
+        <ReviewChip />
         <ModeToggle />
         <Versions />
         <button type="button" className="icon-btn" title="Theme" onClick={toggleTheme}>
           {ic(theme === "dark" ? Sun : Moon, 17)}
         </button>
-        <button
-          type="button"
-          className={`icon-btn${chatOpen ? " on" : ""}`}
-          title={harnessName(harness)}
-          onClick={() => toggleChat()}
-        >
-          <HarnessMark harness={harness} size={16} />
-        </button>
+        {url ? (
+          <button
+            type="button"
+            className={`icon-btn${chatOpen ? " on" : ""}`}
+            title={harnessName(harness)}
+            onClick={() => toggleChat()}
+          >
+            <HarnessMark harness={harness} size={16} />
+          </button>
+        ) : (
+          <AgentMenu />
+        )}
       </div>
     </header>
   );
 }
 
-/** Steps or map in the left pane; shown once the guide has a view to map. */
-function ModeToggle() {
-  const hasMap = useApp((s) => !!s.guide?.views?.length);
-  const { mode, setMode } = useUI();
-  if (!hasMap) return null;
+/** On home, where there's no chat to open: the agent that writes reviews from here (the inbox's Write a review, and
+ *  the review page's card, start on it). */
+function AgentMenu() {
+  const [open, setOpen, ref] = usePopover();
+  const { harness, harnesses, pick, loadHarnesses } = useGenerate();
+  useEffect(() => void loadHarnesses(), [loadHarnesses]);
   return (
-    <div className="seg">
+    <div className="pop-anchor agent-menu" ref={ref}>
       <button
         type="button"
-        className={`icon-btn${mode !== "map" ? " on" : ""}`}
-        title="Steps"
-        aria-pressed={mode !== "map"}
-        onClick={() => setMode("guide")}
+        className={`icon-btn${open ? " on" : ""}`}
+        data-tip="Agent"
+        aria-label="Agent"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
       >
-        {ic(ListOrdered, 16)}
+        <HarnessMark harness={harness} size={16} />
       </button>
-      <button
-        type="button"
-        className={`icon-btn${mode === "map" ? " on" : ""}`}
-        title="Map"
-        aria-pressed={mode === "map"}
-        onClick={() => setMode("map")}
-      >
-        {ic(MapIcon, 16)}
-      </button>
+      {open && (
+        <div className="gen-menu" role="menu">
+          {harnesses.map((h) => (
+            <button
+              key={h}
+              type="button"
+              role="menuitemradio"
+              aria-checked={h === harness}
+              onClick={() => {
+                pick(h);
+                setOpen(false);
+              }}
+            >
+              <HarnessMark harness={h} size={14} />
+              <span className="grow">{harnessName(h)}</span>
+              {h === harness && ic(Check, 14)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-/** What's under review: the PR (linking out), or the local repository and branch. */
+/** The left pane: the PR's conversation (on GitHub PRs), the steps, or the map (once the guide has one). */
+function ModeToggle() {
+  const hasMap = useApp((s) => !!s.guide?.views?.length);
+  const hasPR = useReview((s) => !!s.state?.available && !s.state.error);
+  const { mode, setMode } = useUI();
+  if (!hasMap && !hasPR) return null;
+  const shown = mode === "map" && !hasMap ? "guide" : mode === "pr" && !hasPR ? "guide" : mode;
+  const btn = (m: typeof mode, title: string, icon: Parameters<typeof ic>[0]) => (
+    <button
+      type="button"
+      className={`icon-btn${shown === m ? " on" : ""}`}
+      title={title}
+      aria-pressed={shown === m}
+      onClick={() => setMode(m)}
+    >
+      {ic(icon, 16)}
+    </button>
+  );
+  return (
+    <div className="seg">
+      {hasPR && btn("pr", "Conversation", GitPullRequest)}
+      {btn("guide", "Steps", ListOrdered)}
+      {hasMap && btn("map", "Map", MapIcon)}
+    </div>
+  );
+}
+
+/** What's under review: the PR (with a switcher, its stack, checks and reviewers), or the local repository and branch. */
 function Target() {
   const pr = useApp((s) => s.pr);
   if (!pr) return <div className="target" />;
-  return (
-    <div className="target">
-      {pr.local ? (
+  if (pr.local)
+    return (
+      <div className="target">
         <span title={pr.url}>
           {ic(GitBranch, 15)}
           <b>{localName(pr.url)}</b>
           <span className="target-ref">{pr.head_ref}</span>
         </span>
-      ) : (
-        <a href={pr.url} target="_blank" rel="noreferrer" title={pr.url}>
-          <GithubIcon size={15} />
-          <b>
-            {pr.owner}/{pr.repo}
-          </b>
-          <span className="target-ref">#{pr.number}</span>
-        </a>
+      </div>
+    );
+  return <PRTarget pr={pr} />;
+}
+
+function PRTarget({ pr }: { pr: PRMeta }) {
+  const prs = useInbox((s) => s.inbox?.prs);
+  const review = useReview((s) => s.state);
+  useEffect(() => {
+    if (!useInbox.getState().inbox) void useInbox.getState().load();
+  }, []);
+  const { layers } = useMemo(() => inboxStack(prs ?? [], pr.owner, pr.repo, pr.number), [prs, pr]);
+  return (
+    <div className="target">
+      <a className="icon-btn sm gh-link" href={pr.url} target="_blank" rel="noreferrer" data-tip="Open on GitHub">
+        <GithubIcon size={15} />
+      </a>
+      <b>{pr.repo}</b>
+      <Switcher pr={pr} layers={layers} />
+      {layers.length > 0 && <StackChip pr={pr} layers={layers} />}
+      {review?.checks && review.checks.state !== "none" && (
+        <ChecksChip checks={review.checks} mergeable={review.mergeable} base={review.base_ref ?? pr.base_ref} />
+      )}
+      {review?.reviewers?.length ? <Reviewers list={review.reviewers} /> : null}
+    </div>
+  );
+}
+
+const CHECK_ICON = {
+  success: <span className="ck ok">{ic(CircleCheck, 15)}</span>,
+  failure: <span className="ck bad">{ic(CircleX, 15)}</span>,
+  pending: <span className="ck wait">{ic(LoaderCircle, 15)}</span>,
+  skipped: <span className="ck">{ic(CircleDashed, 15)}</span>,
+};
+
+/** The PR's checks at a glance, and each one (linking to its run) in a popover. */
+function ChecksChip({
+  checks,
+  mergeable,
+  base,
+}: {
+  checks: { state: string; failing: number; list: CheckRun[] };
+  mergeable?: string;
+  base: string;
+}) {
+  const [open, setOpen, ref] = usePopover();
+  const tip =
+    checks.state === "success"
+      ? "Checks passed"
+      : checks.state === "pending"
+        ? "Checks running"
+        : checks.failing === 1
+          ? "1 check failing"
+          : `${checks.failing} checks failing`;
+  return (
+    <div className="pop-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`ci-chip ${checks.state}${open ? " on" : ""}`}
+        data-tip={open ? undefined : tip}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {checks.state === "success" && ic(Check, 14)}
+        {checks.state === "pending" && ic(LoaderCircle, 14)}
+        {checks.state === "failure" && (
+          <>
+            {ic(X, 13)}
+            {checks.failing > 0 && <span>{checks.failing}</span>}
+          </>
+        )}
+      </button>
+      {open && (
+        <div className="ci-pop" role="menu">
+          {checks.list.map((c) => (
+            <a key={`${c.name}-${c.url}`} className="r" role="menuitem" href={c.url} target="_blank" rel="noreferrer">
+              {CHECK_ICON[c.state]}
+              <span className="n">{c.name}</span>
+              {ic(ArrowUpRight, 14)}
+            </a>
+          ))}
+          {mergeable && mergeable !== "unknown" && (
+            <>
+              <div className="sep" />
+              <div className={`mg${mergeable === "conflicting" ? " bad" : ""}`}>
+                {ic(GitMerge, 14)}
+                {mergeable === "conflicting" ? `Conflicts with ${base}` : `No conflicts with ${base}`}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const VERDICTS: [Verdict, string][] = [
+  ["comment", "Comment"],
+  ["approve", "Approve"],
+  ["request_changes", "Request changes"],
+];
+
+/** Your review: the comments waiting in it, a summary and a verdict, submitted to GitHub together. */
+function ReviewChip() {
+  const state = useReview((s) => s.state);
+  const pending = useReview((s) => s.pending);
+  const { submit, editPending, busy } = useReview();
+  const [listed, setListed] = useState(false);
+  const error = useReview((s) => (s.errorAt === "review" ? s.error : null));
+  const [open, setOpen, ref] = usePopover();
+  const body = useReview((s) => s.summary);
+  const setBody = useReview((s) => s.setSummary);
+  const [verdict, setVerdict] = useState<Verdict>("comment");
+  if (!state?.available || state.error || !state.viewer) return null;
+  // GitHub doesn't let you approve or request changes on your own PR.
+  const own = state.viewer === state.author;
+  const can = !busy && (pending.length > 0 || body.trim() !== "" || verdict === "approve");
+  const go = async () => {
+    if (await submit(own ? "comment" : verdict, body.trim())) {
+      setBody("");
+      setVerdict("comment");
+      setOpen(false);
+    }
+  };
+  const jump = (p: (typeof pending)[number]) => {
+    setOpen(false);
+    const rows = [...document.querySelectorAll<HTMLElement>(`tr.ln[data-file="${CSS.escape(p.path)}"]`)].filter((r) => {
+      const n = Number(p.side === "new" ? r.dataset.new : r.dataset.old);
+      return n >= p.start && n <= p.end;
+    });
+    useUI.getState().focus(
+      rows.map((r) => r.dataset.rk!),
+      [p.path],
+    );
+  };
+  return (
+    <div className="pop-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`rv-btn${open ? " on" : ""}`}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        Review
+        {pending.length > 0 && <span className="n">{pending.length}</span>}
+      </button>
+      {open && (
+        <div className="rv-pop" role="dialog" aria-label="Review">
+          {pending.length > 0 && (
+            <div className={`rv-pend${listed ? " on" : ""}`}>
+              <button type="button" className="rv-pend-h" aria-expanded={listed} onClick={() => setListed(!listed)}>
+                {ic(MessageSquare, 14)}
+                <span className="grow">
+                  {pending.length} comment{pending.length === 1 ? "" : "s"}
+                </span>
+                {ic(listed ? ChevronUp : ChevronDown, 14)}
+              </button>
+              {listed &&
+                pending.map((p) => (
+                  <div key={p.id} className="rv-i">
+                    <button type="button" className="rv-go" onClick={() => jump(p)}>
+                      <span className="x">{p.body}</span>
+                      <span className="where">
+                        {p.path.split("/").pop()}
+                        <span>{p.start === p.end ? `L${p.end}` : `L${p.start}–${p.end}`}</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn sm"
+                      aria-label="Remove"
+                      onClick={() => editPending(p.id, "")}
+                    >
+                      {ic(X, 13)}
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+          <textarea
+            className="rv-body"
+            rows={3}
+            value={body}
+            placeholder="Leave a comment"
+            onChange={(e) => setBody(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && can) {
+                e.preventDefault();
+                void go();
+              }
+            }}
+          />
+          {error && <div className="rv-err">{error}</div>}
+          <div className="rv-f">
+            <div className="seg th-seg rv-verdict">
+              {VERDICTS.map(([v, label]) => {
+                const mine = own && v !== "comment";
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    className={(own ? v === "comment" : verdict === v) ? "on" : ""}
+                    aria-pressed={own ? v === "comment" : verdict === v}
+                    disabled={mine}
+                    data-tip={
+                      mine ? `You can't ${v === "approve" ? "approve" : "request changes on"} your own PR` : undefined
+                    }
+                    onClick={() => setVerdict(v)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="grow" />
+            <button type="button" className="rv-submit" disabled={!can} onClick={go}>
+              Submit
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SWITCH_GROUPS = [
+  ["review", "Needs your review"],
+  ["yours", "Yours"],
+  ["drafts", "Drafts"],
+] as const;
+
+const NO_PRS: InboxPR[] = [];
+
+/** "#42", opening the other PRs you're on: this one's stack first, then the inbox's groups, with a filter. */
+/** A PR in the switcher or the stack menu; clicking it opens it. */
+function SwItem({ p, pr, lvl, onGo }: { p: InboxPR; pr: PRMeta; lvl?: number; onGo: () => void }) {
+  const go = useApp((s) => s.open);
+  const cur = p.number === pr.number && p.repo === pr.repo;
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={`sw-i${cur ? " cur" : ""}`}
+      onClick={() => {
+        onGo();
+        if (!cur) go(p.url);
+      }}
+    >
+      {lvl != null && <span className="lvl">{lvl}</span>}
+      <span className="t">{p.title}</span>
+      <span className="n">#{p.number}</span>
+      <span className={`m ${p.checks.state}`}>
+        {p.checks.state === "success" && ic(Check, 13)}
+        {p.checks.state === "failure" && ic(X, 12)}
+        {p.checks.state === "pending" && ic(LoaderCircle, 13)}
+      </span>
+    </button>
+  );
+}
+
+/** A stack's PRs, top first, down to the branch it's based on. */
+function StackList({ pr, stack, base, onGo }: { pr: PRMeta; stack: InboxPR[]; base: string; onGo: () => void }) {
+  return (
+    <div className="sw-stack">
+      {stack.map((p) => (
+        <SwItem key={p.url} p={p} pr={pr} lvl={p.stack!.index} onGo={onGo} />
+      ))}
+      <div className="sw-base">
+        {ic(GitBranch, 12)}
+        <span>{base}</span>
+      </div>
+    </div>
+  );
+}
+
+/** The stack chip: where this PR sits, and a menu of the stack's PRs. */
+function StackChip({ pr, layers }: { pr: PRMeta; layers: InboxPR[] }) {
+  const [open, setOpen, ref] = usePopover();
+  const at = layers.findIndex((p) => p.number === pr.number);
+  return (
+    <div className="pop-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`stk${open ? " on" : ""}`}
+        aria-expanded={open}
+        data-tip={`Stack: ${layers.length - at} of ${layers.length}`}
+        onClick={() => setOpen(!open)}
+      >
+        {ic(Layers2, 13)}
+        {layers.length - at}/{layers.length}
+      </button>
+      {open && (
+        <div className="sw-pop stk-pop" role="menu">
+          <div className="sw-b">
+            <StackList pr={pr} stack={layers} base={layers[layers.length - 1].base_ref} onGo={() => setOpen(false)} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Switcher({ pr, layers }: { pr: PRMeta; layers: InboxPR[] }) {
+  const prs = useInbox((s) => s.inbox?.prs) ?? NO_PRS;
+  const [open, setOpen, ref] = usePopover();
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setQ("");
+    void useInbox.getState().load();
+  }, [open]);
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const match = (p: InboxPR) =>
+    words.every((w) => `${p.repo} #${p.number} ${p.title} ${p.author}`.toLowerCase().includes(w));
+  const inStack = new Set(layers.map((p) => p.url));
+  const close = () => setOpen(false);
+  const item = (p: InboxPR) => <SwItem key={p.url} p={p} pr={pr} onGo={close} />;
+  const stack = layers.filter(match);
+  return (
+    <div className="pop-anchor" ref={ref}>
+      <button
+        type="button"
+        className={`target-ref sw-btn${open ? " on" : ""}`}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        #{pr.number}
+        {ic(ChevronDown, 12)}
+      </button>
+      {open && (
+        <div className="sw-pop" role="menu">
+          <label className="sw-q">
+            {ic(Search, 14)}
+            <input
+              // biome-ignore lint/a11y/noAutofocus: the filter is what the popover opens for
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Filter"
+              spellCheck={false}
+            />
+          </label>
+          <div className="sw-b">
+            {stack.length > 0 && (
+              <>
+                <div className="sw-h">
+                  {ic(Layers2, 12)}
+                  Stack
+                </div>
+                <StackList pr={pr} stack={stack} base={layers[layers.length - 1].base_ref} onGo={close} />
+              </>
+            )}
+            {SWITCH_GROUPS.map(([g, label]) => {
+              const ps = prs.filter((p) => p.group === g && !inStack.has(p.url) && match(p));
+              if (!ps.length) return null;
+              return (
+                <div key={g}>
+                  <div className="sw-h">{label}</div>
+                  {ps.map((p) => item(p))}
+                </div>
+              );
+            })}
+            {!stack.length && !prs.some((p) => !inStack.has(p.url) && match(p)) && (
+              <div className="sw-none">{prs.length ? "No matches" : "No open pull requests"}</div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

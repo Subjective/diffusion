@@ -14,7 +14,6 @@ type Turn = {
   questions: { n: number; text: string; anchor: unknown }[];
   answers: Record<string, string>;
   tools: string[];
-  shows?: unknown[];
   status: string;
 };
 const chats = new Map<string, { id: string; turns: Turn[]; updated_at: number }>();
@@ -87,23 +86,14 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     const body = JSON.parse(String(init!.body));
     turnBodies.push(body);
     const chat = chats.get(m[1])!;
-    // "where…" questions: answer with citations and a show_code focus, like the real engine
+    // "where…" questions: answer with citations, like the real engine
     const where = (q: { text: string }) => q.text.startsWith("where");
     const text = (q: { n: number; text: string }) =>
       where(q) ? "In `session.ts:6–7`, not `README.md:1`." : `answer ${q.n}`;
-    const shows = body.questions.filter(where).map((q: { n: number }) => ({
-      n: q.n,
-      file: "src/auth/session.ts",
-      start: 6,
-      end: 7,
-      side: "new",
-      label: "end() clears timer",
-    }));
     const answers = Object.fromEntries(body.questions.map((q: { n: number; text: string }) => [String(q.n), text(q)]));
-    chat.turns.push({ questions: body.questions, answers, tools: ["Grep x"], shows, status: "done" });
+    chat.turns.push({ questions: body.questions, answers, tools: ["Grep x"], status: "done" });
     const gate = new Promise<void>((r) => (release = r));
     const deltas = body.questions.map((q: { n: number; text: string }) => sse([["delta", { n: q.n, text: text(q) }]]));
-    deltas.push(...shows.map((f: unknown) => sse([["focus", f]])));
     // "change…" questions: the answer saved a new guide version
     const edit = body.questions.find((q: { text: string }) => q.text.startsWith("change"));
     if (edit) deltas.push(sse([["guide", { n: edit.n, version: 2 }]]));
@@ -266,7 +256,10 @@ test("drag bubble across lines → popup → queue two → badges → send → l
   // send all with an extra typed message
   type("anything else?");
   await waitFor(() => expect(document.querySelector(".composer .note")).toBeNull());
-  expect(document.querySelectorAll(".ans-h").length).toBeGreaterThanOrEqual(2); // numbered -> headers
+  // one bubble, only what was typed; the note heads its own part of the answer, as its pill
+  expect([...document.querySelectorAll(".bubble")].map((b) => b.textContent)).toEqual(["anything else?"]);
+  expect([...document.querySelectorAll(".ans-note .note")].map((n) => n.textContent)).toEqual(["1Why clear it here?"]);
+  expect(document.querySelector(".ans-note .ctx-card")).toBeTruthy();
   await act(async () => release!());
   await waitFor(() => expect(document.querySelector(".qb.s-answered")).toBeTruthy());
 });
@@ -329,18 +322,17 @@ test("messages asked mid-answer queue, can be edited or removed, and go out one 
   await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(3));
 });
 
-test("answers link citations to diff rows; show_code chips focus the diff, auto-jumping only if it wasn't touched", async () => {
+test("answers link citations to diff rows: hover highlights them, click jumps to them", async () => {
   await mount();
   fireEvent.click(screen.getByTitle("New chat"));
   const row = (k: string) => document.querySelector<HTMLElement>(`tr[data-rk="${k}"]`)!;
+  const { useUI } = await import("../ui");
+  const flashN = useUI.getState().flash.n;
   type("where is the timer cleared?");
   await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
   await act(async () => release!());
-  await waitFor(() => expect(document.querySelector(".show-chip")).toBeTruthy());
-
-  // auto-jump: the first show of the turn flashes its rows
-  await waitFor(() => expect(row("src/auth/session.ts:7").className).toMatch(/flash/));
-  expect(document.querySelector(".show-chip")!.textContent).toBe("end() clears timersession.ts:6–7");
+  await waitFor(() => expect(document.querySelector(".ans-t button.cite")).toBeTruthy());
+  expect(useUI.getState().flash.n).toBe(flashN); // an answer never moves the diff on its own
 
   const cite = document.querySelector<HTMLElement>(".ans-t button.cite")!;
   expect(cite.textContent).toBe("session.ts:6–7");
@@ -354,26 +346,10 @@ test("answers link citations to diff rows; show_code chips focus the diff, auto-
   fireEvent.mouseLeave(cite);
   expect(row("src/auth/session.ts:6").className).not.toMatch(/\bhl\b/);
 
-  // after the reviewer scrolls the diff, a new answer's show_code doesn't move it
-  fireEvent.click(screen.getByTitle("New chat"));
-  const { useUI } = await import("../ui");
-  const flashN = useUI.getState().flash.n;
-  type("where again?");
-  await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
-  fireEvent.wheel(document.getElementById("diffPane")!);
-  await act(async () => release!());
-  await waitFor(() => expect(document.querySelector(".show-chip")).toBeTruthy());
-  expect(useUI.getState().flash.n).toBe(flashN);
-  fireEvent.click(document.querySelector(".show-chip")!); // the chip still works on demand
+  fireEvent.click(cite);
   expect(useUI.getState().flash.n).toBe(flashN + 1);
   expect(useUI.getState().scrollTo?.keys[0]).toBe("src/auth/session.ts:6");
-
-  // shows persist with the chat
-  fireEvent.click(screen.getByTitle("New chat"));
-  fireEvent.click(screen.getByTitle("History"));
-  await waitFor(() => expect(document.querySelectorAll(".h-item").length).toBeGreaterThan(1));
-  fireEvent.click([...document.querySelectorAll(".h-item")].find((h) => h.textContent!.includes("where again?"))!);
-  await waitFor(() => expect(document.querySelector(".show-chip .loc")!.textContent).toBe("session.ts:6–7"));
+  await waitFor(() => expect(row("src/auth/session.ts:7").className).toMatch(/flash/));
 });
 
 test("an answer that changes the guide switches to the new version and links to it", async () => {
@@ -456,7 +432,7 @@ test("chat opens on the guide's session; new chats fork it; history keeps the tw
   useApp.setState({ guide: g });
 });
 
-test("the guide session runs in the harness's permission modes and asks in the conversation; forks only read", async () => {
+test("the guide session runs in the harness's permission modes and asks in the conversation, new chats too", async () => {
   await mount();
   const g = useApp.getState().guide!;
   useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "claude-code", session: "s1" } } });
@@ -480,17 +456,56 @@ test("the guide session runs in the harness's permission modes and asks in the c
   expect(document.querySelector(".ask-card")).toBeNull();
   await waitFor(() => expect(approveBodies).toEqual([{ id: "a1", decision: "allow" }]));
   await act(async () => release!());
-  // a fork can only read
+  // a new chat runs in the same mode
   fireEvent.click(screen.getByTitle("New chat"));
-  expect(document.querySelector(".composer .mode")!.textContent).toBe("Read-only");
-  expect(document.querySelector("button.mode")).toBeNull();
+  expect(mode().textContent).toBe("Manual");
+  useApp.setState({ guide: g });
+});
+
+test("a Codex session shows Codex's own presets, kept apart from Claude Code's", async () => {
+  await mount();
+  const g = useApp.getState().guide!;
+  useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "codex", session: "s1" } } });
+  const { useChat } = await import("../chat");
+  useChat.getState().setMode("plan", "claude-code");
+  await act(async () => useChat.getState().openGuide());
+  const mode = () => document.querySelector<HTMLElement>(".composer button.mode")!;
+  expect(mode().textContent).toBe("Auto");
+  fireEvent.click(mode());
+  const items = [...document.querySelectorAll(".mode-menu .mode-item")].map((i) => i.textContent);
+  expect(items).toEqual(["Read Only", "Auto", "Full Access"]);
+  fireEvent.click(screen.getByText("Full Access"));
+  expect(useChat.getState().modeOf("codex")).toBe("full-access");
+  expect(useChat.getState().modeOf("claude-code")).toBe("plan");
+  useChat.getState().setMode("auto", "codex");
+  useChat.getState().setMode("default", "claude-code");
+  useApp.setState({ guide: g });
+});
+
+test("switching to Auto mid-turn switches the running session and lets the waiting ask through", async () => {
+  await mount();
+  const g = useApp.getState().guide!;
+  useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "claude-code", session: "s1" } } });
+  const { useChat } = await import("../chat");
+  useChat.getState().setMode("default");
+  await act(async () => useChat.getState().openGuide());
+  type("risky cleanup");
+  await waitFor(() => expect(document.querySelector(".thread .ask-card")).toBeTruthy());
+  const mode = () => document.querySelector<HTMLElement>(".composer button.mode")!;
+  fireEvent.click(mode());
+  fireEvent.click(screen.getByRole("menuitemradio", { name: /Auto/ }));
+  expect(document.querySelector(".ask-card")).toBeNull();
+  const sent = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find(([u]) => String(u).endsWith("/mode"));
+  expect(JSON.parse(String(sent![1].body))).toEqual({ mode: "auto" });
+  await act(async () => release!());
+  useChat.getState().setMode("default");
   useApp.setState({ guide: g });
 });
 
 test("an edit to approve shows its diff, and allowing edits for the session switches the mode", async () => {
   const { useChat } = await import("../chat");
+  useChat.getState().setMode("default", "claude-code");
   useChat.setState({
-    mode: "default",
     asks: [
       {
         id: "e1",
@@ -506,7 +521,7 @@ test("an edit to approve shows its diff, and allowing edits for the session swit
   expect(r.container.querySelector(".ask-h code")!.textContent).toBe("src/a.rs");
   expect([...r.container.querySelectorAll(".ask-diff span")].map((l) => l.className)).toEqual(["del", "del", "add"]);
   fireEvent.click(r.getByText("Allow edits this session"));
-  expect(useChat.getState().mode).toBe("acceptEdits");
+  expect(useChat.getState().modeOf("claude-code")).toBe("acceptEdits");
   r.unmount();
 
   // a plan reads as the plan; approving it leaves plan mode
@@ -517,7 +532,7 @@ test("an edit to approve shows its diff, and allowing edits for the session swit
   const p = render(<AskCardForTest id="p1" />);
   expect(p.container.querySelector(".ask-plan h2")!.textContent).toBe("Plan");
   fireEvent.click(p.getByText("Approve"));
-  expect(useChat.getState().mode).toBe("default");
+  expect(useChat.getState().modeOf("claude-code")).toBe("default");
   p.unmount();
 });
 
@@ -600,5 +615,106 @@ test("editing a sent message resends it in its place, rewinding the session to b
   await waitFor(() => expect(turnBodies).toHaveLength(3));
   expect(turnBodies[2].rewind).toEqual({ uuid: "u2", code: false });
   expect([...document.querySelectorAll(".bubble")].map((b) => b.textContent)).toEqual(["first?", "second, better?"]);
+  await act(async () => release!());
+});
+
+test("editing a message of line notes alone puts them back in the composer, and resends them all", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  turnBodies.length = 0;
+  const { useChat } = await import("../chat");
+  const at = (start: number) => ({ file: "src/auth/session.ts", start, end: start, side: "new" as const, code: "x" });
+  type("first?");
+  await waitFor(() => expect(release).toBeTruthy());
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(1));
+  act(() => {
+    useChat.getState().stage("why a?", at(5));
+    useChat.getState().stage("why b?", at(6));
+  });
+  fireEvent.click(screen.getByTitle("Send"));
+  await waitFor(() => expect(turnBodies).toHaveLength(2));
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-note")).toHaveLength(2));
+  // no bubble for a message with nothing typed
+  expect([...document.querySelectorAll(".bubble")].map((b) => b.textContent)).toEqual(["first?"]);
+
+  // a note staged for the next message waits while the edit is on
+  act(() => void useChat.getState().stage("later?", at(7)));
+  const pills = () => [...document.querySelectorAll(".composer .note .ref")].map((n) => n.textContent);
+  expect(pills()).toEqual(["later?"]);
+  fireEvent.click(document.querySelector<HTMLElement>(".ans-note .edit-sent")!);
+  await waitFor(() => expect(pills()).toEqual(["why a?", "why b?"]));
+  const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  expect(ta.value).toBe("");
+  expect(document.querySelector(".editing-chip")).toBeTruthy();
+
+  // drop one, add text, save: the session rewinds and gets the rest
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".composer .note .x")[1]);
+  fireEvent.change(ta, { target: { value: "and tests?" } });
+  fireEvent.click(screen.getByTitle("Save"));
+  await waitFor(() => expect(turnBodies).toHaveLength(3));
+  expect(turnBodies[2].rewind).toEqual({ uuid: "u2", code: false });
+  expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["why a?", "and tests?"]);
+  expect(pills()).toEqual(["later?"]);
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-note")).toHaveLength(1));
+  expect([...document.querySelectorAll(".bubble")].map((b) => b.textContent)).toEqual(["first?", "and tests?"]);
+});
+
+test("cancelling an edit of line notes brings back what was staged before", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  const { useChat } = await import("../chat");
+  const at = (start: number) => ({ file: "src/auth/session.ts", start, end: start, side: "new" as const, code: "x" });
+  turnBodies.length = 0;
+  type("first?");
+  await waitFor(() => expect(turnBodies).toHaveLength(1));
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(1));
+  act(() => void useChat.getState().stage("why a?", at(5)));
+  fireEvent.click(screen.getByTitle("Send"));
+  await waitFor(() => expect(turnBodies).toHaveLength(2));
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-note")).toHaveLength(1));
+  act(() => void useChat.getState().stage("later?", at(7)));
+  fireEvent.click(document.querySelector<HTMLElement>(".ans-note .edit-sent")!);
+  const pills = () => [...document.querySelectorAll(".composer .note .ref")].map((n) => n.textContent);
+  await waitFor(() => expect(pills()).toEqual(["why a?"]));
+  fireEvent.click(screen.getByTitle("Cancel (Esc)"));
+  expect(pills()).toEqual(["later?"]);
+  expect(document.querySelector(".editing-chip")).toBeNull();
+});
+
+test("editing a message of line notes and typed text resends it, from its bubble or any note", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  turnBodies.length = 0;
+  const { useChat } = await import("../chat");
+  const at = (start: number) => ({ file: "src/auth/session.ts", start, end: start, side: "new" as const, code: "x" });
+  type("first?");
+  await waitFor(() => expect(turnBodies).toHaveLength(1));
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(1));
+  act(() => {
+    useChat.getState().stage("why a?", at(5));
+    useChat.getState().stage("why b?", at(6));
+  });
+  type("and tests?");
+  await waitFor(() => expect(turnBodies).toHaveLength(2));
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-note")).toHaveLength(2));
+  // every note of the message, and its bubble, can start the edit
+  expect(document.querySelectorAll(".ans-note .edit-sent")).toHaveLength(2);
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".ans-note .edit-sent")[1]);
+  const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  await waitFor(() => expect(ta.value).toBe("and tests?"));
+  const pills = [...document.querySelectorAll(".composer .note .ref")].map((n) => n.textContent);
+  expect(pills).toEqual(["why a?", "why b?"]);
+  fireEvent.change(ta, { target: { value: "and docs?" } });
+  fireEvent.click(screen.getByTitle("Save"));
+  await waitFor(() => expect(turnBodies).toHaveLength(3));
+  expect(turnBodies[2].rewind).toEqual({ uuid: "u2", code: false });
+  expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["why a?", "why b?", "and docs?"]);
   await act(async () => release!());
 });

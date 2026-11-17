@@ -1770,8 +1770,6 @@ tr.qd.sel td.mark {
 .note .x {
   width: 18px;
   height: 18px;
-}
-.note .x {
   opacity: 0;
 }
 .note:hover .x {
@@ -1902,7 +1900,7 @@ tr.qd.sel td.mark {
   transition: background 0.12s;
 }
 .resizer:hover::after,
-body.resizing .resizer::after {
+.resizer.active::after {
   background: var(--hl-bar);
 }
 /* biome-ignore-start lint/complexity/noImportantStyles: while resizing, the cursor must override every element's own. */
@@ -2689,4 +2687,40 @@ tr.peek-row > td {
   border-color: transparent;
   background: var(--chip);
   color: var(--text);
+}
+/* A line note heading its part of an answer: the code it's on, then the note as it was written. */
+.ans-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.ans-note.hover .ctx-card {
+  border-color: var(--hl-bar);
+}
+.note.sent {
+  position: relative;
+  height: auto;
+  min-height: 26px;
+  max-width: 100%;
+  padding: 4px 10px 4px 5px;
+  animation: none;
+}
+.note.sent .ref {
+  max-width: none;
+  white-space: normal;
+  line-height: 1.35;
+}
+.ans-note.hover .note.sent,
+.note.sent.rewriting {
+  box-shadow: 0 0 0 2px var(--hl-bar);
+}
+.note.sent .edit-sent {
+  right: auto;
+  left: calc(100% + 4px);
+}
+.note.sent:hover .edit-sent {
+  opacity: 1;
 }

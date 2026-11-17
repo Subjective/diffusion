@@ -29,11 +29,14 @@ const BLOCK: Components = {
 const plugins = [remarkGfm];
 
 /** Block markdown: paragraphs, headings, nested lists, fenced code, links, tables, blockquotes. */
+/** Hidden in GitHub's rendering too (bots leave markers in PR bodies). */
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+
 export function Markdown({ text }: { text: string }) {
   return (
     <div className="md">
       <ReactMarkdown remarkPlugins={plugins} components={BLOCK}>
-        {text}
+        {text.replace(HTML_COMMENT, "")}
       </ReactMarkdown>
     </div>
   );
