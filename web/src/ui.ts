@@ -93,6 +93,11 @@ export interface Peek {
   refs?: boolean;
 }
 
+/** Flash the first lines of a jump: more never fit on screen, and each flashing row costs a CSS animation and its
+ *  events, which on a step of thousands of lines stalls the jump. */
+const FLASH_MAX = 120;
+const flashOf = (keys: string[], n: number) => ({ keys: new Set(keys.slice(0, FLASH_MAX)), n: n + 1 });
+
 const persist = (k: string, s: Pick<UI, "viewed" | "readSteps" | "resolved">) =>
   storage.set(`rv-ui:${k}`, { viewed: s.viewed, readSteps: s.readSteps, resolved: s.resolved });
 
@@ -223,7 +228,7 @@ export const useUI = create<UI>((set, get) => ({
         pinSub: same ? null : sub,
         refAt: step == null && !pin ? s.refAt : null,
         pinRows: pin ? new Set(keys) : step == null ? s.pinRows : pinStep == null ? new Set() : new Set(keys),
-        flash: { keys: new Set(keys), n: s.flash.n + 1 },
+        flash: flashOf(keys, s.flash.n),
         scrollTo: { keys, n: (s.scrollTo?.n ?? 0) + 1 },
       };
     });
@@ -240,7 +245,7 @@ export const useUI = create<UI>((set, get) => ({
         diffOpen: true,
         tab: null,
         refAt: i,
-        flash: { keys: new Set(keys), n: s.flash.n + 1 },
+        flash: flashOf(keys, s.flash.n),
         scrollTo: { keys, n: (s.scrollTo?.n ?? 0) + 1 },
       };
     });
