@@ -15,6 +15,7 @@ import { rowKey, rowsOfHunk } from "../lib/refs";
 import { type FileLines, useFileLines } from "../lib/useFileLines";
 import type { FileDiff as FD, Hunk } from "../types";
 import { useUI } from "../ui";
+import { Counts } from "./Counts";
 import { ic, SKIP_ICON } from "./icons";
 import { PeekRow } from "./Peek";
 
@@ -96,9 +97,7 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
           <span className="dir">{dir}</span>
           {base}
         </span>
-        <span className="cnt">
-          <span className="a">+{file.additions}</span> <span className="d">−{file.deletions}</span>
-        </span>
+        <Counts file={file} />
         <span className="badges">
           {steps.map((s) => (
             <span key={s} className="dot sm" data-step={s}>

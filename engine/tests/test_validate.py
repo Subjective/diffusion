@@ -276,3 +276,14 @@ def test_plugin_schema_is_current():
 
     shipped = Path(__file__).parents[2] / "plugins/diffusion/skills/review/schema.json"
     assert json.loads(shipped.read_text()) == GuideDraft.model_json_schema(by_alias=True)
+
+
+def test_agent_skippable_one_group_per_file():
+    diff = "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n" + "".join(
+        f"@@ -{n},1 +{n},1 @@\n-old\n+new\n" for n in (10, 40, 80, 120)
+    )
+    idx = parse_diff(diff)
+    skips = [{"file": "x.py", "start": n, "end": n, "reason": "trivial"} for n in (10, 40, 80)]
+    g = validate(draft([step({"file": "x.py", "start": 120, "end": 120})], skippable=skips), idx)
+    (s,) = g.skippable
+    assert s.file == "x.py" and s.hunks == [h.id for h in idx.hunks[:3]]
