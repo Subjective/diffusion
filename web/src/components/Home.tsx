@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchTargets } from "../api";
 import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
+import { tip } from "../lib/tips";
 import { useInbox } from "../review";
 import { useApp } from "../store";
 import type { Target } from "../types";
@@ -110,7 +111,7 @@ export function Home() {
             <button
               type="button"
               className={`icon-btn${view === "guides" ? " on" : ""}`}
-              title="Reviews"
+              {...tip("Reviews")}
               aria-pressed={view === "guides"}
               onClick={() => show("guides")}
             >
@@ -119,7 +120,7 @@ export function Home() {
             <button
               type="button"
               className={`icon-btn${view === "prs" ? " on" : ""}`}
-              title="Pull requests"
+              {...tip("Pull requests")}
               aria-pressed={view === "prs"}
               onClick={() => show("prs")}
             >
@@ -173,13 +174,13 @@ export function Home() {
                 >
                   {t.local ? ic(GitBranch, 15) : <GithubIcon size={15} />}
                   <span className="t">
-                    <span title={title(t)}>{title(t)}</span>
+                    <span data-tip={title(t)}>{title(t)}</span>
                     <span className="w">
                       {name(t)} · {ref(t)}
                     </span>
                   </span>
                   {anyChats && (
-                    <span className="m" title={t.chats > 0 ? "Chats" : undefined}>
+                    <span className="m" data-tip={t.chats > 0 ? "Chats" : undefined}>
                       {t.chats > 0 && (
                         <>
                           {ic(MessageCircle, 13)}
@@ -189,7 +190,7 @@ export function Home() {
                     </span>
                   )}
                   {anyVersions && (
-                    <span className="m" title={t.versions > 1 ? "Versions" : undefined}>
+                    <span className="m" data-tip={t.versions > 1 ? "Versions" : undefined}>
                       {t.versions > 1 && (
                         <>
                           {ic(History, 13)}

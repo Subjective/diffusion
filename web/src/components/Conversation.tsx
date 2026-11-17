@@ -4,6 +4,7 @@ import { autosize } from "../lib/autosize";
 import { Inline, Markdown } from "../lib/md";
 import { indexFiles } from "../lib/refs";
 import { ago, dateText } from "../lib/time";
+import { tip } from "../lib/tips";
 import { useReview } from "../review";
 import { useApp } from "../store";
 import type { Thread, TimelineItem } from "../types";
@@ -356,14 +357,14 @@ function Item({ item, threads, onJump }: { item: TimelineItem; threads: Thread[]
           )}
           {mine && !editing && (
             <span className="conv-acts">
-              <button type="button" className="icon-btn sm" data-tip="Edit" onClick={() => setEditing(true)}>
+              <button type="button" className="icon-btn sm" {...tip("Edit")} onClick={() => setEditing(true)}>
                 {ic(Pencil, 13)}
               </button>
               {item.kind === "comment" && (
                 <button
                   type="button"
                   className="icon-btn sm"
-                  data-tip="Delete"
+                  {...tip("Delete")}
                   onClick={() => void act({ kind: "delete", comment: item.id }, item.id)}
                 >
                   {ic(Trash2, 13)}

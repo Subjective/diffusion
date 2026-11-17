@@ -54,6 +54,7 @@ import { InlineCodeContext, Markdown } from "../lib/md";
 import { CHAT_W, startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
 import { ago } from "../lib/time";
+import { tip } from "../lib/tips";
 import { cachedTree } from "../lib/tree";
 import { complete, rankCommands, rankFiles, type Trigger, trigger } from "../lib/typeahead";
 import { useGenerate } from "../review";
@@ -120,18 +121,18 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
     <aside className="chat">
       <Resizer onWidth={onWidth} />
       <div className="chat-h">
-        <span className="chat-mark" title={harnessName(chat.harness ?? guideHarness)}>
+        <span className="chat-mark" data-tip={harnessName(chat.harness ?? guideHarness)}>
           <HarnessMark harness={chat.harness ?? guideHarness} size={15} />
         </span>
         {historyOpen ? (
           <span className="chat-title">History</span>
         ) : isGuide ? (
-          <span className="chat-title" title="The session that wrote the guide, continued">
+          <span className="chat-title" data-tip="The session that wrote the guide, continued">
             Guide session
           </span>
         ) : (
-          <span className={`chat-title${title ? "" : " none"}`} title={title || undefined}>
-            <span className="kind" title="A fork of the guide session">
+          <span className={`chat-title${title ? "" : " none"}`} data-tip={title || undefined}>
+            <span className="kind" data-tip="A fork of the guide session">
               {ic(GitFork, 13)}
             </span>
             {title || "New chat"}
@@ -140,15 +141,15 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
         <button
           type="button"
           className={`icon-btn sm${historyOpen ? " on" : ""}`}
-          title="History"
+          {...tip("History")}
           onClick={() => setHistoryOpen(!historyOpen)}
         >
           {ic(History, 15)}
         </button>
-        <button type="button" className="icon-btn sm" title="New chat" onClick={newChat}>
+        <button type="button" className="icon-btn sm" {...tip("New chat")} onClick={newChat}>
           {ic(SquarePen, 15)}
         </button>
-        <button type="button" className="icon-btn sm" title="Close" onClick={() => toggleChat(false)}>
+        <button type="button" className="icon-btn sm" {...tip("Close")} onClick={() => toggleChat(false)}>
           {ic(X, 15)}
         </button>
       </div>
@@ -250,7 +251,7 @@ function CiteLink({ loc, text }: { loc: CodeLoc; text: string }) {
       <button
         type="button"
         className="cite"
-        title={`${loc.file} · Open in a tab`}
+        data-tip={`${loc.file} · Open in a tab`}
         onClick={(e) => {
           e.stopPropagation();
           useUI.getState().openFile(loc.file, { line: loc.start, end: loc.end });
@@ -260,7 +261,7 @@ function CiteLink({ loc, text }: { loc: CodeLoc; text: string }) {
       </button>
     );
   return (
-    <button type="button" className="cite" title={`${r.file} · Show in diff`} {...locLink(r)}>
+    <button type="button" className="cite" data-tip={`${r.file} · Show in diff`} {...locLink(r)}>
       <code>{text.trim().replace(/^.*\//, "")}</code>
     </button>
   );
@@ -294,7 +295,7 @@ function PathLink({ path, label }: { path: string; label?: string }) {
     <button
       type="button"
       className="cite"
-      title={`${repo} · ${inDiff ? "Show in diff" : "Open in a tab"}`}
+      data-tip={`${repo} · ${inDiff ? "Show in diff" : "Open in a tab"}`}
       onClick={(e) => {
         e.stopPropagation();
         const r = inDiff && !(e.metaKey || e.ctrlKey) ? resolve({ file: repo, start: 1, end: 1e9, side: "new" }) : null;
@@ -319,7 +320,7 @@ function Resizer({ onWidth }: { onWidth: (w: number) => void }) {
   return (
     <div
       className="resizer"
-      title="Drag to resize · double-click to reset"
+      data-tip="Drag to resize · double-click to reset"
       onDoubleClick={() => {
         onWidth(CHAT_W);
         storage.set("rv-chat-w", CHAT_W);
@@ -342,7 +343,7 @@ function HistoryList() {
           <div
             className={`h-item guide${chat.kind === "guide" ? " active" : ""}`}
             onClick={() => void openGuide()}
-            title="The session that wrote the guide, continued"
+            data-tip="The session that wrote the guide, continued"
           >
             <span className="h-ic">
               <HarnessMark harness={guide?.harness ?? meta?.harness} size={15} />
@@ -368,7 +369,7 @@ function HistoryList() {
       {!forks.length && !live && !guide && <div className="h-empty">{ic(History, 18)}</div>}
       {forks.map((c) => (
         <div key={c.id} className={`h-item${c.id === chat.id ? " active" : ""}`} onClick={() => void openChat(c.id)}>
-          <span className="h-ic" title="A fork of the guide session">
+          <span className="h-ic" data-tip="A fork of the guide session">
             {ic(GitFork, 15)}
           </span>
           <div className="h-body">
@@ -479,7 +480,7 @@ function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first:
     <button
       type="button"
       className="icon-btn sm edit-sent"
-      title="Edit"
+      {...tip("Edit")}
       onClick={(e) => {
         e.stopPropagation();
         useChat.getState().setRewriting(target.id);
@@ -613,7 +614,7 @@ function AnswerActions({ q }: { q: Question }) {
       <button
         type="button"
         className="icon-btn sm"
-        data-tip={done ? "Copied" : "Copy"}
+        {...tip(done ? "Copied" : "Copy")}
         onClick={() => {
           void navigator.clipboard?.writeText(q.answer.trim());
           setDone(true);
@@ -650,7 +651,7 @@ function ToolRow({ summary, failed }: { summary: string; failed?: boolean }) {
   const verb = sp < 0 ? summary : summary.slice(0, sp);
   const Icon = TOOL_ICONS[verb];
   return (
-    <li className={`trace-tool${failed ? " failed" : ""}`} title={failed ? `${summary} · failed` : summary}>
+    <li className={`trace-tool${failed ? " failed" : ""}`} data-tip={failed ? `${summary} · failed` : summary}>
       {ic(Icon ?? Wrench, 12)}
       {Icon ? (
         <>
@@ -688,7 +689,7 @@ function Trace({ q, pending, open: openFirst = false }: { q: Question; pending: 
   }
   return (
     <div className={`trace${open ? " open" : ""}`}>
-      <button type="button" className="trace-h" title={label} onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button type="button" className="trace-h" data-tip={label} onClick={() => setOpen(!open)} aria-expanded={open}>
         <span key={pending ? label : undefined} className={`trace-l${pending ? " trace-live" : ""}`}>
           {label}
         </span>
@@ -718,7 +719,7 @@ function GuideUpdated({ v }: { v: number }) {
     <button
       type="button"
       className={`guide-upd${current === v ? " on" : ""}`}
-      title={current === v ? "Showing this version" : "Show this version"}
+      data-tip={current === v ? "Showing this version" : "Show this version"}
       onClick={() => void useApp.getState().showVersion(v)}
     >
       {ic(History, 13)}
@@ -771,7 +772,7 @@ function ModeMenu() {
   }, [open]);
   if (!modes.length) {
     return (
-      <span className="mode ro" title="New chats fork the guide session and can only read">
+      <span className="mode ro" data-tip="New chats fork the guide session and can only read">
         {ic(Lock, 13)}
         <span>Read-only</span>
       </span>
@@ -790,7 +791,7 @@ function ModeMenu() {
               role="menuitemradio"
               aria-checked={m === cur}
               className={`mode-item${m === cur ? " on" : ""}`}
-              title={modeUI(harness, m).hint}
+              data-tip={modeUI(harness, m).hint}
               onClick={() => {
                 setMode(m, harness);
                 setOpen(false);
@@ -807,7 +808,7 @@ function ModeMenu() {
       <button
         type="button"
         className={`mode m-${cur}${harness === "claude-code" ? " cc" : ""}`}
-        title={ui.hint}
+        data-tip={ui.hint}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -906,14 +907,19 @@ function AskCard({ a, first, onAnswer }: { a: Ask; first: boolean; onAnswer?: (i
         </pre>
       )}
       <div className="ask-b">
-        <button type="button" className="ask-act ghost" title="Deny (Esc)" onClick={() => void answer(a.id, "deny")}>
+        <button type="button" className="ask-act ghost" data-tip="Deny (Esc)" onClick={() => void answer(a.id, "deny")}>
           {plan !== null ? "Keep planning" : "Deny"}
         </button>
         <span className="grow" />
         <button type="button" className="ask-act" onClick={() => void answer(a.id, "always")}>
           {plan !== null ? "Approve, accept edits" : edit ? "Allow edits this session" : "Allow this session"}
         </button>
-        <button type="button" className="ask-act primary" title="Allow (↵)" onClick={() => void answer(a.id, "allow")}>
+        <button
+          type="button"
+          className="ask-act primary"
+          data-tip="Allow (↵)"
+          onClick={() => void answer(a.id, "allow")}
+        >
           {plan !== null ? "Approve" : "Allow"} <span className="k">↵</span>
         </button>
       </div>
@@ -943,7 +949,7 @@ function RemoveBtn({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       className="icon-btn sm x"
-      title="Remove"
+      {...tip("Remove")}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -992,7 +998,7 @@ function Queue({
       <div className="queue-h">
         <span>{rows.length} Queued</span>
         <span className="grow" />
-        <button type="button" className="icon-btn sm" title="Collapse" onClick={() => setOpen(false)}>
+        <button type="button" className="icon-btn sm" {...tip("Collapse")} onClick={() => setOpen(false)}>
           {ic(Minus, 14)}
         </button>
       </div>
@@ -1017,16 +1023,16 @@ function Queue({
                     <button
                       type="button"
                       className="text-btn"
-                      title="Send this into the answer now"
+                      data-tip="Send this into the answer now"
                       onClick={() => void steer(batch)}
                     >
                       Steer
                     </button>
                   )}
-                  <button type="button" className="icon-btn sm" title="Edit" onClick={() => onEdit(batch, typed)}>
+                  <button type="button" className="icon-btn sm" {...tip("Edit")} onClick={() => onEdit(batch, typed)}>
                     {ic(Pencil, 14)}
                   </button>
-                  <button type="button" className="icon-btn sm" title="Remove" onClick={() => unqueue(batch)}>
+                  <button type="button" className="icon-btn sm" {...tip("Remove")} onClick={() => unqueue(batch)}>
                     {ic(Trash2, 14)}
                   </button>
                 </span>
@@ -1249,7 +1255,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
               <span className="editing-chip">
                 {ic(Pencil, 13)}
                 Editing
-                <button type="button" className="icon-btn sm" title="Cancel (Esc)" onClick={cancelEdit}>
+                <button type="button" className="icon-btn sm" {...tip("Cancel (Esc)")} onClick={cancelEdit}>
                   {ic(X, 12)}
                 </button>
               </span>
@@ -1259,7 +1265,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
                 type="button"
                 className={`restore-chip${restoreCode ? " on" : ""}`}
                 aria-pressed={restoreCode}
-                title="Also put the files back as they were before this message"
+                data-tip="Also put the files back as they were before this message"
                 onClick={() => setRestoreCode(!restoreCode)}
               >
                 {ic(Undo2, 13)}
@@ -1329,7 +1335,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
               type="button"
               id="chatSend"
               className="icon-btn solid"
-              title="Save"
+              {...tip("Save")}
               disabled={!!rewriting && !text.trim() && !staged.length}
               onClick={send}
             >
@@ -1340,7 +1346,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
               type="button"
               id="chatSend"
               className="icon-btn solid stop"
-              title="Stop"
+              {...tip("Stop")}
               onClick={() => void stop()}
             >
               {ic(Square, 12)}
@@ -1350,7 +1356,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
               type="button"
               id="chatSend"
               className="icon-btn solid"
-              title="Send"
+              {...tip("Send")}
               disabled={!text.trim() && !staged.length}
               onClick={send}
             >

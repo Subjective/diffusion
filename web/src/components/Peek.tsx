@@ -5,6 +5,7 @@ import { backStack } from "../lib/definition";
 import { highlightLines, type LineTokens, langFor } from "../lib/highlight";
 import { listStep } from "../lib/listKeys";
 import { rowKey } from "../lib/refs";
+import { tip } from "../lib/tips";
 import { useApp } from "../store";
 import { type Peek, useUI } from "../ui";
 import { ic } from "./icons";
@@ -163,7 +164,7 @@ export function PeekRow({ peek }: { peek: Peek }) {
                 <button
                   type="button"
                   className="path go"
-                  title={`Go to ${h.path}:${h.line} (↵)`}
+                  data-tip={`Go to ${h.path}:${h.line} (↵)`}
                   onClick={(e) => jump(h, e.metaKey || e.ctrlKey)}
                 >
                   <span className="dir">{h.path.slice(0, h.path.lastIndexOf("/") + 1)}</span>
@@ -196,11 +197,16 @@ export function PeekRow({ peek }: { peek: Peek }) {
               </button>
             </span>
             {h && (
-              <button type="button" className="icon-btn sm" title="Open in a tab (⌘↵)" onClick={() => jump(h, true)}>
+              <button
+                type="button"
+                className="icon-btn sm"
+                {...tip("Open in a tab (⌘↵)")}
+                onClick={() => jump(h, true)}
+              >
                 {ic(SquareArrowOutUpRight, 14)}
               </button>
             )}
-            <button type="button" className="icon-btn sm" title="Close" onClick={close}>
+            <button type="button" className="icon-btn sm" {...tip("Close")} onClick={close}>
               {ic(X, 14)}
             </button>
           </div>
@@ -279,7 +285,7 @@ function HitList({
     <div className="peek-list" ref={ref}>
       {groups.map((g) => (
         <div key={g.path} className="grp">
-          <div className="grp-h" title={g.path}>
+          <div className="grp-h" data-tip={g.path}>
             <span className="name">{g.path.slice(g.path.lastIndexOf("/") + 1)}</span>
             <span className="dir">{g.path.slice(0, g.path.lastIndexOf("/"))}</span>
             <span className="grow" />
@@ -297,7 +303,7 @@ function HitList({
               <span className="txt">
                 <Marked text={h.text.split("\n")[0].trim()} symbol={symbol} />
               </span>
-              {h.changed && <span className="chg" title="Changed in this PR" />}
+              {h.changed && <span className="chg" data-tip="Changed in this PR" />}
             </button>
           ))}
         </div>

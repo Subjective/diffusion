@@ -157,9 +157,9 @@ test("composer sends immediately; answer streams; the latest step shows while pe
 test("new chat starts fresh; history lists and restores past chats", async () => {
   await mount();
   await waitFor(() => expect(document.querySelectorAll(".msg.user").length).toBeGreaterThan(0)); // state persisted from previous test
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   expect(document.querySelector(".empty")).toBeTruthy();
-  fireEvent.click(screen.getByTitle("History"));
+  fireEvent.click(screen.getByLabelText("History"));
   await waitFor(() => expect(document.querySelectorAll(".h-item")).toHaveLength(1));
   expect(document.querySelector(".h-t")!.textContent).toBe("What does this do?");
   fireEvent.click(document.querySelector(".h-item")!);
@@ -169,7 +169,7 @@ test("new chat starts fresh; history lists and restores past chats", async () =>
 
 test("suggestion chip asks", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   fireEvent.click(screen.getByText("Risks"));
   await waitFor(() => expect(document.querySelector(".bubble")!.textContent).toBe("What are the risks in this PR?"));
   await act(async () => release!());
@@ -210,7 +210,7 @@ test("both side panes resize within clamps that keep the diff ≥ 420px; double-
 
 test("drag bubble across lines → popup → queue two → badges → send → linked answers", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   const rows = [...document.querySelectorAll<HTMLElement>('tr.ln[data-file="src/auth/session.ts"]')];
   const pointAt = rows[6];
   Object.defineProperty(document, "elementFromPoint", { value: () => pointAt, configurable: true });
@@ -266,7 +266,7 @@ test("drag bubble across lines → popup → queue two → badges → send → l
 
 test("messages asked mid-answer queue, can be edited or removed, and go out one per turn", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   turnBodies.length = 0;
   type("first?");
   await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
@@ -280,30 +280,30 @@ test("messages asked mid-answer queue, can be edited or removed, and go out one 
   expect(document.querySelector(".queue-h")!.textContent).toBe("3 Queued");
 
   // edit one in the composer: the row says so, ✓ saves it back in place
-  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[1].querySelector('[title="Edit"]')!);
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[1].querySelector('[aria-label="Edit"]')!);
   const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
   expect(ta.value).toBe("third?");
   expect(document.querySelector(".editing-chip")).toBeTruthy();
   expect(document.querySelector(".queue-row.editing .queue-tag")!.textContent).toBe("Editing");
   fireEvent.change(ta, { target: { value: "third, edited?" } });
-  fireEvent.click(screen.getByTitle("Save"));
+  fireEvent.click(screen.getByLabelText("Save"));
   expect(rows()).toEqual(["second?", "third, edited?", "fourth?"]);
   expect(document.querySelector(".editing-chip")).toBeNull();
   // remove one
-  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[2].querySelector('[title="Remove"]')!);
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[2].querySelector('[aria-label="Remove"]')!);
   expect(rows()).toEqual(["second?", "third, edited?"]);
   // collapse to a pill and back
-  fireEvent.click(screen.getByTitle("Collapse"));
+  fireEvent.click(screen.getByLabelText("Collapse"));
   expect(document.querySelector(".queue-pill")!.textContent).toBe("Queued 2");
   fireEvent.click(document.querySelector(".queue-pill")!);
 
   // with nothing typed, send becomes Stop
-  fireEvent.click(screen.getByTitle("Stop"));
+  fireEvent.click(screen.getByLabelText("Stop"));
   const fetched = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
   expect(fetched.some((u) => /\/api\/chats\/[^/]+\/stop$/.test(u))).toBe(true);
 
   // while a queued message is being edited, the queue holds (and Steer is gone); saving lets it go on
-  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[1].querySelector('[title="Edit"]')!);
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".queue-row")[1].querySelector('[aria-label="Edit"]')!);
   expect(screen.queryByText("Steer")).toBeNull();
   await act(async () => release!());
   await new Promise((r) => setTimeout(r, 50));
@@ -324,7 +324,7 @@ test("messages asked mid-answer queue, can be edited or removed, and go out one 
 
 test("answers link citations to diff rows: hover highlights them, click jumps to them", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   const row = (k: string) => document.querySelector<HTMLElement>(`tr[data-rk="${k}"]`)!;
   const { useUI } = await import("../ui");
   const flashN = useUI.getState().flash.n;
@@ -336,9 +336,9 @@ test("answers link citations to diff rows: hover highlights them, click jumps to
 
   const cite = document.querySelector<HTMLElement>(".ans-t button.cite")!;
   expect(cite.textContent).toBe("session.ts:6–7");
-  expect(cite.title).toBe("src/auth/session.ts · Show in diff");
+  expect(cite.dataset.tip).toBe("src/auth/session.ts · Show in diff");
   // not in the diff: opens in a tab
-  const other = document.querySelector<HTMLElement>('.ans-t button.cite[title="README.md · Open in a tab"]')!;
+  const other = document.querySelector<HTMLElement>('.ans-t button.cite[data-tip="README.md · Open in a tab"]')!;
   expect(other.textContent).toBe("README.md:1");
   fireEvent.mouseEnter(cite);
   expect(row("src/auth/session.ts:6").className).toMatch(/\bhl\b/);
@@ -354,7 +354,7 @@ test("answers link citations to diff rows: hover highlights them, click jumps to
 
 test("an answer that changes the guide switches to the new version and links to it", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   const v2 = { version: 2, label: "Edited in chat", scope: null, source: "chat" as const, created_at: 0 };
   vi.mocked(api.fetchVersions).mockResolvedValue({
     head_sha: payload.pr.head_sha,
@@ -374,7 +374,7 @@ test("an answer that changes the guide switches to the new version and links to 
 
 test("a turn's reasoning and tools fold into one line that opens to a timeline", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   type("think about the callers");
   await waitFor(() => expect(document.querySelector(".trace-live")).toBeTruthy());
   await act(async () => release!());
@@ -390,7 +390,7 @@ test("a turn's reasoning and tools fold into one line that opens to a timeline",
 
 test("a tool call that failed is marked in the timeline", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   type("fail at grepping");
   await waitFor(() => expect(document.querySelector(".trace-live")).toBeTruthy());
   await act(async () => release!());
@@ -424,9 +424,9 @@ test("chat opens on the guide's session; new chats fork it; history keeps the tw
   expect(JSON.parse(String(post![1].body)).kind).toBe("guide");
   await act(async () => release!());
 
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   expect(document.querySelector(".chat-title .kind")).toBeTruthy(); // a fork
-  fireEvent.click(screen.getByTitle("History"));
+  fireEvent.click(screen.getByLabelText("History"));
   expect(document.querySelector(".chat-title")!.textContent).toBe("History");
   await waitFor(() => expect(document.querySelector(".h-item.guide .h-t")!.textContent).toBe("Guide session"));
   useApp.setState({ guide: g });
@@ -457,7 +457,7 @@ test("the guide session runs in the harness's permission modes and asks in the c
   await waitFor(() => expect(approveBodies).toEqual([{ id: "a1", decision: "allow" }]));
   await act(async () => release!());
   // a new chat runs in the same mode
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   expect(mode().textContent).toBe("Manual");
   useApp.setState({ guide: g });
 });
@@ -555,7 +555,7 @@ test("@ in the composer picks a file from the diff", async () => {
 
 test("Steer sends a queued message into the running answer, or else stops it and sends it next", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   turnBodies.length = 0;
   type("first?");
   await waitFor(() => expect(document.querySelector(".cursor")).toBeTruthy());
@@ -593,7 +593,7 @@ test("Steer sends a queued message into the running answer, or else stops it and
 
 test("editing a sent message resends it in its place, rewinding the session to before it", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   turnBodies.length = 0;
   type("first?");
   await waitFor(() => expect(release).toBeTruthy());
@@ -611,7 +611,7 @@ test("editing a sent message resends it in its place, rewinding the session to b
   await waitFor(() => expect(ta.value).toBe("second?"));
   expect(document.querySelector(".editing-chip")).toBeTruthy();
   fireEvent.change(ta, { target: { value: "second, better?" } });
-  fireEvent.click(screen.getByTitle("Save"));
+  fireEvent.click(screen.getByLabelText("Save"));
   await waitFor(() => expect(turnBodies).toHaveLength(3));
   expect(turnBodies[2].rewind).toEqual({ uuid: "u2", code: false });
   expect([...document.querySelectorAll(".bubble")].map((b) => b.textContent)).toEqual(["first?", "second, better?"]);
@@ -620,7 +620,7 @@ test("editing a sent message resends it in its place, rewinding the session to b
 
 test("editing a message of line notes alone puts them back in the composer, and resends them all", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   turnBodies.length = 0;
   const { useChat } = await import("../chat");
   const at = (start: number) => ({ file: "src/auth/session.ts", start, end: start, side: "new" as const, code: "x" });
@@ -632,7 +632,7 @@ test("editing a message of line notes alone puts them back in the composer, and 
     useChat.getState().stage("why a?", at(5));
     useChat.getState().stage("why b?", at(6));
   });
-  fireEvent.click(screen.getByTitle("Send"));
+  fireEvent.click(screen.getByLabelText("Send"));
   await waitFor(() => expect(turnBodies).toHaveLength(2));
   await act(async () => release!());
   await waitFor(() => expect(document.querySelectorAll(".ans-note")).toHaveLength(2));
@@ -652,7 +652,7 @@ test("editing a message of line notes alone puts them back in the composer, and 
   // drop one, add text, save: the session rewinds and gets the rest
   fireEvent.click(document.querySelectorAll<HTMLElement>(".composer .note .x")[1]);
   fireEvent.change(ta, { target: { value: "and tests?" } });
-  fireEvent.click(screen.getByTitle("Save"));
+  fireEvent.click(screen.getByLabelText("Save"));
   await waitFor(() => expect(turnBodies).toHaveLength(3));
   expect(turnBodies[2].rewind).toEqual({ uuid: "u2", code: false });
   expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["why a?", "and tests?"]);
@@ -664,7 +664,7 @@ test("editing a message of line notes alone puts them back in the composer, and 
 
 test("cancelling an edit of line notes brings back what was staged before", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   const { useChat } = await import("../chat");
   const at = (start: number) => ({ file: "src/auth/session.ts", start, end: start, side: "new" as const, code: "x" });
   turnBodies.length = 0;
@@ -673,7 +673,7 @@ test("cancelling an edit of line notes brings back what was staged before", asyn
   await act(async () => release!());
   await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(1));
   act(() => void useChat.getState().stage("why a?", at(5)));
-  fireEvent.click(screen.getByTitle("Send"));
+  fireEvent.click(screen.getByLabelText("Send"));
   await waitFor(() => expect(turnBodies).toHaveLength(2));
   await act(async () => release!());
   await waitFor(() => expect(document.querySelectorAll(".ans-note")).toHaveLength(1));
@@ -681,14 +681,14 @@ test("cancelling an edit of line notes brings back what was staged before", asyn
   fireEvent.click(document.querySelector<HTMLElement>(".ans-note .edit-sent")!);
   const pills = () => [...document.querySelectorAll(".composer .note .ref")].map((n) => n.textContent);
   await waitFor(() => expect(pills()).toEqual(["why a?"]));
-  fireEvent.click(screen.getByTitle("Cancel (Esc)"));
+  fireEvent.click(screen.getByLabelText("Cancel (Esc)"));
   expect(pills()).toEqual(["later?"]);
   expect(document.querySelector(".editing-chip")).toBeNull();
 });
 
 test("editing a message of line notes and typed text resends it, from its bubble or any note", async () => {
   await mount();
-  fireEvent.click(screen.getByTitle("New chat"));
+  fireEvent.click(screen.getByLabelText("New chat"));
   turnBodies.length = 0;
   const { useChat } = await import("../chat");
   const at = (start: number) => ({ file: "src/auth/session.ts", start, end: start, side: "new" as const, code: "x" });
@@ -712,7 +712,7 @@ test("editing a message of line notes and typed text resends it, from its bubble
   const pills = [...document.querySelectorAll(".composer .note .ref")].map((n) => n.textContent);
   expect(pills).toEqual(["why a?", "why b?"]);
   fireEvent.change(ta, { target: { value: "and docs?" } });
-  fireEvent.click(screen.getByTitle("Save"));
+  fireEvent.click(screen.getByLabelText("Save"));
   await waitFor(() => expect(turnBodies).toHaveLength(3));
   expect(turnBodies[2].rewind).toEqual({ uuid: "u2", code: false });
   expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["why a?", "why b?", "and docs?"]);

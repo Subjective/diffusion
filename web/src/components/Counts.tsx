@@ -15,7 +15,7 @@ export function Counts({
 }) {
   if (file.binary)
     return (
-      <span className="cnt bin" title="Binary">
+      <span className="cnt bin" data-tip="Binary">
         {ic(Binary, 13)}
       </span>
     );

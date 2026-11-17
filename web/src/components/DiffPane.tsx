@@ -12,6 +12,7 @@ import { Fragment, type ReactNode, type RefObject, useEffect, useMemo, useRef, u
 import { backStack, wordAtPoint } from "../lib/definition";
 import { estimateRows, focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
+import { tip } from "../lib/tips";
 import { usePopover } from "../lib/usePopover";
 import { useReview } from "../review";
 import { useApp } from "../store";
@@ -47,7 +48,12 @@ export function guideOrder(files: FD[], guide: Guide | null): FD[] {
 export function DiffRail() {
   const count = useApp((s) => s.pr?.changed_files ?? 0);
   return (
-    <button type="button" className="diff-rail" title="Open the diff" onClick={() => useUI.getState().openDiff(true)}>
+    <button
+      type="button"
+      className="diff-rail"
+      data-tip="Open the diff"
+      onClick={() => useUI.getState().openDiff(true)}
+    >
       {ic(ArrowLeftToLine, 15)}
       <span>
         Diff · {count} {count === 1 ? "file" : "files"}
@@ -270,7 +276,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
       onKeyDown={markDiffActivity}
     >
       <div className="toolbar">
-        <button type="button" className={`icon-btn sm${rail ? " on" : ""}`} title="Files" onClick={toggleRail}>
+        <button type="button" className={`icon-btn sm${rail ? " on" : ""}`} {...tip("Files")} onClick={toggleRail}>
           {ic(PanelLeft, 15)}
         </button>
         <TabBar />
@@ -280,7 +286,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
             <button
               type="button"
               className="icon-btn sm"
-              title={order === "guide" ? "Guide order" : "File order"}
+              {...tip(order === "guide" ? "Guide order" : "File order")}
               onClick={() => setOrder(order === "guide" ? "alpha" : "guide")}
             >
               {ic(order === "guide" ? Route : FolderTree, 15)}
@@ -288,7 +294,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
             <button
               type="button"
               className={`icon-btn sm${hideSkip ? " on" : ""}`}
-              title="Hide skippable"
+              {...tip("Hide skippable")}
               onClick={toggleHideSkip}
             >
               {ic(EyeOff, 15)}
@@ -309,7 +315,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
                 <button
                   type="button"
                   className={`icon-btn sm cmt-tg${hideComments ? "" : " on"}`}
-                  title={hideComments ? "Show comments" : "Hide comments"}
+                  {...tip(hideComments ? "Show comments" : "Hide comments")}
                   onClick={toggleHideComments}
                 >
                   {ic(MessageCircle, 15)}
@@ -320,7 +326,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
             <button
               type="button"
               className="icon-btn sm"
-              title={allCollapsed ? "Expand all" : "Collapse all"}
+              {...tip(allCollapsed ? "Expand all" : "Collapse all")}
               onClick={() => collapseAll(!allCollapsed, [...skipFiles])}
             >
               {ic(ChevronsDownUp, 15)}
@@ -330,7 +336,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
         <button
           type="button"
           className="icon-btn sm"
-          title="Collapse the diff"
+          {...tip("Collapse the diff")}
           onClick={() => useUI.getState().openDiff(false)}
         >
           {ic(ArrowRightToLine, 15)}
@@ -418,7 +424,7 @@ function ThreadsButton({
       <button
         type="button"
         className={`icon-btn sm cmt-tg${open ? " on" : ""}`}
-        data-tip="Comments"
+        {...tip("Comments")}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >

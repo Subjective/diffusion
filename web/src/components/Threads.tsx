@@ -18,6 +18,7 @@ import { autosize } from "../lib/autosize";
 import { Inline, Markdown } from "../lib/md";
 import { type HunkIndex, rowKey } from "../lib/refs";
 import { ago, dateText } from "../lib/time";
+import { tip } from "../lib/tips";
 import { type PendingComment, useReview } from "../review";
 import { useApp } from "../store";
 import type { Check as CheckRun, Thread, ThreadComment } from "../types";
@@ -213,7 +214,7 @@ function Compose({
       <button
         type="button"
         className="icon-btn sm solid"
-        data-tip="Save"
+        {...tip("Save")}
         disabled={!text.trim() || busy}
         onClick={save}
       >
@@ -249,16 +250,16 @@ function CommentView({ c, t, mine }: { c: ThreadComment; t: Thread; mine: boolea
           <span className="grow" />
           {mine && !editing && (
             <span className="th-acts">
-              <button type="button" className="icon-btn sm" data-tip="Edit" onClick={() => setEditing(true)}>
+              <button type="button" className="icon-btn sm" {...tip("Edit")} onClick={() => setEditing(true)}>
                 {ic(Pencil, 13)}
               </button>
-              <button type="button" className="icon-btn sm" data-tip="Delete" onClick={() => void remove()}>
+              <button type="button" className="icon-btn sm" {...tip("Delete")} onClick={() => void remove()}>
                 {ic(Trash2, 13)}
               </button>
             </span>
           )}
           {t.ci?.url && (
-            <a className="icon-btn sm" href={t.ci.url} target="_blank" rel="noreferrer" data-tip="Logs">
+            <a className="icon-btn sm" href={t.ci.url} target="_blank" rel="noreferrer" {...tip("Logs")}>
               {ic(ArrowUpRight, 14)}
             </a>
           )}
@@ -304,7 +305,7 @@ function ThreadFoot({ t }: { t: Thread }) {
         <button
           type="button"
           className="icon-btn sm th-ask"
-          data-tip={`Ask ${harnessName(harness)}`}
+          {...tip(`Ask ${harnessName(harness)}`)}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             ask(t, r.right - 360, r.bottom);
@@ -322,7 +323,7 @@ function ThreadFoot({ t }: { t: Thread }) {
         {t.resolved ? "Unresolve" : "Resolve"}
       </button>
       {t.resolved && (
-        <button type="button" className="icon-btn sm" data-tip="Collapse" onClick={() => expand(t.id, false)}>
+        <button type="button" className="icon-btn sm" {...tip("Collapse")} onClick={() => expand(t.id, false)}>
           {ic(ChevronDown, 14)}
         </button>
       )}
@@ -452,7 +453,7 @@ export function ThreadsPopover({ threads, viewer, idx, onJump }: PopoverProps) {
           <button
             type="button"
             className={`icon-btn sm${mine ? " on" : ""}`}
-            data-tip="Only mine"
+            {...tip("Only mine")}
             aria-pressed={mine}
             onClick={() => setMine(!mine)}
           >
@@ -462,7 +463,7 @@ export function ThreadsPopover({ threads, viewer, idx, onJump }: PopoverProps) {
         <button
           type="button"
           className={`icon-btn sm${hideAll ? " on" : ""}`}
-          data-tip={hideAll ? "Show comments on the diff" : "Hide comments on the diff"}
+          {...tip(hideAll ? "Show comments on the diff" : "Hide comments on the diff")}
           aria-pressed={hideAll}
           onClick={toggleHideAll}
         >
@@ -484,7 +485,7 @@ export function ThreadsPopover({ threads, viewer, idx, onJump }: PopoverProps) {
                 >
                   {ic(shut ? ChevronRight : ChevronDown, 13)}
                   {ic(FileCode, 13)}
-                  <span className="nm" title={path}>
+                  <span className="nm" data-tip={path}>
                     {path.split("/").pop()}
                   </span>
                 </button>
@@ -492,7 +493,7 @@ export function ThreadsPopover({ threads, viewer, idx, onJump }: PopoverProps) {
                 <button
                   type="button"
                   className={`icon-btn sm tl-hide${hidden ? " on" : ""}`}
-                  data-tip={hidden ? "Show this file's comments on the diff" : "Hide this file's comments on the diff"}
+                  {...tip(hidden ? "Show this file's comments on the diff" : "Hide this file's comments on the diff")}
                   aria-pressed={hidden}
                   onClick={() => toggleFile(path)}
                 >

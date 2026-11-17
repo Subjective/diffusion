@@ -12,6 +12,7 @@ import { Fragment, memo, type ReactNode, useEffect, useLayoutEffect, useMemo, us
 import { type Gap, gapsOf, type Reveal, STEP, shownLines } from "../lib/expand";
 import { highlightHunk, type LineTokens, langFor } from "../lib/highlight";
 import { rowKey, rowsOfHunk } from "../lib/refs";
+import { tip } from "../lib/tips";
 import { type FileLines, useFileLines } from "../lib/useFileLines";
 import type { FileDiff as FD, Hunk } from "../types";
 import { useUI } from "../ui";
@@ -93,7 +94,7 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
       <div className="file-h" onClick={() => toggleCollapsed(file.path)}>
         <span className="chev">{ic(ChevronDown, 14)}</span>
         {ic(Lead, 14)}
-        <span className="path" title={file.old_path ? `${file.old_path} → ${file.path}` : file.path}>
+        <span className="path" data-tip={file.old_path ? `${file.old_path} → ${file.path}` : file.path}>
           <span className="dir">{dir}</span>
           {base}
         </span>
@@ -110,7 +111,7 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
           <button
             type="button"
             className={`icon-btn sm${full ? " on" : ""}`}
-            title={full ? "Show changes only" : "Show full file"}
+            {...tip(full ? "Show changes only" : "Show full file")}
             onClick={(e) => {
               e.stopPropagation();
               if (full) setReveal({});
@@ -124,7 +125,7 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
         <button
           type="button"
           className={`icon-btn sm viewed${viewed ? " on" : ""}`}
-          title="Viewed"
+          {...tip("Viewed")}
           onClick={(e) => {
             e.stopPropagation();
             toggleViewed(file.path);
@@ -294,7 +295,7 @@ function GapRows({ gap, index, count, rev, text, error, onExpand, path, gutter, 
     <button
       type="button"
       className="exp-btn"
-      title={`Show ${STEP} lines`}
+      {...tip(`Show ${STEP} lines`)}
       onClick={(e) => {
         e.stopPropagation();
         onExpand(index, dir);
@@ -310,7 +311,7 @@ function GapRows({ gap, index, count, rev, text, error, onExpand, path, gutter, 
         <tr
           className={`hh gap${error ? " err" : ""}`}
           data-hunk={hunk?.id}
-          title={error ?? undefined}
+          data-tip={error ?? undefined}
           onClick={error ? undefined : () => onExpand(index, "all")}
         >
           <td colSpan={3} className="exp">
@@ -323,7 +324,7 @@ function GapRows({ gap, index, count, rev, text, error, onExpand, path, gutter, 
           </td>
           <td>
             <div className="hh-t">
-              <button type="button" className="exp-all" title="Show all" disabled={!!error}>
+              <button type="button" className="exp-all" data-tip="Show all" disabled={!!error}>
                 {ic(UnfoldVertical, 14)}
                 {label}
               </button>
@@ -440,7 +441,7 @@ export const DiffRow = memo(function DiffRow({
                     className={`dot${sub ? " sub-dot" : ""}`}
                     data-step={step}
                     data-sub={sub}
-                    title={`Step ${n}`}
+                    data-tip={`Step ${n}`}
                   >
                     {n}
                   </span>
@@ -451,7 +452,7 @@ export const DiffRow = memo(function DiffRow({
         <td className="no">{old ?? ""}</td>
         <td className="no">{nw ?? ""}</td>
         <td className="code">
-          <button type="button" className="ask-btn" title="Click, or drag to select lines" tabIndex={-1}>
+          <button type="button" className="ask-btn" {...tip("Click, or drag to select lines")} tabIndex={-1}>
             {ASK_ICON}
           </button>
           <span className="sg">{sign}</span>
