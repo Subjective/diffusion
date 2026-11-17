@@ -212,8 +212,8 @@ def test_merge_matches_an_edited_message_by_id_not_an_older_one_with_the_same_te
 
     # Older records kept no ids. The first message was edited to "Hi" again: the session's branch now has only it.
     stored = [t("Hi"), t("Hey"), t("Wassup"), t("Hi", "u-new")]
-    session = [t("terminal"), t(f"Hi\n\n{SHOW_REMINDER}", "u-new")]
-    out = merge(session, stored, lambda text: text.endswith(SHOW_REMINDER))
+    session = [t("terminal"), t(f"Hi\n\n{TURN_NOTE}", "u-new")]
+    out = merge(session, stored, lambda text: text.endswith(TURN_NOTE))
     assert [(x["questions"][0]["text"], x.get("uuid")) for x in out] == [("terminal", None), ("Hi", "u-new")]
 
 
