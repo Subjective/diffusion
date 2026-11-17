@@ -1,24 +1,16 @@
-import { Binary } from "lucide-react";
 import type { FileDiff } from "../types";
-import { ic } from "./icons";
 
-/** A file's added and removed lines, each only when there are some; a binary file has no lines, so an icon says so. */
+/** A file's added and removed lines, each only when there are some (a binary file has none). */
 export function Counts({
   file,
   lines,
   cls = ["a", "d"],
 }: {
-  file: Pick<FileDiff, "binary" | "additions" | "deletions">;
+  file: Pick<FileDiff, "additions" | "deletions">;
   /** Lines to count instead of the whole file's (part of a file). */
   lines?: [number, number];
   cls?: [string, string];
 }) {
-  if (file.binary)
-    return (
-      <span className="cnt bin" title="Binary">
-        {ic(Binary, 13)}
-      </span>
-    );
   const [a, d] = lines ?? [file.additions, file.deletions];
   if (!a && !d) return null;
   return (
