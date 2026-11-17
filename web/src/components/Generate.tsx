@@ -15,13 +15,6 @@ const NONE: GenerateJob = { state: "none" };
 export const reviewCommand = (url: string, focus = "", harness = "claude-code") =>
   `${harness === "codex" ? "$" : "/"}diffusion:review ${url} ${focus.split(/\s+/).join(" ")}`.trim();
 
-/** The agent writing this PR's review, while there's no review yet to say whose it is. */
-export function useGeneratingHarness(): string | null {
-  const url = useApp((s) => (s.pr && !s.pr.local && !s.guide ? s.pr.url : null));
-  const job = useGenerate((s) => (url ? s.jobs[url] : undefined));
-  return job && job.state !== "none" ? (job.harness ?? "claude-code") : null;
-}
-
 /** Polls the run while it goes; the guide shows up on its own when the agent submits it. */
 export function useGenerateJob(url: string) {
   const job = useGenerate((s) => s.jobs[url]) ?? NONE;
