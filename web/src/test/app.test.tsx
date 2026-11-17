@@ -216,14 +216,15 @@ test("renders guide, diff in guide order, skippable collapsed", async () => {
   expect(document.querySelectorAll(".step")).toHaveLength(3);
   expect(document.querySelector(".tldr code")!.textContent).toBe("tokens");
   expect(document.querySelector(".sec-h")?.textContent).not.toBe("Notes");
-  // gutter dots at first row of each ref
-  expect([...document.querySelectorAll("td.mark .dot")].map((d) => d.textContent)).toEqual([
-    "1",
-    "3.2",
-    "3.2",
-    "3.1",
-    "2",
-  ]);
+  // gutter numbers sit at the first row of each ref, only for the selected step or substep
+  const gutter = () => [...document.querySelectorAll("td.mark .dot")].map((d) => d.textContent);
+  expect(gutter()).toEqual([]);
+  fireEvent.click(document.querySelector('.step[data-step="3"]')!);
+  expect(gutter()).toEqual(["3.2", "3.2", "3.1"]);
+  fireEvent.click(document.querySelector('.sub[data-step="3"][data-sub="2"]')!);
+  expect(gutter()).toEqual(["3.2", "3.2"]);
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(gutter()).toEqual([]);
 });
 
 test("hovering a step highlights exactly its lines; leaving clears", async () => {
@@ -249,7 +250,7 @@ test("click pins + expands; clicking again unpins; j/k navigate; Esc clears", as
   expect(nums(".pin")).toEqual([]);
 });
 
-test("viewed collapses; skippable row expands lockfile; gutter dot focuses step", async () => {
+test("viewed collapses; skippable row expands lockfile", async () => {
   await mount();
   const types = document.querySelector('.file[data-path="src/auth/types.ts"]')!;
   fireEvent.click(types.querySelector(".viewed")!);
@@ -258,8 +259,6 @@ test("viewed collapses; skippable row expands lockfile; gutter dot focuses step"
   await waitFor(() =>
     expect(document.querySelector('.file[data-path="package-lock.json"]')!.classList.contains("collapsed")).toBe(false),
   );
-  fireEvent.click(document.querySelector('td.mark .dot[data-step="2"]')!);
-  expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
   fireEvent.click(document.querySelector(".step .check")!);
   expect(document.body.textContent).toContain("1/3");
 });

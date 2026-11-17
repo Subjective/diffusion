@@ -405,6 +405,10 @@ export const DiffRow = memo(function DiffRow({
   const pin = useUI((s) => s.pinRows.has(rk));
   const flashN = useUI((s) => (s.flash.keys.has(rk) ? s.flash.n : 0));
   const peek = useUI((s) => (s.peek?.rk === rk ? s.peek : null));
+  // Step numbers show only for the selected step or substep.
+  const pinStep = useUI((s) => s.pinStep);
+  const pinSub = useUI((s) => s.pinSub);
+  const shown = dots?.filter((d) => d.step === pinStep && (pinSub == null || d.sub === pinSub));
   const cls = [
     "ln",
     type,
@@ -429,7 +433,7 @@ export const DiffRow = memo(function DiffRow({
         data-old={old ?? undefined}
       >
         <td className="mark">
-          {dots?.map((d) => (
+          {shown?.map((d) => (
             <span
               key={`${d.step}.${d.sub}`}
               className={`dot${d.sub != null ? " sub-dot" : ""}`}
