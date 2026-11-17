@@ -163,12 +163,29 @@ const DEFAULT_MODE: Record<string, ChatMode> = { "claude-code": "default", codex
 export const modesFor = (harness: string | null): ChatMode[] => HARNESS_MODES[harness ?? ""] ?? [];
 
 /** Whose session the reviewer is talking to: the chat's, else the guide's, else the agent writing the review. With
- *  none, chat runs on Claude Code (bundled with the engine), as a review written from here would. */
+ *  none yet, the default agent: the one a review written from here, or a chat started here, runs on. */
 export function sessionHarness(chat: { harness?: string | null } = useChat.getState().chat): string {
   const pr = useApp.getState().pr?.url;
-  const job = pr ? useGenerate.getState().jobs[pr] : undefined;
-  const writing = job && job.state !== "none" ? (job.harness ?? "claude-code") : null;
-  return chat.harness ?? useApp.getState().guide?.meta?.harness ?? writing ?? "claude-code";
+  return harnessFor(chat.harness, useApp.getState().guide?.meta?.harness, useGenerate.getState(), pr);
+}
+
+/** ``sessionHarness`` for the chat on screen, kept up to date. */
+export function useSessionHarness(): string {
+  const chat = useChat((s) => s.chat.harness);
+  const guide = useApp((s) => s.guide?.meta?.harness);
+  const pr = useApp((s) => s.pr?.url);
+  return useGenerate((g) => harnessFor(chat, guide, g, pr));
+}
+
+function harnessFor(
+  chat: string | null | undefined,
+  guide: string | null | undefined,
+  gen: { jobs: Record<string, { state: string; harness?: string | null }>; harness: string },
+  pr: string | undefined,
+): string {
+  const job = pr ? gen.jobs[pr] : undefined;
+  const writing = job && job.state !== "none" ? job.harness : null;
+  return chat || guide || writing || gen.harness;
 }
 
 /** Whether switching to ``mode`` answers a waiting ask (the engine's allowed_in). */
@@ -297,6 +314,7 @@ export const useChat = create<State>((set, get) => {
           questions: wire,
           version: useApp.getState().guide?.version ?? null,
           mode: get().modeOf(sessionHarness(get().chat)),
+          harness: sessionHarness(get().chat),
           ...(rewind ? { rewind } : {}),
         },
         ({ event, data }) => {

@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useChat } from "../chat";
+import { useSessionHarness } from "../chat";
 import { ago } from "../lib/time";
 import { tip } from "../lib/tips";
 import { usePopover } from "../lib/usePopover";
@@ -29,16 +29,12 @@ import { inboxStack, useGenerate, useInbox, useReview, type Verdict } from "../r
 import { useApp } from "../store";
 import type { Check as CheckRun, InboxPR, PRMeta } from "../types";
 import { useUI } from "../ui";
-import { useGeneratingHarness } from "./Generate";
 import { Reviewers } from "./Inbox";
 import { GithubIcon, HarnessMark, harnessName, ic, Logo } from "./icons";
 
 export function TopBar() {
   const { theme, toggleTheme, chatOpen, toggleChat, url, home } = useApp();
-  const chatHarness = useChat((s) => s.chat.harness);
-  const guideHarness = useApp((s) => s.guide?.meta?.harness);
-  const genHarness = useGeneratingHarness();
-  const harness = chatHarness ?? guideHarness ?? genHarness;
+  const harness = useSessionHarness();
   return (
     <header className="top">
       {url ? (
