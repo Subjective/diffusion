@@ -2235,6 +2235,26 @@ body.resizing * {
 .rail-f .dot.sm {
   flex: none;
 }
+/* Guide order: each name's folder, dim, cut from the left so its nearest folders stay. */
+.rail-f:has(.dir) .nm {
+  flex: none;
+  max-width: 75%;
+}
+.rail-f .dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+  font-size: 11.5px;
+  color: var(--subtle);
+  opacity: 0.8;
+}
+.rail-rule {
+  height: 1px;
+  margin: 6px 8px;
+  background: var(--border);
+}
 
 /* ---------- tabs ---------- */
 .tabs {

@@ -11,7 +11,10 @@ import { ic } from "./icons";
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 interface Props {
+  /** The changed files, in the diff's order. */
   files: FD[];
+  /** Guide order lists the changed files flat, as the diff runs; file order is the tree. */
+  order: "guide" | "alpha";
   skip: Set<string>;
   fileSteps: Map<string, number[]>;
   /** The file in view: the diff's, or the open tab's. */
@@ -72,7 +75,7 @@ const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
 /** The changed files, or every file at the head, as a tree that follows the file in view. Folders holding changes
  *  start open, the rest folded. A changed file opens in the diff (⌘-click: a tab); any other opens in a tab. */
-export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
+export function FileRail({ files, order, skip, fileSteps, current, onPick }: Props) {
   const url = useApp((s) => s.pr?.url ?? s.url);
   const viewed = useUI((s) => s.viewed);
   const hideSkip = useUI((s) => s.hideSkip);
@@ -116,6 +119,13 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
     return buildTree(paths);
   }, [mode, all, files, hideSkip, skip, needle]);
 
+  const flat = useMemo(() => {
+    if (mode !== "diff" || order !== "guide") return null;
+    return files
+      .map((f) => f.path)
+      .filter((p) => !(hideSkip && skip.has(p)) && (!needle || p.toLowerCase().includes(needle)));
+  }, [mode, order, files, hideSkip, skip, needle]);
+
   const changedDirs = useMemo(() => {
     const s = new Set<string>();
     for (const f of files) {
@@ -141,6 +151,47 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
     } else useUI.getState().openFile(path, undefined, tab);
   };
 
+  const fileRow = (p: string, indent: number, dir = "") => {
+    const f = byPath.get(p);
+    const cls = ["rail-f", p === current && "on", f && viewed[p] && "viewed", f && skip.has(p) && "skip", !f && "plain"]
+      .filter(Boolean)
+      .join(" ");
+    return (
+      <button
+        key={p}
+        type="button"
+        className={cls}
+        style={{ paddingLeft: indent }}
+        data-path={p}
+        title={f ? `${p} · ⌘-click to open in a tab` : p}
+        onClick={(e) => open(p, e)}
+        onDoubleClick={() => !f && useUI.getState().pinTab(p)}
+      >
+        <span className="nm">
+          <Hit text={base(p)} q={needle} />
+        </span>
+        {dir && (
+          <span className="dir">
+            <bdi>{dir}</bdi>
+          </span>
+        )}
+        {f && (
+          <>
+            <span className="grow" />
+            {(fileSteps.get(p) ?? []).map((s) => (
+              <span key={s} className="dot sm" data-step={s}>
+                {s}
+              </span>
+            ))}
+            <span className="cnt">
+              <span className="a">+{f.additions}</span> <span className="d">−{f.deletions}</span>
+            </span>
+          </>
+        )}
+      </button>
+    );
+  };
+
   const rows: React.ReactNode[] = [];
   const walk = (d: Dir, depth: number) => {
     for (const c of d.dirs) {
@@ -163,49 +214,18 @@ export function FileRail({ files, skip, fileSteps, current, onPick }: Props) {
       );
       if (!shut) walk(c, depth + 1);
     }
-    for (const p of d.files) {
-      const f = byPath.get(p);
-      const cls = [
-        "rail-f",
-        p === current && "on",
-        f && viewed[p] && "viewed",
-        f && skip.has(p) && "skip",
-        !f && "plain",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      rows.push(
-        <button
-          key={p}
-          type="button"
-          className={cls}
-          style={{ paddingLeft: 6 + depth * 12 + 17 }}
-          data-path={p}
-          title={f ? `${p} · ⌘-click to open in a tab` : p}
-          onClick={(e) => open(p, e)}
-          onDoubleClick={() => !f && useUI.getState().pinTab(p)}
-        >
-          <span className="nm">
-            <Hit text={base(p)} q={needle} />
-          </span>
-          {f && (
-            <>
-              <span className="grow" />
-              {(fileSteps.get(p) ?? []).map((s) => (
-                <span key={s} className="dot sm" data-step={s}>
-                  {s}
-                </span>
-              ))}
-              <span className="cnt">
-                <span className="a">+{f.additions}</span> <span className="d">−{f.deletions}</span>
-              </span>
-            </>
-          )}
-        </button>,
-      );
-    }
+    for (const p of d.files) rows.push(fileRow(p, 6 + depth * 12 + 17));
   };
-  walk(root, 0);
+  if (flat) {
+    // Skippable files trail the guide's; a rule marks where they start.
+    let tail = flat.length;
+    while (tail > 0 && skip.has(flat[tail - 1])) tail--;
+    flat.forEach((p, n) => {
+      if (n === tail && n > 0) rows.push(<div key="skip-rule" className="rail-rule" />);
+      const i = p.lastIndexOf("/");
+      rows.push(fileRow(p, 8, i > 0 ? p.slice(0, i) : ""));
+    });
+  } else walk(root, 0);
 
   return (
     <div className="rail-wrap" style={{ width }}>
