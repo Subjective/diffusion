@@ -6,6 +6,7 @@ import { cachedTree } from "../lib/tree";
 import { useApp } from "../store";
 import type { FileDiff as FD } from "../types";
 import { useUI } from "../ui";
+import { Counts } from "./Counts";
 import { ic } from "./icons";
 
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -153,7 +154,14 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
 
   const fileRow = (p: string, indent: number, dir = "") => {
     const f = byPath.get(p);
-    const cls = ["rail-f", p === current && "on", f && viewed[p] && "viewed", f && skip.has(p) && "skip", !f && "plain"]
+    const cls = [
+      "rail-f",
+      p === current && "on",
+      f && viewed[p] && "viewed",
+      f && skip.has(p) && "skip",
+      f?.status === "deleted" && "gone",
+      !f && "plain",
+    ]
       .filter(Boolean)
       .join(" ");
     return (
@@ -183,9 +191,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
                 {s}
               </span>
             ))}
-            <span className="cnt">
-              <span className="a">+{f.additions}</span> <span className="d">−{f.deletions}</span>
-            </span>
+            <Counts file={f} />
           </>
         )}
       </button>

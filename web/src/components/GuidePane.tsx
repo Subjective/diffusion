@@ -25,6 +25,7 @@ import { useApp } from "../store";
 import type { Ref, SkipReason, Step } from "../types";
 import { useUI } from "../ui";
 import { ConversationPane } from "./Conversation";
+import { Counts } from "./Counts";
 import { treeOrder } from "./FileRail";
 import { GenerateCard } from "./Generate";
 import { ic, SKIP_ICON, STEP_ICON } from "./icons";
@@ -449,7 +450,7 @@ function Skippable() {
     return treeOrder([...byFile.keys()]).map((p) => {
       const r = byFile.get(p)!;
       const f = byPath.get(p);
-      // Some hunks of a file (imports, formatting): their lines. All of it, or a binary file: the file's.
+      // Some hunks of a file (imports, formatting): their lines. All of it: the file's.
       const part = f?.hunks.filter((h) => r.hunks.has(h.id)) ?? [];
       const whole = !f || !part.length || part.length === f.hunks.length;
       const count = (t: string) => part.reduce((n, h) => n + h.lines.filter((l) => l.type === t).length, 0);
@@ -457,7 +458,8 @@ function Skippable() {
         ...r,
         name: base(p),
         dir: (names.get(base(p)) ?? 0) > 1 ? p.slice(0, Math.max(0, p.lastIndexOf("/"))) : "",
-        cnt: f && (whole ? [f.additions, f.deletions] : [count("add"), count("del")]),
+        f,
+        cnt: whole ? undefined : ([count("add"), count("del")] as [number, number]),
       };
     });
   }, [guide, files]);
@@ -474,11 +476,7 @@ function Skippable() {
               <bdi>{r.dir}</bdi>
             </span>
           )}
-          {r.cnt && (
-            <span className="cnt">
-              <span className="n-add">+{r.cnt[0]}</span> <span className="n-del">−{r.cnt[1]}</span>
-            </span>
-          )}
+          {r.f && <Counts file={r.f} lines={r.cnt} cls={["n-add", "n-del"]} />}
         </div>
       ))}
     </section>

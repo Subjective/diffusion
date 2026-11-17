@@ -2250,6 +2250,14 @@ body.resizing * {
   color: var(--subtle);
   opacity: 0.8;
 }
+.cnt.bin {
+  display: inline-grid;
+  color: var(--subtle);
+}
+/* A deleted file is struck through, as editors show it. */
+.rail-f.gone .nm {
+  text-decoration: line-through;
+}
 .rail-rule {
   height: 1px;
   margin: 6px 8px;
