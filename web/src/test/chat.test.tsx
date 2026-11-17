@@ -22,6 +22,7 @@ const turnBodies: {
   questions: { n: number; text: string }[];
   version?: number | null;
   mode?: string;
+  harness?: string;
   rewind?: { uuid: string; code: boolean };
 }[] = [];
 const sse = (events: [string, unknown][]) =>
@@ -405,6 +406,31 @@ test("reasoning headlines: first bold phrase, else first sentence", async () => 
   const { headline } = await import("../components/ChatPanel");
   expect(headline("**Finding callers**\n\nI'll grep.")).toBe("Finding callers");
   expect(headline("Check the timer. Then the API.")).toBe("Check the timer.");
+});
+
+test("the chat button, header and empty chat show the session's agent, else the default agent, which the chat runs on", async () => {
+  await mount();
+  const g = useApp.getState().guide!;
+  const { useGenerate } = await import("../review");
+  const marks = () =>
+    [".top-r button.icon-btn.on .mark", ".chat-mark .mark", ".empty .big .mark"].map((s) =>
+      document.querySelector(s)?.getAttribute("aria-label"),
+    );
+  const { useChat } = await import("../chat");
+  act(() => useChat.getState().newChat());
+  // No session says whose it is: the default agent.
+  act(() => useGenerate.getState().pick("codex"));
+  useApp.setState({ guide: { ...g, meta: undefined } });
+  await waitFor(() => expect(marks()).toEqual(["Codex", "Codex", "Codex"]));
+  // The guide's session decides once there is one.
+  useApp.setState({ guide: { ...g, meta: { head_sha: "x", harness: "claude-code", session: "s1" } } });
+  await waitFor(() => expect(marks()).toEqual(["Claude Code", "Claude Code", "Claude Code"]));
+  useApp.setState({ guide: { ...g, meta: undefined } });
+  type("What does this do?");
+  await waitFor(() => expect(turnBodies.at(-1)?.harness).toBe("codex"));
+  await act(async () => release?.());
+  act(() => useGenerate.getState().pick("claude-code"));
+  useApp.setState({ guide: g });
 });
 
 test("chat opens on the guide's session; new chats fork it; history keeps the two apart", async () => {

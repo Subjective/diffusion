@@ -43,8 +43,10 @@ import {
   guideSessionOf,
   modesFor,
   type Question,
+  sessionHarness,
   type TraceItem,
   useChat,
+  useSessionHarness,
 } from "../chat";
 import { autosize } from "../lib/autosize";
 import { type CodeLoc, expandCites, parseCites, parsePath, type Resolved, repoPath, resolveLoc } from "../lib/cite";
@@ -60,7 +62,6 @@ import { useGenerate } from "../review";
 import { useApp } from "../store";
 import type { GenerateJob, StepKind } from "../types";
 import { useUI } from "../ui";
-import { useGeneratingHarness } from "./Generate";
 import { HarnessMark, harnessName, ic, STEP_ICON } from "./icons";
 
 export interface ChatLinkProps {
@@ -78,8 +79,7 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
   const { chat, historyOpen, setHistoryOpen, newChat, error } = useChat();
   const toggleChat = useApp((s) => s.toggleChat);
   const meta = useApp((s) => s.guide?.meta);
-  const genHarness = useGeneratingHarness();
-  const guideHarness = meta?.harness ?? genHarness;
+  const harness = useSessionHarness();
   // Back from the terminal: show what was said to the guide's session there.
   useEffect(() => {
     const sync = () => document.visibilityState === "visible" && void useChat.getState().syncGuide();
@@ -120,8 +120,8 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
     <aside className="chat">
       <Resizer onWidth={onWidth} />
       <div className="chat-h">
-        <span className="chat-mark" title={harnessName(chat.harness ?? guideHarness)}>
-          <HarnessMark harness={chat.harness ?? guideHarness} size={15} />
+        <span className="chat-mark" title={harnessName(harness)}>
+          <HarnessMark harness={harness} size={15} />
         </span>
         {historyOpen ? (
           <span className="chat-title">History</span>
@@ -403,9 +403,7 @@ const SUGG = [
 /** A chat with nothing in it yet: the mark of the agent it runs on, and a few questions to start with. */
 function Empty() {
   const ask = useChat((s) => s.ask);
-  const chatHarness = useChat((s) => s.chat.harness);
-  const genHarness = useGeneratingHarness();
-  const harness = useApp((s) => chatHarness ?? s.guide?.meta?.harness ?? null) ?? genHarness ?? "claude-code";
+  const harness = useSessionHarness();
   return (
     <div className="empty">
       <div className="big">
@@ -454,13 +452,11 @@ export const Qn = ({ q }: { q: Question }) =>
   q.n ? <span className={`qn${q.status === "staged" ? " staged" : ""}`}>{q.n}</span> : null;
 
 const REWINDS = ["claude-code", "codex"];
-const harnessOf = (chat: { harness?: string | null }) =>
-  chat.harness ?? useApp.getState().guide?.meta?.harness ?? "claude-code";
 
 function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first: boolean }) {
   const multi = qs.length > 1 || qs.some((q) => q.n);
   // A sent message can be edited where the session can rewind to before it (Claude Code, Codex), as in the terminal.
-  const editable = useChat((s) => !first && !!qs[0].uuid && !s.chat.busy && REWINDS.includes(harnessOf(s.chat)));
+  const editable = useChat((s) => !first && !!qs[0].uuid && !s.chat.busy && REWINDS.includes(sessionHarness(s.chat)));
   const rewriting = useChat((s) => s.rewriting);
   const pending = qs.some((q) => q.status === "pending");
   const linked = (q: Question) =>
@@ -748,14 +744,10 @@ const modeUI = (harness: string, m: ChatMode) => (harness === "codex" && CODEX_U
 
 /** The guide session's permission mode, as in the harness. New chats fork the session and can only read. */
 function ModeMenu() {
-  const { chat, setMode } = useChat();
-  // While a review is being written there's no guide yet to say whose session it is: the agent writing it. With
-  // no guide at all, chat runs on Claude Code (bundled with the engine), as a review written from here would.
-  const genHarness = useGeneratingHarness();
-  const guideHarness = useApp((s) => s.guide?.meta?.harness ?? null) ?? genHarness ?? "claude-code";
+  const setMode = useChat((s) => s.setMode);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const harness = chat.harness ?? guideHarness;
+  const harness = useSessionHarness();
   const modes = modesFor(harness);
   const mode = useChat((s) => s.modeOf(harness));
   useEffect(() => {
@@ -1158,7 +1150,7 @@ function Composer({ link }: { link: ChatLinkProps }) {
     // Only Claude Code checkpoints files; Codex rewinds the conversation alone.
     return (
       !!q &&
-      harnessOf(s.chat) === "claude-code" &&
+      sessionHarness(s.chat) === "claude-code" &&
       s.chat.questions.some((x) => x.turn! >= q.turn! && x.trace?.some(isEdit))
     );
   });

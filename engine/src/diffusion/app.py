@@ -35,7 +35,7 @@ from .agent import (
 )
 from .chat_agent import TURN_NOTE, ChatDelta, ChatSteered, GuideBlock, Question, run_turn
 from .commands import session_commands
-from .config import FORKABLE, Config, installed_harness, load_config
+from .config import FORKABLE, Config, Harness, installed_harness, load_config
 from .generate import Jobs, generate_request, uv_dirs
 from .github import GitHubError, PRRef, fetch_inbox, fetch_review_state, write_review
 from .pipeline import Prepared, prepare, target_ref
@@ -134,6 +134,8 @@ class TurnReq(BaseModel):
     mode: Mode = "read-only"
     # Editing an earlier message: the turn replaces it, and everything after it, in the session.
     rewind: Rewind | None = None
+    # The agent the reviewer sees, for a chat no session decides (no guide yet, or one written by hand).
+    harness: Harness | None = None
 
 
 class SteerReq(BaseModel):
@@ -659,7 +661,12 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                     yield "error", {"message": "chat not found"}
                     return
                 meta = (guide or {}).get("meta") or {}
-                harness = chat.get("harness") or meta.get("harness") or installed_harness(dict(os.environ))
+                harness = (
+                    chat.get("harness")
+                    or meta.get("harness")
+                    or req.harness
+                    or installed_harness(dict(os.environ))
+                )
                 chat["harness"] = harness = harness or "claude-code"  # the SDK bundles Claude Code
                 resume_at = restore = None
                 if req.rewind:

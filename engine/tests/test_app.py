@@ -244,6 +244,25 @@ async def test_guide_chat_continues_the_guide_session(setup):
     assert [(c["id"], c["kind"], c["harness"]) for c in listed] == [(cid, "guide", "codex")]
 
 
+async def test_a_chat_no_session_decides_runs_on_the_agent_shown(setup):
+    # A guide written by hand: the reviewer's default agent, which the UI shows, is the one that answers.
+    client, runners, deps, prep = setup
+    from diffusion.agent import TextEvent
+
+    submit(deps, prep, guide_for(prep))
+
+    async def runner(req):
+        yield TextEvent("ok")
+        yield DoneEvent(1, 0.0, False, "th_9")
+
+    runners["chat"] = runner
+    cid = (await client.post("/api/chats", json={"url": URL})).json()["id"]
+    body = {"url": URL, "questions": [{"n": 1, "text": "a"}], "harness": "codex"}
+    assert parse_sse((await client.post(f"/api/chats/{cid}/turn", json=body)).text)[-1][0] == "done"
+    listed = (await client.get("/api/chats", params={"url": URL})).json()
+    assert [c["harness"] for c in listed] == ["codex"]
+
+
 async def test_guide_chat_is_stored_by_its_first_turn(setup):
     # The UI shows the guide chat from GET without creating it, so asking in it must work straight away.
     client, runners, deps, prep = setup
