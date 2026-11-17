@@ -119,11 +119,13 @@ interface State {
   steer(batch: string): Promise<void>;
   /** The queued message being edited in the composer: the queue holds until the edit is saved or cancelled. */
   editing: string | null;
-  /** A sent message being edited in the composer (its question id). */
+  /** A sent message being edited in the composer (one of its question ids). Its line notes are back in the
+   *  composer as staged notes; any notes staged before are set aside in ``held`` until the edit ends. */
   rewriting: string | null;
+  held: Question[];
   setRewriting(id: string | null): void;
-  /** Send an edited version of a sent message: the session rewinds to just before it (``code``: the files too),
-   *  and it and everything after it go. */
+  /** Send an edited version of a sent message (``text`` and its staged notes): the session rewinds to just before
+   *  it (``code``: the files too), and it and everything after it go. */
   editSent(id: string, text: string, code: boolean): void;
   setEditing(batch: string | null): void;
 
@@ -387,32 +389,64 @@ export const useChat = create<State>((set, get) => {
     asks: [],
     editing: null,
     rewriting: null,
+    held: [],
     setRewriting(id) {
-      set({ rewriting: id });
-    },
-    editSent(id, text, code) {
-      const { chat } = get();
+      const { chat, rewriting, held } = get();
+      // Whatever an earlier edit put back goes; notes staged before it come back.
+      const rest = rewriting ? chat.questions.filter((q) => q.status !== "staged") : chat.questions;
+      if (!id) return set({ rewriting: null, held: [], chat: { ...chat, questions: [...rest, ...held] } });
       const q = chat.questions.find((x) => x.id === id);
-      if (!q?.uuid || q.turn == null || chat.busy || !text.trim()) return;
-      set((s) => ({
-        rewriting: null,
-        chat: { ...s.chat, questions: s.chat.questions.filter((x) => x.turn == null || x.turn < q.turn!) },
-      }));
-      void send(
-        [
-          {
+      if (q?.turn == null) return;
+      const notes = chat.questions
+        .filter((x) => x.turn === q.turn && x.anchor)
+        .map(
+          (x): Question => ({
             id: qid(),
-            n: q.n,
-            text: text.trim(),
-            anchor: q.anchor,
-            status: "pending",
+            n: x.n,
+            text: x.text,
+            anchor: x.anchor,
+            status: "staged",
             answer: "",
             tools: [],
             turn: null,
-          },
-        ],
-        { uuid: q.uuid, code },
-      );
+          }),
+        );
+      set({
+        rewriting: id,
+        held: rewriting ? held : rest.filter((x) => x.status === "staged"),
+        chat: { ...chat, questions: [...rest.filter((x) => x.status !== "staged"), ...notes] },
+      });
+    },
+    editSent(id, text, code) {
+      const { chat, held } = get();
+      const q = chat.questions.find((x) => x.id === id);
+      const notes = chat.questions.filter((x) => x.status === "staged");
+      // The session's id for the message sits on its first question, which may be a note or the typed text.
+      const uuid = q?.turn == null ? undefined : chat.questions.find((x) => x.turn === q.turn && x.uuid)?.uuid;
+      if (!q || !uuid || q.turn == null || chat.busy || (!text.trim() && !notes.length)) return;
+      const qs = [...notes];
+      if (text.trim())
+        qs.push({
+          id: qid(),
+          n: null,
+          text: text.trim(),
+          anchor: null,
+          status: "pending",
+          answer: "",
+          tools: [],
+          turn: null,
+        });
+      set((s) => ({
+        rewriting: null,
+        held: [],
+        chat: {
+          ...s.chat,
+          questions: s.chat.questions.filter((x) => x.status !== "staged" && (x.turn == null || x.turn < q.turn!)),
+        },
+      }));
+      void send(qs, { uuid, code });
+      // Notes staged before the edit wait for the next message again.
+      set((s) => ({ chat: { ...s.chat, questions: [...s.chat.questions, ...held] } }));
     },
 
     setEditing(batch) {

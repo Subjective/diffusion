@@ -472,47 +472,59 @@ function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first:
           onClick: () => link.onFocusQ(q),
         }
       : {};
+  // What was typed goes in the one bubble; each line note heads its own part of the answer.
+  const typed = qs.find((q) => !q.anchor);
+  const target = typed ?? qs[0];
+  const editBtn = editable && (
+    <button
+      type="button"
+      className="icon-btn sm edit-sent"
+      title="Edit"
+      onClick={(e) => {
+        e.stopPropagation();
+        useChat.getState().setRewriting(target.id);
+      }}
+    >
+      {ic(Pencil, 13)}
+    </button>
+  );
+  const editingThis = rewriting != null && qs.some((q) => q.id === rewriting);
+  const ordered = [...qs.filter((q) => q.anchor), ...(typed ? [typed] : [])];
   return (
     <>
-      <div className="msg user">
-        {qs.map((q) => (
-          <div key={q.id} className={`q-item${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
-            {q.anchor && <CtxCard a={q.anchor} />}
-            {editable && q === qs[0] && (
-              <button
-                type="button"
-                className="icon-btn sm edit-sent"
-                title="Edit"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  useChat.getState().setRewriting(q.id);
-                }}
-              >
-                {ic(Pencil, 13)}
-              </button>
-            )}
-            <div className={`bubble${rewriting === q.id ? " rewriting" : ""}`}>
-              <Qn q={q} />
-              {q.text}
-            </div>
+      {typed && (
+        <div className="msg user">
+          <div className="q-item">
+            {editBtn}
+            <div className={`bubble${editingThis ? " rewriting" : ""}`}>{typed.text}</div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
       {/* A steered message the session hasn't taken in yet: just the message, for now */}
       {!qs.every((q) => q.status === "steering") && (
-        <div className="msg ai">
+        <div className={`msg ai${typed ? "" : " notes-only"}`}>
           <div className="ai-body">
             <Trace q={qs[0]} pending={pending} />
-            {qs.map((q) => (
+            {ordered.map((q) => (
               <div
                 key={q.id}
-                className={`ans${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
+                className={`ans${q.anchor ? " noted" : ""}${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
                 data-ans={q.id}
               >
-                {multi && (
-                  <div className={`ans-h${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
+                {q.anchor && (
+                  <div className={`ans-note${link.hoverQ === q.id ? " hover" : ""}`} {...linked(q)}>
+                    <CtxCard a={q.anchor} />
+                    <div className={`note sent${editingThis ? " rewriting" : ""}`}>
+                      <Qn q={q} />
+                      <span className="ref">{q.text}</span>
+                      {editBtn}
+                    </div>
+                  </div>
+                )}
+                {multi && !q.anchor && q !== typed && (
+                  <div className="ans-h">
                     <Qn q={q} />
-                    {q.anchor ? anchorLabel(q.anchor) : q.text.slice(0, 28)}
+                    {q.text.slice(0, 28)}
                   </div>
                 )}
                 <div className="ans-t">
@@ -1157,7 +1169,8 @@ function Composer({ link }: { link: ChatLinkProps }) {
     if (!q) return;
     setEditing(null);
     setRestoreCode(false);
-    setText(q.text);
+    // The message's typed part; its notes are back above as pills.
+    setText(useChat.getState().chat.questions.find((x) => x.turn === q.turn && !x.anchor)?.text ?? "");
     requestAnimationFrame(() => {
       autosize(ta.current, 12);
       ta.current?.focus();
@@ -1230,15 +1243,17 @@ function Composer({ link }: { link: ChatLinkProps }) {
       {waiting.length > 0 && <Queue waiting={waiting} editing={editing} onEdit={startEdit} link={link} />}
       <div className="composer stack">
         {menu.open && <TypeaheadMenu picks={menu.picks} active={menu.active} onPick={pick} onHover={menu.setActive} />}
-        {(editing || rewriting) && (
+        {(editing || rewriting || staged.length > 0) && (
           <div className="notes">
-            <span className="editing-chip">
-              {ic(Pencil, 13)}
-              Editing
-              <button type="button" className="icon-btn sm" title="Cancel (Esc)" onClick={cancelEdit}>
-                {ic(X, 12)}
-              </button>
-            </span>
+            {(editing || rewriting) && (
+              <span className="editing-chip">
+                {ic(Pencil, 13)}
+                Editing
+                <button type="button" className="icon-btn sm" title="Cancel (Esc)" onClick={cancelEdit}>
+                  {ic(X, 12)}
+                </button>
+              </span>
+            )}
             {rewriting && touchedFiles && (
               <button
                 type="button"
@@ -1251,25 +1266,22 @@ function Composer({ link }: { link: ChatLinkProps }) {
                 Restore code
               </button>
             )}
-          </div>
-        )}
-        {!editing && !rewriting && staged.length > 0 && (
-          <div className="notes">
-            {staged.map((q) => (
-              <div
-                key={q.id}
-                className={`note${link.hoverQ === q.id ? " hover" : ""}`}
-                {...noteLink(q, link)}
-                onClick={(e) => {
-                  link.onFocusQ(q);
-                  link.onEditQ(q.id, e.currentTarget);
-                }}
-              >
-                <Qn q={q} />
-                <span className="ref">{q.text}</span>
-                <RemoveBtn onClick={() => unstage(q.id)} />
-              </div>
-            ))}
+            {!editing &&
+              staged.map((q) => (
+                <div
+                  key={q.id}
+                  className={`note${link.hoverQ === q.id ? " hover" : ""}`}
+                  {...noteLink(q, link)}
+                  onClick={(e) => {
+                    link.onFocusQ(q);
+                    link.onEditQ(q.id, e.currentTarget);
+                  }}
+                >
+                  <Qn q={q} />
+                  <span className="ref">{q.text}</span>
+                  <RemoveBtn onClick={() => unstage(q.id)} />
+                </div>
+              ))}
           </div>
         )}
         <textarea
@@ -1313,7 +1325,14 @@ function Composer({ link }: { link: ChatLinkProps }) {
           <ModeMenu />
           <span className="grow" />
           {editing || rewriting ? (
-            <button type="button" id="chatSend" className="icon-btn solid" title="Save" onClick={send}>
+            <button
+              type="button"
+              id="chatSend"
+              className="icon-btn solid"
+              title="Save"
+              disabled={!!rewriting && !text.trim() && !staged.length}
+              onClick={send}
+            >
               {ic(Check, 16)}
             </button>
           ) : chat.busy && !text.trim() && !staged.length ? (
