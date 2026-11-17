@@ -421,7 +421,9 @@ export const useChat = create<State>((set, get) => {
       const { chat, held } = get();
       const q = chat.questions.find((x) => x.id === id);
       const notes = chat.questions.filter((x) => x.status === "staged");
-      if (!q?.uuid || q.turn == null || chat.busy || (!text.trim() && !notes.length)) return;
+      // The session's id for the message sits on its first question, which may be a note or the typed text.
+      const uuid = q?.turn == null ? undefined : chat.questions.find((x) => x.turn === q.turn && x.uuid)?.uuid;
+      if (!q || !uuid || q.turn == null || chat.busy || (!text.trim() && !notes.length)) return;
       const qs = [...notes];
       if (text.trim())
         qs.push({
@@ -442,7 +444,7 @@ export const useChat = create<State>((set, get) => {
           questions: s.chat.questions.filter((x) => x.status !== "staged" && (x.turn == null || x.turn < q.turn!)),
         },
       }));
-      void send(qs, { uuid: q.uuid, code });
+      void send(qs, { uuid, code });
       // Notes staged before the edit wait for the next message again.
       set((s) => ({ chat: { ...s.chat, questions: [...s.chat.questions, ...held] } }));
     },

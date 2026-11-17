@@ -505,7 +505,7 @@ function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first:
         <div className={`msg ai${typed ? "" : " notes-only"}`}>
           <div className="ai-body">
             <Trace q={qs[0]} pending={pending} />
-            {ordered.map((q, i) => (
+            {ordered.map((q) => (
               <div
                 key={q.id}
                 className={`ans${q.anchor ? " noted" : ""}${link.flashQ?.id === q.id ? ` qflash f${link.flashQ.n % 2}` : ""}`}
@@ -517,7 +517,7 @@ function Turn({ qs, link, first }: { qs: Question[]; link: ChatLinkProps; first:
                     <div className={`note sent${editingThis ? " rewriting" : ""}`}>
                       <Qn q={q} />
                       <span className="ref">{q.text}</span>
-                      {!typed && i === 0 && editBtn}
+                      {editBtn}
                     </div>
                   </div>
                 )}

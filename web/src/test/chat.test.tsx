@@ -685,3 +685,36 @@ test("cancelling an edit of line notes brings back what was staged before", asyn
   expect(pills()).toEqual(["later?"]);
   expect(document.querySelector(".editing-chip")).toBeNull();
 });
+
+test("editing a message of line notes and typed text resends it, from its bubble or any note", async () => {
+  await mount();
+  fireEvent.click(screen.getByTitle("New chat"));
+  turnBodies.length = 0;
+  const { useChat } = await import("../chat");
+  const at = (start: number) => ({ file: "src/auth/session.ts", start, end: start, side: "new" as const, code: "x" });
+  type("first?");
+  await waitFor(() => expect(turnBodies).toHaveLength(1));
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-t")).toHaveLength(1));
+  act(() => {
+    useChat.getState().stage("why a?", at(5));
+    useChat.getState().stage("why b?", at(6));
+  });
+  type("and tests?");
+  await waitFor(() => expect(turnBodies).toHaveLength(2));
+  await act(async () => release!());
+  await waitFor(() => expect(document.querySelectorAll(".ans-note")).toHaveLength(2));
+  // every note of the message, and its bubble, can start the edit
+  expect(document.querySelectorAll(".ans-note .edit-sent")).toHaveLength(2);
+  fireEvent.click(document.querySelectorAll<HTMLElement>(".ans-note .edit-sent")[1]);
+  const ta = document.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  await waitFor(() => expect(ta.value).toBe("and tests?"));
+  const pills = [...document.querySelectorAll(".composer .note .ref")].map((n) => n.textContent);
+  expect(pills).toEqual(["why a?", "why b?"]);
+  fireEvent.change(ta, { target: { value: "and docs?" } });
+  fireEvent.click(screen.getByTitle("Save"));
+  await waitFor(() => expect(turnBodies).toHaveLength(3));
+  expect(turnBodies[2].rewind).toEqual({ uuid: "u2", code: false });
+  expect(turnBodies[2].questions.map((q) => q.text)).toEqual(["why a?", "why b?", "and docs?"]);
+  await act(async () => release!());
+});
