@@ -175,7 +175,6 @@ function PRTarget({ pr }: { pr: PRMeta }) {
       </a>
       <a className="repo-link" href={`https://github.com/${pr.owner}/${pr.repo}`} target="_blank" rel="noreferrer">
         {pr.repo}
-        {ic(ArrowUpRight, 13)}
       </a>
       <Switcher pr={pr} layers={layers} />
       {layers.length > 0 && <StackChip pr={pr} layers={layers} />}
