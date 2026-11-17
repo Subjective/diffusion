@@ -3,6 +3,7 @@ import { Check, ChevronDown, Copy, LoaderCircle, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useChat } from "../chat";
 import { autosize } from "../lib/autosize";
+import { tip } from "../lib/tips";
 import { usePopover } from "../lib/usePopover";
 import { useGenerate } from "../review";
 import { useApp } from "../store";
@@ -150,7 +151,7 @@ function Writing({ url, job }: { url: string; job: GenerateJob }) {
         <button
           type="button"
           className="icon-btn sm"
-          data-tip="Stop"
+          {...tip("Stop")}
           onClick={() => void useGenerate.getState().stop(url)}
         >
           {ic(Square, 13)}

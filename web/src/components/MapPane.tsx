@@ -8,6 +8,7 @@ import { Inline } from "../lib/md";
 import { MAP_W, startResize } from "../lib/panes";
 import { type HunkIndex, rowsForRef } from "../lib/refs";
 import { storage } from "../lib/storage";
+import { tip } from "../lib/tips";
 import { useApp } from "../store";
 import type { Block, Ref, Scene } from "../types";
 import { useUI } from "../ui";
@@ -25,7 +26,7 @@ export function MapPane({ onWidth }: { onWidth?: (w: number) => void }) {
       {onWidth && (
         <div
           className="resizer right"
-          title="Drag to resize · double-click to reset"
+          data-tip="Drag to resize · double-click to reset"
           onDoubleClick={() => {
             onWidth(MAP_W);
             storage.set("rv-map-w", MAP_W);
@@ -446,13 +447,13 @@ function MapBody() {
         </div>
       )}
       <div className="map-float map-zoom">
-        <button type="button" className="icon-btn sm" title="Zoom in" onClick={() => zoomBy(0.75)}>
+        <button type="button" className="icon-btn sm" {...tip("Zoom in")} onClick={() => zoomBy(0.75)}>
           {ic(Plus, 15)}
         </button>
-        <button type="button" className="icon-btn sm" title="Zoom out" onClick={() => zoomBy(1 / 0.75)}>
+        <button type="button" className="icon-btn sm" {...tip("Zoom out")} onClick={() => zoomBy(1 / 0.75)}>
           {ic(Minus, 15)}
         </button>
-        <button type="button" className="icon-btn sm" title="Fit" onClick={() => frameStop()}>
+        <button type="button" className="icon-btn sm" {...tip("Fit")} onClick={() => frameStop()}>
           {ic(Maximize, 15)}
         </button>
       </div>
@@ -469,7 +470,7 @@ function MapBody() {
             <button
               type="button"
               className="icon-btn sm"
-              title="Previous (k or ←)"
+              {...tip("Previous (k or ←)")}
               disabled={at === 0}
               onClick={() => go(at - 1)}
             >
@@ -478,7 +479,7 @@ function MapBody() {
             <button
               type="button"
               className="icon-btn sm"
-              title="Next (j or →)"
+              {...tip("Next (j or →)")}
               disabled={at === stops.length - 1}
               onClick={() => go(at + 1)}
             >
@@ -528,7 +529,7 @@ function BlockPeek({ block, idx }: { block: Block; idx: HunkIndex }) {
           <div key={k}>
             <div className={`peek-h${k ? " next" : ""}`}>
               {ic(FileCode, 14)}
-              <span className="path" title={path}>
+              <span className="path" data-tip={path}>
                 <span className="dir">{path.slice(0, path.lastIndexOf("/") + 1)}</span>
                 {path.slice(path.lastIndexOf("/") + 1)}
               </span>

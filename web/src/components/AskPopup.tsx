@@ -5,6 +5,7 @@ import { useChat } from "../chat";
 import { autosize } from "../lib/autosize";
 import { rangeText } from "../lib/selection";
 import { storage } from "../lib/storage";
+import { tip } from "../lib/tips";
 import { commentable } from "../review";
 import { useApp } from "../store";
 import { GithubIcon, HarnessMark, ic } from "./icons";
@@ -101,11 +102,11 @@ export function AskPopup({
       <div className="ask-ctx">
         {ic(a.commentTitle ? MessageCircle : FileCode, 13)}
         {a.commentTitle && (
-          <b className="ask-cmt" title={a.commentTitle}>
+          <b className="ask-cmt" data-tip={a.commentTitle}>
             {a.commentTitle}
           </b>
         )}
-        <b className="ask-file" title={a.file}>
+        <b className="ask-file" data-tip={a.file}>
           {a.file.split("/").pop()}
         </b>
         <span className="ask-range">{rangeText(a.start, a.end)}</span>
@@ -115,7 +116,7 @@ export function AskPopup({
             <button
               type="button"
               className={`icon-btn${gh ? "" : " on"}`}
-              data-tip="Ask"
+              {...tip("Ask")}
               aria-pressed={!gh}
               onClick={() => setMode("ask")}
             >
@@ -124,7 +125,7 @@ export function AskPopup({
             <button
               type="button"
               className={`icon-btn${gh ? " on" : ""}`}
-              data-tip={inDiff ? "Comment on GitHub" : "Only lines in the diff can be commented on"}
+              {...tip(inDiff ? "Comment on GitHub" : "Only lines in the diff can be commented on")}
               aria-pressed={gh}
               disabled={!inDiff}
               onClick={() => setMode("github")}
@@ -133,7 +134,7 @@ export function AskPopup({
             </button>
           </span>
         )}
-        <button type="button" className="icon-btn sm" onClick={onClose} title="Close">
+        <button type="button" className="icon-btn sm" onClick={onClose} {...tip("Close")}>
           {ic(X, 13)}
         </button>
       </div>
@@ -163,24 +164,24 @@ export function AskPopup({
           }}
         />
         {editing ? (
-          <button type="button" className="icon-btn solid" title="Save (↵)" onClick={() => submit(true)}>
+          <button type="button" className="icon-btn solid" {...tip("Save (↵)")} onClick={() => submit(true)}>
             {ic(Check, 16)}
           </button>
         ) : gh ? (
           <>
-            <button type="button" className="icon-btn" title="Add to review (↵)" onClick={() => submit(true)}>
+            <button type="button" className="icon-btn" {...tip("Add to review (↵)")} onClick={() => submit(true)}>
               {ic(MessageSquarePlus, 17)}
             </button>
-            <button type="button" className="icon-btn solid" title="Comment now (⌘↵)" onClick={() => submit(false)}>
+            <button type="button" className="icon-btn solid" {...tip("Comment now (⌘↵)")} onClick={() => submit(false)}>
               {ic(Send, 15)}
             </button>
           </>
         ) : (
           <>
-            <button type="button" className="icon-btn" title="Queue (↵)" onClick={() => submit(true)}>
+            <button type="button" className="icon-btn" {...tip("Queue (↵)")} onClick={() => submit(true)}>
               {ic(ListPlus, 17)}
             </button>
-            <button type="button" className="icon-btn solid" title="Ask now (⌘↵)" onClick={() => submit(false)}>
+            <button type="button" className="icon-btn solid" {...tip("Ask now (⌘↵)")} onClick={() => submit(false)}>
               {ic(ArrowUp, 16)}
             </button>
           </>

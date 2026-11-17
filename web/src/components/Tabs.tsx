@@ -2,6 +2,7 @@ import { FileCode, GitCompare, LoaderCircle, Pin, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { highlightLines, type LineTokens, langFor } from "../lib/highlight";
 import { rowKey } from "../lib/refs";
+import { tip } from "../lib/tips";
 import { loadFile } from "../lib/useFileLines";
 import { useApp } from "../store";
 import type { Thread } from "../types";
@@ -25,7 +26,7 @@ export function TabBar() {
         role="tab"
         aria-selected={tab == null}
         className={`tab${tab == null ? " on" : ""}`}
-        title={`Diff · ${files.length} ${files.length === 1 ? "file" : "files"}`}
+        data-tip={`Diff · ${files.length} ${files.length === 1 ? "file" : "files"}`}
         onClick={() => showTab(null)}
       >
         {ic(GitCompare, 14)}
@@ -43,14 +44,14 @@ export function TabBar() {
             role="tab"
             aria-selected={tab === t.path}
             className="tab-b"
-            title={t.pinned ? t.path : `${t.path} · double-click to keep open`}
+            data-tip={t.pinned ? t.path : `${t.path} · double-click to keep open`}
             onClick={() => showTab(t.path)}
             onDoubleClick={() => pinTab(t.path)}
           >
             {ic(FileCode, 14)}
             <span className="nm">{base(t.path)}</span>
           </button>
-          <button type="button" className="x" title="Close" onClick={() => closeTab(t.path)}>
+          <button type="button" className="x" {...tip("Close")} onClick={() => closeTab(t.path)}>
             {ic(X, 12)}
           </button>
         </div>
@@ -154,7 +155,7 @@ export function FileView({
           <div className="file" data-path={path}>
             <div className="file-h">
               {ic(FileCode, 15)}
-              <span className="path" title={path}>
+              <span className="path" data-tip={path}>
                 <span className="dir">{path.slice(0, slash)}</span>
                 {path.slice(slash)}
               </span>
@@ -168,7 +169,7 @@ export function FileView({
                 <button
                   type="button"
                   className="icon-btn sm"
-                  title="Show in the diff"
+                  {...tip("Show in the diff")}
                   onClick={() => onShowInDiff(path)}
                 >
                   {ic(GitCompare, 15)}
@@ -178,7 +179,7 @@ export function FileView({
                 <button
                   type="button"
                   className="icon-btn sm"
-                  title="Keep this tab open"
+                  {...tip("Keep this tab open")}
                   onClick={() => useUI.getState().pinTab(path)}
                 >
                   {ic(Pin, 15)}

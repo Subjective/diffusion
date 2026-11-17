@@ -261,7 +261,7 @@ export function Inbox({ prs, q, onOpen }: Props) {
                   <a key={p.url} className="home-r ib-r" {...link(p.url)}>
                     {ic(p.draft ? GitPullRequestDraft : GitPullRequest, 16)}
                     <span className="t">
-                      <span title={p.title}>{p.title}</span>
+                      <span data-tip={p.title}>{p.title}</span>
                       <span className="w">
                         <OnGitHub url={p.url}>
                           {p.repo} #{p.number}
@@ -290,7 +290,7 @@ export function Inbox({ prs, q, onOpen }: Props) {
                   >
                     {ic(Layers2, 16)}
                     <span className="t">
-                      <span title={bottom.title}>
+                      <span data-tip={bottom.title}>
                         {bottom.title}
                         <span className="chev">{ic(expanded ? ChevronDown : ChevronRight, 13)}</span>
                       </span>
@@ -312,7 +312,7 @@ export function Inbox({ prs, q, onOpen }: Props) {
                         <a key={p.url} className="home-r ib-r kid" {...link(p.url)}>
                           <span className="lvl">{p.stack!.index}</span>
                           <span className="t">
-                            <span title={p.title}>{p.title}</span>
+                            <span data-tip={p.title}>{p.title}</span>
                             <span className="w">
                               <OnGitHub url={p.url}>#{p.number}</OnGitHub>
                             </span>

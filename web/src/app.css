@@ -322,33 +322,39 @@ button.ib-r {
     opacity: 0.45;
   }
 }
-/* Small styled tooltips, shown after a short hover (below the bar in the top bar and toolbar) */
-[data-tip] {
-  position: relative;
-}
-[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translate(-50%, 2px);
-  z-index: 20;
+/* The one tooltip (lib/tips.ts): a fixed bubble on <body>, placed by script so no pane clips it */
+.tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  max-width: 320px;
   padding: 4px 8px;
   border-radius: 7px;
   background: var(--solid);
   color: var(--solid-fg);
   font: 500 12px / 16px var(--sans);
-  white-space: nowrap;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
   pointer-events: none;
   opacity: 0;
+  visibility: hidden;
   transition:
     opacity 0.12s,
-    transform 0.12s;
+    translate 0.12s,
+    visibility 0s 0.12s;
+  translate: 0 2px;
 }
-[data-tip]:hover::after {
+.tip[data-side="below"] {
+  translate: 0 -2px;
+}
+.tip.on {
   opacity: 1;
-  transform: translate(-50%, 0);
-  transition-delay: 0.35s;
+  visibility: visible;
+  translate: none;
+  transition:
+    opacity 0.12s,
+    translate 0.12s;
 }
 .ib-r .gd {
   flex: none;
@@ -1057,26 +1063,6 @@ tr.cmt-row.closed > td {
   }
 }
 
-:is(.top, .toolbar) [data-tip]::after {
-  bottom: auto;
-  top: calc(100% + 6px);
-  transform: translate(-50%, -2px);
-}
-[aria-expanded="true"][data-tip]::after {
-  display: none;
-}
-/* In the threads popover: above the buttons and right-aligned, so the pane's edge doesn't cut them off */
-.th-pop-h [data-tip]::after {
-  top: auto;
-  bottom: calc(100% + 6px);
-  left: auto;
-  right: 0;
-  transform: translateY(2px);
-}
-.th-pop-h [data-tip]:hover::after {
-  transform: none;
-}
-
 /* GitHub PR in the top bar: repo, #n switcher, stack, link out, checks, reviewers */
 .target {
   gap: 4px;
@@ -1562,17 +1548,6 @@ tr.th-row > td {
 .th-pop-b {
   overflow: hidden auto;
   padding: 0 2px;
-}
-/* A file's hide button: its tip opens to the left, inside the list (which clips anything past its edges) */
-.th-pop-b .tl-hide[data-tip]::after {
-  top: 50%;
-  bottom: auto;
-  left: auto;
-  right: calc(100% + 6px);
-  transform: translate(2px, -50%);
-}
-.th-pop-b .tl-hide[data-tip]:hover::after {
-  transform: translate(0, -50%);
 }
 .tl-f {
   display: flex;
@@ -2205,9 +2180,6 @@ tr.th-row > td {
   right: 0;
   min-width: 180px;
 }
-.agent-menu [aria-expanded="true"][data-tip]::after {
-  display: none;
-}
 .gen-menu .gen-sep {
   height: 1px;
   margin: 4px 6px;
@@ -2256,23 +2228,12 @@ tr.th-row > td {
     transform: translateX(290%);
   }
 }
-/* The mark spins; its tooltip stays put, ending at the mark and cut short if the step is long. */
+/* The mark spins. */
 .ib-r .gen.run {
   display: inline-grid;
 }
 .ib-r .gen.run > * {
   animation: spin 2.4s linear infinite;
-}
-.ib-r .gen.run::after {
-  left: auto;
-  right: -6px;
-  max-width: 420px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transform: translateY(2px);
-}
-.ib-r .gen.run:hover::after {
-  transform: none;
 }
 .write-err {
   color: var(--del-fg);
@@ -2345,15 +2306,6 @@ tr.th-row > td {
   justify-content: flex-end;
   margin-top: 8px;
 }
-/* right-aligned, so the pane's edge doesn't cut the tip off */
-.pr-acts [data-tip]::after {
-  left: auto;
-  right: 0;
-  transform: translateY(2px);
-}
-.pr-acts [data-tip]:hover::after {
-  transform: none;
-}
 .conv-c .h .conv-acts {
   display: inline-flex;
   margin-left: auto;
@@ -2411,12 +2363,4 @@ a.conv-link:hover {
 .ans-acts:focus-within,
 .ans-acts.done {
   opacity: 1;
-}
-/* At the panel's left edge: tips open rightward from the button, not centered on it */
-.ans-acts [data-tip]::after {
-  left: 0;
-  transform: translateY(2px);
-}
-.ans-acts [data-tip]:hover::after {
-  transform: none;
 }

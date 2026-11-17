@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, FileDiff as FileDiffIcon, FolderTree, Search
 import { useEffect, useMemo, useRef, useState } from "react";
 import { startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
+import { tip } from "../lib/tips";
 import { cachedTree } from "../lib/tree";
 import { useApp } from "../store";
 import type { FileDiff as FD } from "../types";
@@ -172,7 +173,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
         className={cls}
         style={{ paddingLeft: indent }}
         data-path={p}
-        title={f ? `${p} · ⌘-click to open in a tab` : p}
+        data-tip={f ? `${p} · ⌘-click to open in a tab` : p}
         onClick={(e) => open(p, e)}
         onDoubleClick={() => !f && useUI.getState().pinTab(p)}
       >
@@ -210,13 +211,13 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
           type="button"
           className={`rail-dir${shut && holds ? " on" : ""}`}
           style={{ paddingLeft: 6 + depth * 12 }}
-          title={c.path}
+          data-tip={c.path}
           aria-expanded={!shut}
           onClick={() => toggle(c)}
         >
           <span className="tw">{ic(shut ? ChevronRight : ChevronDown, 13)}</span>
           <span className="nm">{c.name}</span>
-          {shut && changedDirs.has(c.path) && mode === "all" && <span className="fd" title="Holds changes" />}
+          {shut && changedDirs.has(c.path) && mode === "all" && <span className="fd" data-tip="Holds changes" />}
         </button>,
       );
       if (!shut) walk(c, depth + 1);
@@ -255,7 +256,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
               }}
             />
             {q && (
-              <button type="button" className="clr" title="Clear" onClick={() => setQ("")}>
+              <button type="button" className="clr" {...tip("Clear")} onClick={() => setQ("")}>
                 {ic(X, 12)}
               </button>
             )}
@@ -264,7 +265,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
             <button
               type="button"
               className={`icon-btn sm${mode === "diff" ? " on" : ""}`}
-              title="Changed files"
+              {...tip("Changed files")}
               onClick={() => useUI.getState().setRailMode("diff")}
             >
               {ic(FileDiffIcon, 14)}
@@ -272,7 +273,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
             <button
               type="button"
               className={`icon-btn sm${mode === "all" ? " on" : ""}`}
-              title="All files"
+              {...tip("All files")}
               onClick={() => useUI.getState().setRailMode("all")}
             >
               {ic(FolderTree, 14)}
@@ -283,7 +284,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
       </nav>
       <div
         className="resizer right"
-        title="Drag to resize · double-click to reset"
+        data-tip="Drag to resize · double-click to reset"
         onDoubleClick={() => {
           setWidth(RAIL_W);
           storage.set("rv-rail-w", RAIL_W);

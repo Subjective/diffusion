@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { refsTarget } from "../lib/linking";
 import { Inline } from "../lib/md";
 import { type HunkIndex, rowKey, rowsForRef } from "../lib/refs";
+import { tip } from "../lib/tips";
 import type { Comment } from "../types";
 import { useUI } from "../ui";
 import { ic } from "./icons";
@@ -41,7 +42,12 @@ function CommentRow({ c, idx, onAsk, resolved }: { c: Comment; idx: HunkIndex; o
     return (
       <tr className="cmt-row closed" data-tone={c.tone}>
         <td colSpan={4}>
-          <button type="button" className="cmt-closed" onClick={() => ui().resolve(c.title, false)} title="Unresolve">
+          <button
+            type="button"
+            className="cmt-closed"
+            onClick={() => ui().resolve(c.title, false)}
+            data-tip="Unresolve"
+          >
             <span className="cmt-ic">
               {ic(Check, 13)}
               {ic(RotateCcw, 13)}
@@ -62,7 +68,7 @@ function CommentRow({ c, idx, onAsk, resolved }: { c: Comment; idx: HunkIndex; o
       <td colSpan={4}>
         <div className="cmt">
           <div className="cmt-h">
-            <span className="cmt-tone" title={c.tone}>
+            <span className="cmt-tone" data-tip={c.tone}>
               {ic(MessageCircle, 13)}
             </span>
             <b>{c.title}</b>
@@ -70,7 +76,7 @@ function CommentRow({ c, idx, onAsk, resolved }: { c: Comment; idx: HunkIndex; o
             <button
               type="button"
               className="icon-btn sm"
-              title="Ask in chat"
+              {...tip("Ask in chat")}
               onClick={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();
                 onAsk(c, keys, { x: r.left - 340, y: r.bottom });
@@ -78,7 +84,7 @@ function CommentRow({ c, idx, onAsk, resolved }: { c: Comment; idx: HunkIndex; o
             >
               {ic(MessageCircle, 14)}
             </button>
-            <button type="button" className="icon-btn sm" title="Resolve" onClick={() => ui().resolve(c.title)}>
+            <button type="button" className="icon-btn sm" {...tip("Resolve")} onClick={() => ui().resolve(c.title)}>
               {ic(Check, 14)}
             </button>
           </div>

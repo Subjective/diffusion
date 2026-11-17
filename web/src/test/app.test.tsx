@@ -144,7 +144,7 @@ test("home lists past reviews, filters them, opens one, and the brand goes back"
   fireEvent.click(document.querySelector(".home-r")!);
   await waitFor(() => expect(document.querySelectorAll(".step")).toHaveLength(3));
   expect(new URLSearchParams(location.search).get("pr")).toBe(payload.pr.url);
-  fireEvent.click(screen.getByTitle("Home"));
+  fireEvent.click(screen.getByLabelText("Home"));
   await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
   expect(location.search).toBe("");
 });
@@ -168,7 +168,7 @@ test("home's pull requests: grouped like GitHub, stacks as one row, remembered, 
   useApp.setState({ url: "", pr: null });
   render(<App />);
   await waitFor(() => expect(document.querySelectorAll(".home-r")).toHaveLength(2));
-  fireEvent.click(screen.getByTitle("Pull requests"));
+  fireEvent.click(screen.getByLabelText("Pull requests"));
   expect(localStorage.getItem("rv-home-view")).toBe('"prs"');
   const groups = () => [...document.querySelectorAll(".ib-g")].map((g) => g.textContent);
   // the stack (#41 yours, #42 for review) is one row in the first group either layer is in
@@ -204,7 +204,7 @@ test("home's pull requests: grouped like GitHub, stacks as one row, remembered, 
   fireEvent.click(screen.getByText("Add token refresh"));
   await waitFor(() => expect(document.querySelectorAll(".step")).toHaveLength(3));
   expect(new URLSearchParams(location.search).get("pr")).toBe(payload.pr.url);
-  fireEvent.click(screen.getByTitle("Home"));
+  fireEvent.click(screen.getByLabelText("Home"));
   await waitFor(() => expect(screen.getByText("Plan mode")).toBeTruthy()); // still on pull requests
 });
 
@@ -266,7 +266,7 @@ test("viewed collapses; skippable row expands lockfile", async () => {
 test("the diff collapses to a rail in either mode; the rail or going to lines opens it", async () => {
   await mount();
   const app = () => document.querySelector(".app")!.classList.contains("no-diff");
-  const collapse = () => fireEvent.click(document.querySelector('.diffpane button[title="Collapse the diff"]')!);
+  const collapse = () => fireEvent.click(document.querySelector('.diffpane button[aria-label="Collapse the diff"]')!);
   const rail = () => document.querySelector<HTMLElement>(".diff-rail");
   expect([app(), rail()]).toEqual([false, null]);
   collapse();
@@ -300,7 +300,7 @@ test("mini map boxes show what changed and link both ways with the steps; expand
   fireEvent.click(boxes[1]);
   expect(document.querySelector('.step[data-step="2"]')!.classList.contains("active")).toBe(true);
   expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
-  fireEvent.click(document.querySelector('button[title="Open the map"]')!);
+  fireEvent.click(document.querySelector('button[aria-label="Open the map"]')!);
   expect(document.querySelector(".guide.map")).toBeTruthy();
   expect(document.querySelector(".step")).toBeNull();
 });
@@ -349,7 +349,7 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   expect(end.classList.contains("on")).toBe(true);
   expect(nums(".pin")).toEqual(["session.ts:6", "session.ts:7"]);
   expect(full()).toBe(false); // clicking a box opens the diff at its lines
-  fireEvent.click(document.querySelector('.diffpane button[title="Collapse the diff"]')!);
+  fireEvent.click(document.querySelector('.diffpane button[aria-label="Collapse the diff"]')!);
   expect(full()).toBe(true);
   fireEvent.click(document.querySelector(".diff-rail")!);
   expect(full()).toBe(false);
@@ -358,17 +358,17 @@ test("map: scenes walk with j/k and arrows, light their blocks, pin their lines;
   fireEvent.keyDown(window, { key: "j" });
   fireEvent.keyDown(window, { key: "j" });
   expect(card()).toContain("Teardown");
-  fireEvent.click(document.querySelector('button[title="Steps"]')!);
+  fireEvent.click(document.querySelector('button[aria-label="Steps"]')!);
   expect(document.querySelectorAll(".step")).toHaveLength(3);
   expect(document.querySelector('.step[data-step="2"]')!.classList.contains("active")).toBe(true);
   fireEvent.click(document.querySelector('.step[data-step="1"]')!);
-  fireEvent.click(document.querySelector('button[title="Map"]')!);
+  fireEvent.click(document.querySelector('button[aria-label="Map"]')!);
   expect(card()).toContain("1/2");
   expect(nums(".pin")).toEqual(["types.ts:2"]);
   // a step with no scene opens the overview
-  fireEvent.click(document.querySelector('button[title="Steps"]')!);
+  fireEvent.click(document.querySelector('button[aria-label="Steps"]')!);
   fireEvent.click(document.querySelector('.step[data-step="3"]')!);
-  fireEvent.click(document.querySelector('button[title="Map"]')!);
+  fireEvent.click(document.querySelector('button[aria-label="Map"]')!);
   expect(card()).toContain("0/2");
 });
 
@@ -430,7 +430,7 @@ test("comments sit under their last line, highlight it, and can be hidden, resol
   expect(nums(".hl")).toEqual(["session.ts:6", "session.ts:7"]);
 
   // Ask opens the popup on the comment's lines, carrying the comment as context
-  fireEvent.click(cmts()[1].querySelector('button[title="Ask in chat"]')!);
+  fireEvent.click(cmts()[1].querySelector('button[aria-label="Ask in chat"]')!);
   const pop = document.querySelector(".ask-pop")!;
   expect(pop.querySelector(".ask-ctx")!.textContent).toContain("Teardown on logout");
   expect(pop.querySelector("textarea")!.getAttribute("placeholder")).toBe("Ask about this comment");
@@ -449,7 +449,7 @@ test("comments sit under their last line, highlight it, and can be hidden, resol
   fireEvent.click(tg);
   expect(cmts()).toHaveLength(0);
   fireEvent.click(tg);
-  fireEvent.click(cmts()[0].querySelector('button[title="Resolve"]')!);
+  fireEvent.click(cmts()[0].querySelector('button[aria-label="Resolve"]')!);
   expect(tg.textContent).toBe("1");
   // a resolved comment collapses to one line, and one click on it unresolves
   const closed = cmts()[0];
@@ -651,8 +651,8 @@ test("the conversation: description, reviews with the threads they started, comm
   vi.mocked(api.reviewAction).mockResolvedValue(state as never);
   useApp.setState({ pr: null });
   await mount();
-  await waitFor(() => expect(screen.getByTitle("Conversation")).toBeTruthy());
-  fireEvent.click(screen.getByTitle("Conversation"));
+  await waitFor(() => expect(screen.getByLabelText("Conversation")).toBeTruthy());
+  fireEvent.click(screen.getByLabelText("Conversation"));
   const tl = () => [...document.querySelectorAll<HTMLElement>(".conv-tl > *")];
   // the saved review (v1) is older than the PR's events here
   expect(tl().map((e) => e.querySelector("b, span")!.textContent)).toEqual([
@@ -761,13 +761,14 @@ test("a GitHub PR's top bar: switcher with its stack, checks, reviewers", async 
 
 test("in guide order, the file list runs flat as the diff does, skippable files last", async () => {
   await mount();
-  if (!document.querySelector(".rail")) fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
+  if (!document.querySelector(".rail"))
+    fireEvent.click(document.querySelector('.diffpane button[aria-label="Files"]')!);
   const rail = document.querySelector(".rail")!;
   const shown = [...rail.querySelectorAll(".rail-f, .rail-rule")].map((r) => r.getAttribute("data-path") ?? "—");
   expect(shown).toEqual(["src/auth/types.ts", "src/auth/session.ts", "—", "package-lock.json"]);
   expect(rail.querySelector(".rail-dir")).toBeNull();
   expect(rail.querySelector('[data-path="src/auth/types.ts"] .dir')!.textContent).toBe("src/auth");
-  fireEvent.click(screen.getByTitle("Guide order"));
+  fireEvent.click(screen.getByLabelText("Guide order"));
   expect(rail.querySelector(".rail-dir")).toBeTruthy();
 });
 
@@ -775,9 +776,9 @@ test("file list toggles, nests directories, and opens a picked file", async () =
   const { useUI } = await import("../ui");
   useUI.getState().setOrder("alpha");
   await mount();
-  if (document.querySelector(".rail")) fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
+  if (document.querySelector(".rail")) fireEvent.click(document.querySelector('.diffpane button[aria-label="Files"]')!);
   expect(document.querySelector(".rail")).toBeNull();
-  fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
+  fireEvent.click(document.querySelector('.diffpane button[aria-label="Files"]')!);
   const rail = document.querySelector(".rail")!;
   // folders first, single-child chains joined into one row
   expect([...rail.querySelectorAll(".rail-dir")].map((d) => d.textContent)).toEqual(["src/auth"]);
@@ -799,8 +800,9 @@ test("file list toggles, nests directories, and opens a picked file", async () =
 test("all files: changed folders open, the rest folded; the filter narrows; other files open in tabs", async () => {
   const { useUI } = await import("../ui");
   await mount();
-  if (!document.querySelector(".rail")) fireEvent.click(document.querySelector('.diffpane button[title="Files"]')!);
-  fireEvent.click(screen.getByTitle("All files"));
+  if (!document.querySelector(".rail"))
+    fireEvent.click(document.querySelector('.diffpane button[aria-label="Files"]')!);
+  fireEvent.click(screen.getByLabelText("All files"));
   const rail = document.querySelector(".rail")!;
   await waitFor(() => expect(rail.querySelector('[data-path="README.md"]')).toBeTruthy());
   const dirs = () =>
@@ -871,7 +873,7 @@ test("full file toggle shows every line, then folds back to the hunks", async ()
   const file = () => document.querySelector<HTMLElement>('.file[data-path="src/auth/types.ts"]')!;
   const toggle = () =>
     file().querySelector<HTMLElement>(
-      '.file-h button[title="Show full file"], .file-h button[title="Show changes only"]',
+      '.file-h button[aria-label="Show full file"], .file-h button[aria-label="Show changes only"]',
     )!;
   fireEvent.click(toggle());
   await waitFor(() => expect(file().querySelectorAll("tr.ln")).toHaveLength(40));
@@ -975,7 +977,7 @@ test("no guide yet: write one from here, watch it in the chat, stop it, and see 
   // what the run's mode doesn't allow is asked in the chat, as in a turn
   expect(document.querySelector(".chat .ask-d")!.textContent).toBe("npm test");
   vi.mocked(api.fetchGenerate).mockResolvedValue({ ...running, asks: [] });
-  fireEvent.click(screen.getByTitle("Allow (↵)"));
+  fireEvent.click(document.querySelector<HTMLElement>('[data-tip="Allow (↵)"]')!);
   expect(api.answerGenerate).toHaveBeenCalledWith("g1", "allow");
   expect(document.querySelector(".chat .ask-card")).toBeNull();
   // Stop ends the run and brings the card back

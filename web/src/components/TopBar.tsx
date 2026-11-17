@@ -23,6 +23,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSessionHarness } from "../chat";
 import { ago } from "../lib/time";
+import { tip } from "../lib/tips";
 import { usePopover } from "../lib/usePopover";
 import { inboxStack, useGenerate, useInbox, useReview, type Verdict } from "../review";
 import { useApp } from "../store";
@@ -37,7 +38,7 @@ export function TopBar() {
   return (
     <header className="top">
       {url ? (
-        <button type="button" className="brand" title="Home" onClick={home}>
+        <button type="button" className="brand" {...tip("Home")} onClick={home}>
           <Logo />
         </button>
       ) : (
@@ -50,14 +51,14 @@ export function TopBar() {
         <ReviewChip />
         <ModeToggle />
         <Versions />
-        <button type="button" className="icon-btn" title="Theme" onClick={toggleTheme}>
+        <button type="button" className="icon-btn" {...tip("Theme")} onClick={toggleTheme}>
           {ic(theme === "dark" ? Sun : Moon, 17)}
         </button>
         {url ? (
           <button
             type="button"
             className={`icon-btn${chatOpen ? " on" : ""}`}
-            title={harnessName(harness)}
+            {...tip(harnessName(harness))}
             onClick={() => toggleChat()}
           >
             <HarnessMark harness={harness} size={16} />
@@ -125,7 +126,7 @@ function ModeToggle() {
     <button
       type="button"
       className={`icon-btn${shown === m ? " on" : ""}`}
-      title={title}
+      {...tip(title)}
       aria-pressed={shown === m}
       onClick={() => setMode(m)}
     >
@@ -148,7 +149,7 @@ function Target() {
   if (pr.local)
     return (
       <div className="target">
-        <span title={pr.url}>
+        <span data-tip={pr.url}>
           {ic(GitBranch, 15)}
           <b>{localName(pr.url)}</b>
           <span className="target-ref">{pr.head_ref}</span>
@@ -167,7 +168,7 @@ function PRTarget({ pr }: { pr: PRMeta }) {
   const { layers } = useMemo(() => inboxStack(prs ?? [], pr.owner, pr.repo, pr.number), [prs, pr]);
   return (
     <div className="target">
-      <a className="icon-btn sm gh-link" href={pr.url} target="_blank" rel="noreferrer" data-tip="Open on GitHub">
+      <a className="icon-btn sm gh-link" href={pr.url} target="_blank" rel="noreferrer" {...tip("Open on GitHub")}>
         <GithubIcon size={15} />
       </a>
       <b>{pr.repo}</b>
@@ -199,7 +200,7 @@ function ChecksChip({
   base: string;
 }) {
   const [open, setOpen, ref] = usePopover();
-  const tip =
+  const summary =
     checks.state === "success"
       ? "Checks passed"
       : checks.state === "pending"
@@ -212,7 +213,7 @@ function ChecksChip({
       <button
         type="button"
         className={`ci-chip ${checks.state}${open ? " on" : ""}`}
-        data-tip={open ? undefined : tip}
+        data-tip={summary}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
@@ -558,7 +559,7 @@ function Versions() {
       <button
         type="button"
         className={`icon-btn ver-btn${open ? " on" : ""}`}
-        title="Guide versions"
+        data-tip="Guide versions"
         onClick={() => setOpen(!open)}
       >
         {ic(History, 16)}
@@ -585,7 +586,7 @@ function Versions() {
               <div className="h-m">
                 <span>{v.source === "chat" ? "chat" : "agent"}</span>
                 {v.scope?.files.length ? (
-                  <span title={v.scope.files.join("\n")}>{v.scope.note || "scoped"}</span>
+                  <span data-tip={v.scope.files.join("\n")}>{v.scope.note || "scoped"}</span>
                 ) : null}
                 <span className="grow" />
                 {v.created_at != null && <span>{ago(v.created_at)}</span>}
