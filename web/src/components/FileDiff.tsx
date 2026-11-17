@@ -368,6 +368,9 @@ function ContextRow({
   );
 }
 
+/** One element for every row, so re-rendering a row doesn't rebuild its icon. */
+const ASK_ICON = ic(MessageCircle, 12);
+
 interface RowProps {
   rk: string;
   type: "add" | "del" | "ctx";
@@ -401,26 +404,22 @@ export const DiffRow = memo(function DiffRow({
   pos,
   cut,
 }: RowProps) {
-  const hl = useUI((s) => s.hoverRows.has(rk));
-  const pin = useUI((s) => s.pinRows.has(rk));
-  const flashN = useUI((s) => (s.flash.keys.has(rk) ? s.flash.n : 0));
+  // Selectors return strings, so a store change re-renders only the rows whose look it changes.
+  const look = useUI((s) => {
+    const flash = s.flash.keys.has(rk) ? s.flash.n : 0;
+    return `${s.hoverRows.has(rk) ? " hl" : ""}${s.pinRows.has(rk) ? " pin" : ""}${flash ? ` flash f${flash % 2}` : ""}`;
+  });
+  // Step numbers ("3", "3.1") show only for the selected step or substep.
+  const nums = useUI((s) =>
+    dots && s.pinStep != null
+      ? dots
+          .filter((d) => d.step === s.pinStep && (s.pinSub == null || d.sub === s.pinSub))
+          .map((d) => (d.sub == null ? `${d.step}` : `${d.step}.${d.sub}`))
+          .join(" ")
+      : "",
+  );
   const peek = useUI((s) => (s.peek?.rk === rk ? s.peek : null));
-  // Step numbers show only for the selected step or substep.
-  const pinStep = useUI((s) => s.pinStep);
-  const pinSub = useUI((s) => s.pinSub);
-  const shown = dots?.filter((d) => d.step === pinStep && (pinSub == null || d.sub === pinSub));
-  const cls = [
-    "ln",
-    type,
-    extra && "qd",
-    cut && "cut",
-    ranged && "rng",
-    hl && "hl",
-    pin && "pin",
-    flashN && `flash f${flashN % 2}`,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const cls = ["ln", type, extra && "qd", cut && "cut", ranged && "rng"].filter(Boolean).join(" ") + look;
   const sign = type === "add" ? "+" : type === "del" ? "−" : "";
   return (
     <>
@@ -433,23 +432,28 @@ export const DiffRow = memo(function DiffRow({
         data-old={old ?? undefined}
       >
         <td className="mark">
-          {shown?.map((d) => (
-            <span
-              key={`${d.step}.${d.sub}`}
-              className={`dot${d.sub != null ? " sub-dot" : ""}`}
-              data-step={d.step}
-              data-sub={d.sub ?? undefined}
-              title={d.sub == null ? `Step ${d.step}` : `Step ${d.step}.${d.sub}`}
-            >
-              {d.sub == null ? d.step : `${d.step}.${d.sub}`}
-            </span>
-          ))}
+          {nums
+            ? nums.split(" ").map((n) => {
+                const [step, sub] = n.split(".");
+                return (
+                  <span
+                    key={n}
+                    className={`dot${sub ? " sub-dot" : ""}`}
+                    data-step={step}
+                    data-sub={sub}
+                    title={`Step ${n}`}
+                  >
+                    {n}
+                  </span>
+                );
+              })
+            : null}
         </td>
         <td className="no">{old ?? ""}</td>
         <td className="no">{nw ?? ""}</td>
         <td className="code">
           <button type="button" className="ask-btn" title="Click, or drag to select lines" tabIndex={-1}>
-            {ic(MessageCircle, 12)}
+            {ASK_ICON}
           </button>
           <span className="sg">{sign}</span>
           <span className="src">

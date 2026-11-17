@@ -286,7 +286,9 @@ function Hit({ text, q }: { text: string; q: string }) {
 export function fileInView(scroller: HTMLElement): string | null {
   const top = scroller.getBoundingClientRect().top + 48;
   let last: string | null = null;
-  for (const f of scroller.querySelectorAll<HTMLElement>(".file")) {
+  // The files' own list, not a search of the whole diff: this runs every frame while scrolling.
+  for (const f of scroller.querySelector(".files")?.children ?? []) {
+    if (!(f instanceof HTMLElement)) continue;
     if (!f.offsetParent) continue;
     last = f.dataset.path ?? null;
     if (f.getBoundingClientRect().bottom > top) return last;

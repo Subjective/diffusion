@@ -1,8 +1,12 @@
 // Drag/select-to-ask controller: owns the bubble drag, text-selection detection, and ask-popup placement.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Anchor } from "../chat";
 import type { AskState } from "../components/AskPopup";
 import { anchorFromRows, rangeText, rowInfo, rowsBetween, selectionRows } from "./selection";
+
+function clearSel() {
+  for (const r of document.querySelectorAll<HTMLElement>("tr.sel")) r.classList.remove("sel");
+}
 
 function setSel(rows: HTMLElement[], on: boolean) {
   for (const r of rows) r.classList.toggle("sel", on);
@@ -21,21 +25,20 @@ export function useAsk() {
     timer: number;
   } | null>(null);
 
-  const clearSel = () => {
-    for (const r of document.querySelectorAll<HTMLElement>("tr.sel")) r.classList.remove("sel");
-  };
-  const open = (rows: HTMLElement[], x: number, y: number, extra?: Partial<Anchor>) => {
+  // Stable callbacks: the diff's comment rows and question badges depend on them, and a new one each render would
+  // re-render every file whenever the popup opens or closes.
+  const open = useCallback((rows: HTMLElement[], x: number, y: number, extra?: Partial<Anchor>) => {
     const info = rows.map(rowInfo).filter((r): r is NonNullable<typeof r> => !!r);
     const anchor = anchorFromRows(info);
     if (!anchor) return;
     clearSel();
     setSel(rows, true);
     setAsk({ anchor: { ...anchor, ...extra }, x, y });
-  };
-  const close = () => {
+  }, []);
+  const close = useCallback(() => {
     clearSel();
     setAsk(null);
-  };
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: listeners attach once; open/close only touch the DOM and state setters.
   useEffect(() => {
@@ -135,13 +138,13 @@ export function useAsk() {
   }, []);
 
   /** Reopen a line note to edit it: the same popup, on its lines, with its text. */
-  const edit = (id: string, text: string, anchor: Anchor, keys: string[], x: number, y: number) => {
+  const edit = useCallback((id: string, text: string, anchor: Anchor, keys: string[], x: number, y: number) => {
     clearSel();
     setSel(
       keys.flatMap((k) => [...document.querySelectorAll<HTMLElement>(`tr.ln[data-rk="${CSS.escape(k)}"]`)]),
       true,
     );
     setAsk({ anchor, x, y, edit: { id, text } });
-  };
+  }, []);
   return { ask, close, open, edit };
 }

@@ -121,7 +121,8 @@ function AgentMenu() {
 function ModeToggle() {
   const hasMap = useApp((s) => !!s.guide?.views?.length);
   const hasPR = useReview((s) => !!s.state?.available && !s.state.error);
-  const { mode, setMode } = useUI();
+  const mode = useUI((s) => s.mode);
+  const setMode = useUI((s) => s.setMode);
   if (!hasMap && !hasPR) return null;
   const shown = mode === "map" && !hasMap ? "guide" : mode === "pr" && !hasPR ? "guide" : mode;
   const btn = (m: typeof mode, title: string, icon: Parameters<typeof ic>[0]) => (

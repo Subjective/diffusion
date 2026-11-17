@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { Fragment, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { backStack, wordAtPoint } from "../lib/definition";
-import { focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
+import { estimateRows, focusScrollTop, measureRows, mergeSpans } from "../lib/focus";
 import { indexFiles, rowKey, rowsForRef } from "../lib/refs";
 import { usePopover } from "../lib/usePopover";
 import { useReview } from "../review";
@@ -57,9 +57,16 @@ export function DiffRail() {
 }
 
 export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; onAskComment: AskComment }) {
-  const { files, guide } = useApp();
-  const { order, setOrder, hideSkip, toggleHideSkip, collapseAll, scrollTo, rail, toggleRail } = useUI();
-  const { hideComments, toggleHideComments, resolved } = useUI();
+  const files = useApp((s) => s.files);
+  const guide = useApp((s) => s.guide);
+  // Each its own selector: hovering or pinning lines changes the store many times a second.
+  const order = useUI((s) => s.order);
+  const hideSkip = useUI((s) => s.hideSkip);
+  const scrollTo = useUI((s) => s.scrollTo);
+  const rail = useUI((s) => s.rail);
+  const hideComments = useUI((s) => s.hideComments);
+  const resolved = useUI((s) => s.resolved);
+  const { setOrder, toggleHideSkip, collapseAll, toggleRail, toggleHideComments } = useUI.getState();
   const scroller = useRef<HTMLDivElement>(null);
   const [current, setCurrent] = useState<string | null>(null);
   const tab = useUI((s) => s.tab);
@@ -97,10 +104,12 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
   }, [guide, idx]);
 
   const ordered = useMemo(() => {
-    if (order === "guide") return guideOrder(files, guide);
+    // Files the guide skips whole show as skippable. Made here, not while rendering, so each file keeps its identity.
+    const marked = files.map((f) => (skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" as const } : f));
+    if (order === "guide") return guideOrder(marked, guide);
     const at = new Map(treeOrder(files.map((f) => f.path)).map((p, i) => [p, i]));
-    return [...files].sort((a, b) => at.get(a.path)! - at.get(b.path)!);
-  }, [files, guide, order]);
+    return marked.sort((a, b) => at.get(a.path)! - at.get(b.path)!);
+  }, [files, guide, order, skipFiles]);
 
   useEffect(() => {
     if (!scrollTo) return;
@@ -112,9 +121,18 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
       if (!first) return null;
       const file = first.closest<HTMLElement>(".file");
       const header = file?.querySelector<HTMLElement>(".file-h")?.offsetHeight ?? 0;
+      // Only the anchor file's lines need to be exact; the rest only tell whether the whole focus fits.
+      const anchor = file?.dataset.path ?? "";
+      const own = (k: string) => k.slice(0, k.lastIndexOf(":")) === anchor;
       const top = focusScrollTop(
-        measureRows(p, scrollTo.keys),
-        file?.dataset.path ?? "",
+        [
+          ...measureRows(p, scrollTo.keys.filter(own)),
+          ...estimateRows(
+            p,
+            scrollTo.keys.filter((k) => !own(k)),
+          ),
+        ],
+        anchor,
         p.clientHeight,
         header,
         2 * first.offsetHeight,
@@ -342,12 +360,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
           <div className="diff-scroll" ref={scroller} onClickCapture={onNavClick}>
             <div className={`files${hideSkip ? " hide-skip" : ""}`}>
               {ordered.map((f) => (
-                <FileDiff
-                  key={f.path}
-                  file={skipFiles.has(f.path) && !f.skip ? { ...f, skip: "trivial" } : f}
-                  steps={fileSteps.get(f.path) ?? []}
-                  gutter={gutter}
-                />
+                <FileDiff key={f.path} file={f} steps={fileSteps.get(f.path) ?? []} gutter={gutter} />
               ))}
             </div>
           </div>
@@ -359,6 +372,7 @@ export function DiffPane({ extras, onAskComment }: { extras?: Gutter["extras"]; 
 }
 
 const NO_THREADS: Thread[] = [];
+const NO_MARKS: { top: number; height: number }[] = [];
 
 /** Two sets of rows under lines, as one: both kinds under a line that has both. */
 function mergeRows(a: Map<string, ReactNode> | undefined, b: Map<string, ReactNode>): Map<string, ReactNode> {
@@ -432,19 +446,29 @@ function ScrollMarks({ pane }: { pane: RefObject<HTMLElement | null> }) {
   useEffect(() => {
     const p = pane.current;
     if (!p) return;
+    const rows = hover.size ? hover : pin;
+    if (!rows.size) return setMarks(NO_MARKS);
     const measure = () => {
-      if (!hover.size && !pin.size) return setMarks([]);
       const h = p.scrollHeight;
-      const spans = h > p.clientHeight ? mergeSpans(measureRows(p, hover.size ? hover : pin), 24) : [];
+      const spans = h > p.clientHeight ? mergeSpans(estimateRows(p, rows), 24) : [];
       setMarks(spans.map((s) => ({ top: s.top / h, height: (s.bottom - s.top) / h })));
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(measure);
+    // Files resize as they render on the way past (content-visibility), many times a second while scrolling, so
+    // re-measure once things settle rather than on every resize.
+    let timer = 0;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = window.setTimeout(measure, 150);
+    });
     ro.observe(p);
     const files = p.querySelector(".files");
     if (files) ro.observe(files);
-    return () => ro.disconnect();
+    return () => {
+      clearTimeout(timer);
+      ro.disconnect();
+    };
   }, [pane, pin, hover]);
 
   if (!marks.length) return null;

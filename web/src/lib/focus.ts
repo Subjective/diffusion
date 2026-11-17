@@ -30,20 +30,81 @@ export function mergeSpans(spans: Span[], gap = 1): Span[] {
   return out;
 }
 
-/** Highlighted rows of the pane, measured in scroll-content coordinates. Rows in collapsed files are skipped. */
+/** Highlighted rows of the pane, measured in scroll-content coordinates, one span per run of adjacent rows.
+ *  Only the files holding the keys are searched, and only each run's ends are measured: measuring forces layout,
+ *  and content-visibility skips the layout of files out of view. Rows in collapsed or hidden files are skipped. */
 export function measureRows(pane: HTMLElement, keys: Iterable<string>): Span[] {
-  const want = new Set(keys);
-  if (!want.size) return [];
+  const byFile = groupByFile(keys);
+  if (!byFile.size) return [];
   const base = pane.getBoundingClientRect().top - pane.scrollTop;
   const spans: Span[] = [];
-  for (const el of pane.querySelectorAll<HTMLElement>("tr[data-rk]")) {
-    if (!want.has(el.dataset.rk!) || !el.offsetParent) continue;
-    const r = el.getBoundingClientRect();
-    spans.push({
-      top: r.top - base,
-      bottom: r.bottom - base,
-      file: el.closest<HTMLElement>(".file")?.dataset.path ?? "",
+  const add = (a: HTMLElement, b: HTMLElement, file: string) =>
+    spans.push({ top: a.getBoundingClientRect().top - base, bottom: b.getBoundingClientRect().bottom - base, file });
+  for (const el of filesOf(pane)) {
+    const file = el.dataset.path!;
+    const want = byFile.get(file);
+    if (!want || !el.offsetParent) continue;
+    let first: HTMLElement | null = null;
+    let last: HTMLElement | null = null;
+    for (const row of el.querySelectorAll<HTMLElement>("tr[data-rk]")) {
+      if (want.has(row.dataset.rk!)) {
+        first ??= row;
+        last = row;
+      } else if (first) {
+        add(first, last!, file);
+        first = null;
+      }
+    }
+    if (first) add(first, last!, file);
+  }
+  return spans;
+}
+
+/** Roughly where highlighted rows sit, for the scrollbar's marks: each file is measured, and rows are placed by
+ *  their share of its rows (close enough for a mark a few pixels tall). Measuring the rows themselves would lay out every file they are in. */
+export function estimateRows(pane: HTMLElement, keys: Iterable<string>): Span[] {
+  const byFile = groupByFile(keys);
+  if (!byFile.size) return [];
+  const base = pane.getBoundingClientRect().top - pane.scrollTop;
+  const spans: Span[] = [];
+  for (const el of filesOf(pane)) {
+    const file = el.dataset.path!;
+    const want = byFile.get(file);
+    const body = want && el.querySelector<HTMLElement>(".file-b");
+    if (!body || !el.offsetParent) continue;
+    const rows = body.querySelectorAll<HTMLElement>("tr");
+    // The file's own box is cheap: out of view, content-visibility sizes it without laying out its rows.
+    const box = el.getBoundingClientRect();
+    const top = box.top - base;
+    const per = box.height / rows.length;
+    let first = -1;
+    rows.forEach((row, i) => {
+      const on = want.has(row.dataset.rk ?? "");
+      if (on && first < 0) first = i;
+      if (first >= 0 && (!on || i === rows.length - 1)) {
+        const end = on ? i + 1 : i;
+        spans.push({ top: top + first * per, bottom: top + end * per, file });
+        first = -1;
+      }
     });
   }
   return spans;
+}
+
+function groupByFile(keys: Iterable<string>): Map<string, Set<string>> {
+  const byFile = new Map<string, Set<string>>();
+  for (const k of keys) {
+    const file = k.slice(0, k.lastIndexOf(":"));
+    const set = byFile.get(file) ?? new Set<string>();
+    set.add(k);
+    byFile.set(file, set);
+  }
+  return byFile;
+}
+
+/** The pane's file sections, from their parent rather than a search of every row. */
+function filesOf(pane: HTMLElement): HTMLElement[] {
+  return [...(pane.querySelector(".files")?.children ?? [])].filter(
+    (el): el is HTMLElement => el instanceof HTMLElement,
+  );
 }

@@ -216,7 +216,13 @@ function Steps({ onAskStep }: GuidePaneProps) {
   const guide = useApp((s) => s.guide!);
   const steps = guide.steps;
   const idx = useHunkIndex();
-  const { readSteps, toggleRead, hoverStep, hoverSub, pinStep, pinSub, refAt, clearPin } = useUI();
+  const readSteps = useUI((s) => s.readSteps);
+  const hoverStep = useUI((s) => s.hoverStep);
+  const hoverSub = useUI((s) => s.hoverSub);
+  const pinStep = useUI((s) => s.pinStep);
+  const pinSub = useUI((s) => s.pinSub);
+  const refAt = useUI((s) => s.refAt);
+  const { toggleRead, clearPin } = useUI.getState();
   // The ref h/l is on, so its chip can show it.
   const active =
     pinStep != null && refAt != null
