@@ -26,7 +26,6 @@ export function MapPane({ onWidth }: { onWidth?: (w: number) => void }) {
       {onWidth && (
         <div
           className="resizer right"
-          data-tip="Drag to resize · double-click to reset"
           onDoubleClick={() => {
             onWidth(MAP_W);
             storage.set("rv-map-w", MAP_W);
@@ -529,7 +528,7 @@ function BlockPeek({ block, idx }: { block: Block; idx: HunkIndex }) {
           <div key={k}>
             <div className={`peek-h${k ? " next" : ""}`}>
               {ic(FileCode, 14)}
-              <span className="path" data-tip={path}>
+              <span className="path" title={path}>
                 <span className="dir">{path.slice(0, path.lastIndexOf("/") + 1)}</span>
                 {path.slice(path.lastIndexOf("/") + 1)}
               </span>

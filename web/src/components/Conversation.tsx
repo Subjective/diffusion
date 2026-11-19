@@ -142,7 +142,7 @@ export function ConversationPane() {
                 Review v{e.version}
                 {e.label ? ` · ${e.label}` : ""}
               </span>
-              <span className="t" data-tip={dateText(e.at)}>
+              <span className="t" title={dateText(e.at)}>
                 {ago(e.at)}
               </span>
             </div>
@@ -153,14 +153,14 @@ export function ConversationPane() {
                 {e.author} pushed {e.commits.length === 1 ? "a commit" : `${e.commits.length} commits`}
                 {e.commits.map((c) => (
                   <span key={c.id} className="conv-commit">
-                    <Link url={c.url} tip="Open on GitHub">
+                    <Link url={c.url}>
                       <code>{c.sha?.slice(0, 7)}</code>
                     </Link>{" "}
                     <Inline text={c.body} />
                   </span>
                 ))}
               </span>
-              <span className="t" data-tip={dateText(e.at)}>
+              <span className="t" title={dateText(e.at)}>
                 {ago(e.at)}
               </span>
             </div>
@@ -175,9 +175,9 @@ export function ConversationPane() {
 }
 
 /** `children`, linking to the original on GitHub when there's a URL. */
-function Link({ url, tip, children }: { url?: string; tip?: string; children: ReactNode }) {
+function Link({ url, children }: { url?: string; children: ReactNode }) {
   return url ? (
-    <a className="conv-link" href={url} target="_blank" rel="noreferrer" data-tip={tip}>
+    <a className="conv-link" href={url} target="_blank" rel="noreferrer">
       {children}
     </a>
   ) : (
@@ -372,7 +372,7 @@ function Item({ item, threads, onJump }: { item: TimelineItem; threads: Thread[]
               )}
             </span>
           )}
-          <span className="t" data-tip={dateText(item.created_at)}>
+          <span className="t" title={dateText(item.created_at)}>
             <Link url={item.url}>{ago(item.created_at)}</Link>
           </span>
         </div>

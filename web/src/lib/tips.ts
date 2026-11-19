@@ -2,6 +2,10 @@
  * The app's one tooltip. Any element with `data-tip` gets it on hover or keyboard focus. It's a single fixed
  * bubble on <body>, placed from the element's box, so a pane's overflow can't clip it and the window's edge
  * can't cut it off. Tips open above (below in the top bar and toolbars, or when there's no room above).
+ *
+ * It's for controls whose name isn't on screen (icon buttons): the name, and a shortcut if there is one, never how
+ * to use it. Full text of a truncated label, a full date, or what a status icon means uses a native `title`;
+ * labelled buttons and descriptions need neither.
  */
 
 const DELAY = 350;

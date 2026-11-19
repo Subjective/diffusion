@@ -68,7 +68,7 @@ function CommentRow({ c, idx, onAsk, resolved }: { c: Comment; idx: HunkIndex; o
       <td colSpan={4}>
         <div className="cmt">
           <div className="cmt-h">
-            <span className="cmt-tone" data-tip={c.tone}>
+            <span className="cmt-tone" title={c.tone}>
               {ic(MessageCircle, 13)}
             </span>
             <b>{c.title}</b>

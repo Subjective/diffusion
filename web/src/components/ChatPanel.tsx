@@ -121,20 +121,16 @@ export function ChatPanel({ onWidth, link }: { onWidth: (w: number) => void; lin
     <aside className="chat">
       <Resizer onWidth={onWidth} />
       <div className="chat-h">
-        <span className="chat-mark" data-tip={harnessName(harness)}>
+        <span className="chat-mark" title={harnessName(harness)}>
           <HarnessMark harness={harness} size={15} />
         </span>
         {historyOpen ? (
           <span className="chat-title">History</span>
         ) : isGuide ? (
-          <span className="chat-title" data-tip="The session that wrote the guide, continued">
-            Guide session
-          </span>
+          <span className="chat-title">Guide session</span>
         ) : (
-          <span className={`chat-title${title ? "" : " none"}`} data-tip={title || undefined}>
-            <span className="kind" data-tip="A fork of the guide session">
-              {ic(GitFork, 13)}
-            </span>
+          <span className={`chat-title${title ? "" : " none"}`} title={title || undefined}>
+            <span className="kind">{ic(GitFork, 13)}</span>
             {title || "New chat"}
           </span>
         )}
@@ -251,7 +247,7 @@ function CiteLink({ loc, text }: { loc: CodeLoc; text: string }) {
       <button
         type="button"
         className="cite"
-        data-tip={`${loc.file} · Open in a tab`}
+        title={loc.file}
         onClick={(e) => {
           e.stopPropagation();
           useUI.getState().openFile(loc.file, { line: loc.start, end: loc.end });
@@ -261,7 +257,7 @@ function CiteLink({ loc, text }: { loc: CodeLoc; text: string }) {
       </button>
     );
   return (
-    <button type="button" className="cite" data-tip={`${r.file} · Show in diff`} {...locLink(r)}>
+    <button type="button" className="cite" title={r.file} {...locLink(r)}>
       <code>{text.trim().replace(/^.*\//, "")}</code>
     </button>
   );
@@ -295,7 +291,7 @@ function PathLink({ path, label }: { path: string; label?: string }) {
     <button
       type="button"
       className="cite"
-      data-tip={`${repo} · ${inDiff ? "Show in diff" : "Open in a tab"}`}
+      title={repo}
       onClick={(e) => {
         e.stopPropagation();
         const r = inDiff && !(e.metaKey || e.ctrlKey) ? resolve({ file: repo, start: 1, end: 1e9, side: "new" }) : null;
@@ -320,7 +316,6 @@ function Resizer({ onWidth }: { onWidth: (w: number) => void }) {
   return (
     <div
       className="resizer"
-      data-tip="Drag to resize · double-click to reset"
       onDoubleClick={() => {
         onWidth(CHAT_W);
         storage.set("rv-chat-w", CHAT_W);
@@ -340,11 +335,7 @@ function HistoryList() {
     <div className="hist">
       {(live || guide) && (
         <>
-          <div
-            className={`h-item guide${chat.kind === "guide" ? " active" : ""}`}
-            onClick={() => void openGuide()}
-            data-tip="The session that wrote the guide, continued"
-          >
+          <div className={`h-item guide${chat.kind === "guide" ? " active" : ""}`} onClick={() => void openGuide()}>
             <span className="h-ic">
               <HarnessMark harness={guide?.harness ?? meta?.harness} size={15} />
             </span>
@@ -369,9 +360,7 @@ function HistoryList() {
       {!forks.length && !live && !guide && <div className="h-empty">{ic(History, 18)}</div>}
       {forks.map((c) => (
         <div key={c.id} className={`h-item${c.id === chat.id ? " active" : ""}`} onClick={() => void openChat(c.id)}>
-          <span className="h-ic" data-tip="A fork of the guide session">
-            {ic(GitFork, 15)}
-          </span>
+          <span className="h-ic">{ic(GitFork, 15)}</span>
           <div className="h-body">
             <div className="h-t">{c.title || "Chat"}</div>
             <div className="h-m">
@@ -647,7 +636,7 @@ function ToolRow({ summary, failed }: { summary: string; failed?: boolean }) {
   const verb = sp < 0 ? summary : summary.slice(0, sp);
   const Icon = TOOL_ICONS[verb];
   return (
-    <li className={`trace-tool${failed ? " failed" : ""}`} data-tip={failed ? `${summary} · failed` : summary}>
+    <li className={`trace-tool${failed ? " failed" : ""}`} title={failed ? `${summary} · failed` : summary}>
       {ic(Icon ?? Wrench, 12)}
       {Icon ? (
         <>
@@ -685,7 +674,7 @@ function Trace({ q, pending, open: openFirst = false }: { q: Question; pending: 
   }
   return (
     <div className={`trace${open ? " open" : ""}`}>
-      <button type="button" className="trace-h" data-tip={label} onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button type="button" className="trace-h" title={label} onClick={() => setOpen(!open)} aria-expanded={open}>
         <span key={pending ? label : undefined} className={`trace-l${pending ? " trace-live" : ""}`}>
           {label}
         </span>
@@ -715,7 +704,6 @@ function GuideUpdated({ v }: { v: number }) {
     <button
       type="button"
       className={`guide-upd${current === v ? " on" : ""}`}
-      data-tip={current === v ? "Showing this version" : "Show this version"}
       onClick={() => void useApp.getState().showVersion(v)}
     >
       {ic(History, 13)}
@@ -764,7 +752,7 @@ function ModeMenu() {
   }, [open]);
   if (!modes.length) {
     return (
-      <span className="mode ro" data-tip="New chats fork the guide session and can only read">
+      <span className="mode ro">
         {ic(Lock, 13)}
         <span>Read-only</span>
       </span>
@@ -800,7 +788,6 @@ function ModeMenu() {
       <button
         type="button"
         className={`mode m-${cur}${harness === "claude-code" ? " cc" : ""}`}
-        data-tip={ui.hint}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -899,19 +886,14 @@ function AskCard({ a, first, onAnswer }: { a: Ask; first: boolean; onAnswer?: (i
         </pre>
       )}
       <div className="ask-b">
-        <button type="button" className="ask-act ghost" data-tip="Deny (Esc)" onClick={() => void answer(a.id, "deny")}>
+        <button type="button" className="ask-act ghost" onClick={() => void answer(a.id, "deny")}>
           {plan !== null ? "Keep planning" : "Deny"}
         </button>
         <span className="grow" />
         <button type="button" className="ask-act" onClick={() => void answer(a.id, "always")}>
           {plan !== null ? "Approve, accept edits" : edit ? "Allow edits this session" : "Allow this session"}
         </button>
-        <button
-          type="button"
-          className="ask-act primary"
-          data-tip="Allow (↵)"
-          onClick={() => void answer(a.id, "allow")}
-        >
+        <button type="button" className="ask-act primary" onClick={() => void answer(a.id, "allow")}>
           {plan !== null ? "Approve" : "Allow"} <span className="k">↵</span>
         </button>
       </div>
@@ -1012,12 +994,7 @@ function Queue({
               ) : (
                 <span className="queue-act">
                   {!editing && (
-                    <button
-                      type="button"
-                      className="text-btn"
-                      data-tip="Send this into the answer now"
-                      onClick={() => void steer(batch)}
-                    >
+                    <button type="button" className="text-btn" onClick={() => void steer(batch)}>
                       Steer
                     </button>
                   )}
@@ -1257,7 +1234,6 @@ function Composer({ link }: { link: ChatLinkProps }) {
                 type="button"
                 className={`restore-chip${restoreCode ? " on" : ""}`}
                 aria-pressed={restoreCode}
-                data-tip="Also put the files back as they were before this message"
                 onClick={() => setRestoreCode(!restoreCode)}
               >
                 {ic(Undo2, 13)}

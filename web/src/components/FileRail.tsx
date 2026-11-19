@@ -173,7 +173,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
         className={cls}
         style={{ paddingLeft: indent }}
         data-path={p}
-        data-tip={f ? `${p} · ⌘-click to open in a tab` : p}
+        title={p}
         onClick={(e) => open(p, e)}
         onDoubleClick={() => !f && useUI.getState().pinTab(p)}
       >
@@ -211,13 +211,13 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
           type="button"
           className={`rail-dir${shut && holds ? " on" : ""}`}
           style={{ paddingLeft: 6 + depth * 12 }}
-          data-tip={c.path}
+          title={c.path}
           aria-expanded={!shut}
           onClick={() => toggle(c)}
         >
           <span className="tw">{ic(shut ? ChevronRight : ChevronDown, 13)}</span>
           <span className="nm">{c.name}</span>
-          {shut && changedDirs.has(c.path) && mode === "all" && <span className="fd" data-tip="Holds changes" />}
+          {shut && changedDirs.has(c.path) && mode === "all" && <span className="fd" title="Holds changes" />}
         </button>,
       );
       if (!shut) walk(c, depth + 1);
@@ -284,7 +284,6 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
       </nav>
       <div
         className="resizer right"
-        data-tip="Drag to resize · double-click to reset"
         onDoubleClick={() => {
           setWidth(RAIL_W);
           storage.set("rv-rail-w", RAIL_W);

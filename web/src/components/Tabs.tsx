@@ -26,7 +26,7 @@ export function TabBar() {
         role="tab"
         aria-selected={tab == null}
         className={`tab${tab == null ? " on" : ""}`}
-        data-tip={`Diff · ${files.length} ${files.length === 1 ? "file" : "files"}`}
+        title={`Diff · ${files.length} ${files.length === 1 ? "file" : "files"}`}
         onClick={() => showTab(null)}
       >
         {ic(GitCompare, 14)}
@@ -44,7 +44,7 @@ export function TabBar() {
             role="tab"
             aria-selected={tab === t.path}
             className="tab-b"
-            data-tip={t.pinned ? t.path : `${t.path} · double-click to keep open`}
+            title={t.path}
             onClick={() => showTab(t.path)}
             onDoubleClick={() => pinTab(t.path)}
           >
@@ -155,7 +155,7 @@ export function FileView({
           <div className="file" data-path={path}>
             <div className="file-h">
               {ic(FileCode, 15)}
-              <span className="path" data-tip={path}>
+              <span className="path" title={path}>
                 <span className="dir">{path.slice(0, slash)}</span>
                 {path.slice(slash)}
               </span>
