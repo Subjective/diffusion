@@ -1398,7 +1398,7 @@ tr.th-row > td {
 .th:hover {
   border-color: color-mix(in srgb, var(--hl-bar) 55%, transparent);
 }
-.file-th :is(.th, .th-closed) {
+.file-th .th {
   width: min(720px, 100%);
 }
 .th-c {
@@ -1445,7 +1445,6 @@ tr.th-row > td {
   font-size: 12px;
 }
 .th .av,
-.th-closed .av,
 .tl-t .av {
   flex: none;
   border-radius: 50%;
@@ -1478,23 +1477,54 @@ tr.th-row > td {
 .th-more .avs .av {
   box-shadow: 0 0 0 2px var(--panel);
 }
-.th-closed {
+.th-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 6px 0 0;
+  color: var(--subtle);
+  font: 12.5px var(--sans);
+}
+.th-bar-main {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  width: min(720px, calc(100cqw - 124px));
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--subtle);
-  font: 12.5px var(--sans);
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px 0 12px;
+  color: inherit;
+  font: inherit;
   text-align: left;
 }
-.th-closed:hover {
-  border-color: var(--border-strong);
+.th-bar:hover {
   color: var(--muted);
+}
+.th-bar-acts {
+  display: inline-flex;
+  gap: 2px;
+}
+.th-chev svg {
+  transition: transform 0.15s;
+}
+.th-bar.shut .th-chev svg {
+  transform: rotate(-90deg);
+}
+.th.shut {
+  border-color: var(--border);
+}
+.th.shut:hover {
+  border-color: var(--border-strong);
+}
+.th-bar.shut .th-bar-acts {
+  display: none;
+}
+.th-bar.shut:is(:hover, :has(:focus-visible)) .th-bar-acts {
+  display: inline-flex;
+}
+.th-bar.shut:is(:hover, :has(:focus-visible)) .th-meta {
+  display: none;
 }
 .th-first {
   flex: 1;
@@ -1684,20 +1714,6 @@ tr.th-row > td {
 }
 .th-reply:hover {
   border-color: var(--border-strong);
-}
-.th-res {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  color: var(--muted);
-  font: 500 12.5px var(--sans);
-}
-.th-res:hover {
-  background: var(--hover);
-  color: var(--text);
 }
 .th-compose {
   flex: 1;
