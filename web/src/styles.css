@@ -2213,6 +2213,16 @@ body.resizing * {
   color: var(--text);
   font-weight: 500;
 }
+/* Files the hovered step touches, tinted like its lines in the diff. A folded folder stands in for them. */
+.rail-f.lit,
+.rail-dir.lit {
+  background: var(--hl);
+  color: var(--text);
+}
+.rail-f .dot.sm.on {
+  background: var(--hl-bar);
+  color: #fff;
+}
 .rail-f.viewed .nm,
 .rail-f.skip .nm,
 .rail-f.plain .nm {
