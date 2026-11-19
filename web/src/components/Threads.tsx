@@ -8,6 +8,7 @@ import {
   EyeOff,
   FileCode,
   Pencil,
+  Send,
   Trash2,
   User,
 } from "lucide-react";
@@ -164,15 +165,18 @@ const Avatar = ({ c, size = 20 }: { c: Pick<ThreadComment, "avatar" | "author">;
   <img className="av" src={c.avatar} alt={c.author} width={size} height={size} />
 );
 
-/** A text box that grows with what's typed: ↵ saves, ⇧↵ is a new line, Esc cancels. */
+/** A text box that grows with what's typed: ↵ saves (or posts, for a new comment that goes straight to GitHub),
+ *  ⇧↵ is a new line, Esc cancels. */
 function Compose({
   initial = "",
   placeholder,
+  post = false,
   onSave,
   onCancel,
 }: {
   initial?: string;
   placeholder: string;
+  post?: boolean;
   onSave: (text: string) => Promise<boolean> | boolean;
   onCancel: () => void;
 }) {
@@ -214,11 +218,11 @@ function Compose({
       <button
         type="button"
         className="icon-btn sm solid"
-        {...tip("Save")}
+        {...tip(post ? "Post" : "Save")}
         disabled={!text.trim() || busy}
         onClick={save}
       >
-        {ic(Check, 14)}
+        {post ? ic(Send, 13) : ic(Check, 14)}
       </button>
     </div>
   );
@@ -293,6 +297,7 @@ function ThreadFoot({ t }: { t: Thread }) {
       {replying ? (
         <Compose
           placeholder="Reply"
+          post
           onSave={(body) => act({ kind: "reply", thread: t.id, body }, t.id)}
           onCancel={() => setReplying(false)}
         />

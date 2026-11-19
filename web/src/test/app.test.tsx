@@ -564,6 +564,7 @@ test("writing: reply, resolve, edit your own, comment from the line popup, and s
   fireEvent.click(card().querySelector(".th-reply")!);
   const box = card().querySelector<HTMLTextAreaElement>(".th-compose textarea")!;
   fireEvent.change(box, { target: { value: "Will do" } });
+  expect(card().querySelector(".th-compose button")!.getAttribute("aria-label")).toBe("Post");
   fireEvent.keyDown(box, { key: "Enter" });
   await waitFor(() => expect(acted()).toEqual([{ kind: "reply", thread: "T1", body: "Will do" }]));
   fireEvent.click(card().querySelector(".th-res")!);
