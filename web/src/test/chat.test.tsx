@@ -337,9 +337,9 @@ test("answers link citations to diff rows: hover highlights them, click jumps to
 
   const cite = document.querySelector<HTMLElement>(".ans-t button.cite")!;
   expect(cite.textContent).toBe("session.ts:6–7");
-  expect(cite.dataset.tip).toBe("src/auth/session.ts · Show in diff");
+  expect(cite.title).toBe("src/auth/session.ts");
   // not in the diff: opens in a tab
-  const other = document.querySelector<HTMLElement>('.ans-t button.cite[data-tip="README.md · Open in a tab"]')!;
+  const other = document.querySelector<HTMLElement>('.ans-t button.cite[title="README.md"]')!;
   expect(other.textContent).toBe("README.md:1");
   fireEvent.mouseEnter(cite);
   expect(row("src/auth/session.ts:6").className).toMatch(/\bhl\b/);

@@ -46,7 +46,6 @@ export function GuidePane({ onAskStep, onWidth, conversation }: GuidePaneProps) 
       {onWidth && (
         <div
           className="resizer right"
-          data-tip="Drag to resize · double-click to reset"
           onDoubleClick={() => {
             onWidth(GUIDE_W);
             storage.set("rv-guide-w", GUIDE_W);
@@ -149,22 +148,22 @@ export function Header({ actions, title }: { actions?: ReactNode; title?: ReactN
       <div className="meta">
         {/* The branch (or repo) gives way first, so the stats always fit on one line. */}
         {pr.local ? (
-          <span className="meta-ref" data-tip={`${pr.head_ref} → ${pr.base_ref}`}>
+          <span className="meta-ref" title={`${pr.head_ref} → ${pr.base_ref}`}>
             {ic(GitPullRequest, 14)}
             <span className="trunc">{pr.head_ref}</span>→ {pr.base_ref}
           </span>
         ) : (
-          <a className="meta-ref" href={pr.url} target="_blank" rel="noreferrer" data-tip={`${pr.repo} #${pr.number}`}>
+          <a className="meta-ref" href={pr.url} target="_blank" rel="noreferrer" title={`${pr.repo} #${pr.number}`}>
             {ic(GitPullRequest, 14)}
             <span className="trunc">{pr.repo}</span>#{pr.number}
           </a>
         )}
         <span className="sep meta-who" />
-        <span className="avatar meta-who" data-tip={pr.author}>
+        <span className="avatar meta-who" title={pr.author}>
           {pr.author.slice(0, 2).toUpperCase()}
         </span>
         <span className="sep" />
-        <span className="meta-files" data-tip={`${pr.changed_files} files changed`}>
+        <span className="meta-files" title={`${pr.changed_files} files changed`}>
           {ic(FileCode, 14)}
           {pr.changed_files}
         </span>
@@ -181,7 +180,7 @@ function ScopeChip() {
   if (!scope?.files.length) return null;
   const files = scope.files.map((f) => f.replace(/\/$/, "").split("/").pop()).join(", ");
   return (
-    <span className="scope-chip" data-tip={`Covers ${scope.files.join(", ")}; the rest of the diff is context.`}>
+    <span className="scope-chip" title={scope.files.join("\n")}>
       {ic(Focus, 11)}
       {scope.note || files}
     </span>
@@ -475,7 +474,7 @@ function Skippable() {
     <section className="sec">
       <div className="sec-h">{ic(EyeOff, 13)}Skippable</div>
       {rows.map((r) => (
-        <div key={r.file} className="skip-row" data-tip={`${r.file} · ${r.reason}`} onClick={() => open(r.file)}>
+        <div key={r.file} className="skip-row" title={`${r.file} · ${r.reason}`} onClick={() => open(r.file)}>
           {ic(SKIP_ICON[r.reason] ?? EyeOff, 13)}
           <span className="nm">{r.name}</span>
           {r.dir && (

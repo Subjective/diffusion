@@ -94,7 +94,7 @@ export const FileDiff = memo(function FileDiff({ file, steps, gutter }: Props) {
       <div className="file-h" onClick={() => toggleCollapsed(file.path)}>
         <span className="chev">{ic(ChevronDown, 14)}</span>
         {ic(Lead, 14)}
-        <span className="path" data-tip={file.old_path ? `${file.old_path} → ${file.path}` : file.path}>
+        <span className="path" title={file.old_path ? `${file.old_path} → ${file.path}` : file.path}>
           <span className="dir">{dir}</span>
           {base}
         </span>
@@ -311,7 +311,7 @@ function GapRows({ gap, index, count, rev, text, error, onExpand, path, gutter, 
         <tr
           className={`hh gap${error ? " err" : ""}`}
           data-hunk={hunk?.id}
-          data-tip={error ?? undefined}
+          title={error ?? undefined}
           onClick={error ? undefined : () => onExpand(index, "all")}
         >
           <td colSpan={3} className="exp">
@@ -324,7 +324,7 @@ function GapRows({ gap, index, count, rev, text, error, onExpand, path, gutter, 
           </td>
           <td>
             <div className="hh-t">
-              <button type="button" className="exp-all" data-tip="Show all" disabled={!!error}>
+              <button type="button" className="exp-all" disabled={!!error}>
                 {ic(UnfoldVertical, 14)}
                 {label}
               </button>
@@ -441,7 +441,7 @@ export const DiffRow = memo(function DiffRow({
                     className={`dot${sub ? " sub-dot" : ""}`}
                     data-step={step}
                     data-sub={sub}
-                    data-tip={`Step ${n}`}
+                    title={`Step ${n}`}
                   >
                     {n}
                   </span>
@@ -452,7 +452,7 @@ export const DiffRow = memo(function DiffRow({
         <td className="no">{old ?? ""}</td>
         <td className="no">{nw ?? ""}</td>
         <td className="code">
-          <button type="button" className="ask-btn" {...tip("Click, or drag to select lines")} tabIndex={-1}>
+          <button type="button" className="ask-btn" {...tip("Ask")} tabIndex={-1}>
             {ASK_ICON}
           </button>
           <span className="sg">{sign}</span>

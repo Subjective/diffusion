@@ -149,7 +149,7 @@ function Target() {
   if (pr.local)
     return (
       <div className="target">
-        <span data-tip={pr.url}>
+        <span title={pr.url}>
           {ic(GitBranch, 15)}
           <b>{localName(pr.url)}</b>
           <span className="target-ref">{pr.head_ref}</span>
@@ -439,7 +439,7 @@ function StackChip({ pr, layers }: { pr: PRMeta; layers: InboxPR[] }) {
         type="button"
         className={`stk${open ? " on" : ""}`}
         aria-expanded={open}
-        data-tip={`Stack: ${layers.length - at} of ${layers.length}`}
+        data-tip="Stack"
         onClick={() => setOpen(!open)}
       >
         {ic(Layers2, 13)}
@@ -586,7 +586,7 @@ function Versions() {
               <div className="h-m">
                 <span>{v.source === "chat" ? "chat" : "agent"}</span>
                 {v.scope?.files.length ? (
-                  <span data-tip={v.scope.files.join("\n")}>{v.scope.note || "scoped"}</span>
+                  <span title={v.scope.files.join("\n")}>{v.scope.note || "scoped"}</span>
                 ) : null}
                 <span className="grow" />
                 {v.created_at != null && <span>{ago(v.created_at)}</span>}

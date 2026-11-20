@@ -174,13 +174,13 @@ export function Home() {
                 >
                   {t.local ? ic(GitBranch, 15) : <GithubIcon size={15} />}
                   <span className="t">
-                    <span data-tip={title(t)}>{title(t)}</span>
+                    <span title={title(t)}>{title(t)}</span>
                     <span className="w">
                       {name(t)} · {ref(t)}
                     </span>
                   </span>
                   {anyChats && (
-                    <span className="m" data-tip={t.chats > 0 ? "Chats" : undefined}>
+                    <span className="m" title={t.chats > 0 ? "Chats" : undefined}>
                       {t.chats > 0 && (
                         <>
                           {ic(MessageCircle, 13)}
@@ -190,7 +190,7 @@ export function Home() {
                     </span>
                   )}
                   {anyVersions && (
-                    <span className="m" data-tip={t.versions > 1 ? "Versions" : undefined}>
+                    <span className="m" title={t.versions > 1 ? "Versions" : undefined}>
                       {t.versions > 1 && (
                         <>
                           {ic(History, 13)}

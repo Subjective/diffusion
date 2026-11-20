@@ -182,11 +182,11 @@ test("home's pull requests: grouped like GitHub, stacks as one row, remembered, 
   expect(document.querySelectorAll(".kid")).toHaveLength(0);
   expect(localStorage.getItem("rv-inbox-folded-stacks")).toBe('["s"]');
   fireEvent.click(stack);
-  expect(document.querySelector(".kid [data-tip='Review ready']")).toBeTruthy(); // #42 has a guide
+  expect(document.querySelector(".kid [title='Review ready']")).toBeTruthy(); // #42 has a guide
   const retry = screen.getByText("Retry budget").closest(".ib-r")!;
   expect(retry.querySelector(".ci.bad")!.textContent).toBe("1");
-  expect(retry.querySelector(".rv")!.getAttribute("data-tip")).toBe("pk approved");
-  expect(retry.querySelector(".ci")!.getAttribute("data-tip")).toBe("1 check failing");
+  expect(retry.querySelector(".rv")!.getAttribute("title")).toBe("pk approved");
+  expect(retry.querySelector(".ci")!.getAttribute("title")).toBe("1 check failing");
   // search covers PRs too; a group folds
   fireEvent.change(screen.getByPlaceholderText("Search"), { target: { value: "plan" } });
   expect(groups()).toEqual(["Drafts1"]);
@@ -737,7 +737,7 @@ test("a GitHub PR's top bar: switcher with its stack, checks, reviewers", async 
   );
   expect(document.querySelector(".target .stk")!.textContent).toBe("2/2");
   expect(document.querySelector(".ci-chip")!.textContent).toBe("1");
-  expect(document.querySelector('.target .rv[data-tip="pk requested changes"]')).toBeTruthy();
+  expect(document.querySelector('.target .rv[title="pk requested changes"]')).toBeTruthy();
   fireEvent.click(document.querySelector(".ci-chip")!);
   expect([...document.querySelectorAll(".ci-pop .r")].map((r) => r.textContent)).toEqual(["test / ubuntu", "lint"]);
   expect(document.querySelector(".ci-pop .mg")!.textContent).toBe("Conflicts with main");
@@ -977,7 +977,7 @@ test("no guide yet: write one from here, watch it in the chat, stop it, and see 
   // what the run's mode doesn't allow is asked in the chat, as in a turn
   expect(document.querySelector(".chat .ask-d")!.textContent).toBe("npm test");
   vi.mocked(api.fetchGenerate).mockResolvedValue({ ...running, asks: [] });
-  fireEvent.click(document.querySelector<HTMLElement>('[data-tip="Allow (↵)"]')!);
+  fireEvent.click(document.querySelector<HTMLElement>(".ask-act.primary")!);
   expect(api.answerGenerate).toHaveBeenCalledWith("g1", "allow");
   expect(document.querySelector(".chat .ask-card")).toBeNull();
   // Stop ends the run and brings the card back

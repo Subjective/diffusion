@@ -243,7 +243,7 @@ function CommentView({ c, t, mine }: { c: ThreadComment; t: Thread; mine: boolea
           {t.ci ? <span className="th-tag">CI</span> : c.bot && <span className="th-tag">bot</span>}
           {t.pending && <span className="th-tag pend">Pending</span>}
           {c.created_at > 0 && (
-            <span className="th-t" data-tip={dateText(c.created_at)}>
+            <span className="th-t" title={dateText(c.created_at)}>
               {ago(c.created_at)}
             </span>
           )}
@@ -463,7 +463,7 @@ export function ThreadsPopover({ threads, viewer, idx, onJump }: PopoverProps) {
         <button
           type="button"
           className={`icon-btn sm${hideAll ? " on" : ""}`}
-          {...tip(hideAll ? "Show comments on the diff" : "Hide comments on the diff")}
+          {...tip(hideAll ? "Show comments" : "Hide comments")}
           aria-pressed={hideAll}
           onClick={toggleHideAll}
         >
@@ -485,7 +485,7 @@ export function ThreadsPopover({ threads, viewer, idx, onJump }: PopoverProps) {
                 >
                   {ic(shut ? ChevronRight : ChevronDown, 13)}
                   {ic(FileCode, 13)}
-                  <span className="nm" data-tip={path}>
+                  <span className="nm" title={path}>
                     {path.split("/").pop()}
                   </span>
                 </button>
@@ -493,7 +493,7 @@ export function ThreadsPopover({ threads, viewer, idx, onJump }: PopoverProps) {
                 <button
                   type="button"
                   className={`icon-btn sm tl-hide${hidden ? " on" : ""}`}
-                  {...tip(hidden ? "Show this file's comments on the diff" : "Hide this file's comments on the diff")}
+                  {...tip(hidden ? "Show comments" : "Hide comments")}
                   aria-pressed={hidden}
                   onClick={() => toggleFile(path)}
                 >

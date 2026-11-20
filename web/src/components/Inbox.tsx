@@ -86,7 +86,7 @@ export function Reviewers({ list }: { list: Reviewer[] }) {
   return (
     <span className="rvs">
       {list.slice(0, 3).map((r) => (
-        <span key={r.login} className="rv" data-tip={`${r.login} ${REVIEW_TITLE[r.state]}`}>
+        <span key={r.login} className="rv" title={`${r.login} ${REVIEW_TITLE[r.state]}`}>
           <img className="av" src={r.avatar} alt={r.login} />
           {r.state === "approved" && <span className="st ok">{ic(CircleCheck, 10)}</span>}
           {r.state === "changes" && <span className="st bad">{ic(CircleX, 10)}</span>}
@@ -100,20 +100,17 @@ function Checks({ c }: { c: InboxPR["checks"] }) {
   return (
     <span className="cic">
       {c.state === "success" && (
-        <span className="ci ok" data-tip="Checks passed">
+        <span className="ci ok" title="Checks passed">
           {ic(Check, 14)}
         </span>
       )}
       {c.state === "pending" && (
-        <span className="ci wait" data-tip="Checks running">
+        <span className="ci wait" title="Checks running">
           {ic(LoaderCircle, 14)}
         </span>
       )}
       {c.state === "failure" && (
-        <span
-          className="ci bad"
-          data-tip={c.failing === 1 ? "1 check failing" : `${c.failing || "Some"} checks failing`}
-        >
+        <span className="ci bad" title={c.failing === 1 ? "1 check failing" : `${c.failing || "Some"} checks failing`}>
           {ic(X, 13)}
           {c.failing > 0 && c.failing}
         </span>
@@ -123,7 +120,7 @@ function Checks({ c }: { c: InboxPR["checks"] }) {
 }
 
 const Comments = ({ n }: { n: number }) => (
-  <span className="m" data-tip={n ? `${n} comment${n === 1 ? "" : "s"}` : undefined}>
+  <span className="m" title={n ? `${n} comment${n === 1 ? "" : "s"}` : undefined}>
     {n > 0 && (
       <>
         {ic(MessageSquare, 13)}
@@ -135,7 +132,7 @@ const Comments = ({ n }: { n: number }) => (
 
 const Age = ({ t }: { t: number }) => (
   <span className="age">
-    <span className="ago" data-tip={`Updated ${dateText(t)}`}>
+    <span className="ago" title={`Updated ${dateText(t)}`}>
       {t ? ago(t) : ""}
     </span>
   </span>
@@ -172,11 +169,11 @@ function GuideMark({ p }: { p: InboxPR }) {
     e.preventDefault();
     e.stopPropagation();
   };
-  if (p.guides > 0) return <span className="gd">{<span data-tip="Review ready">{ic(BookOpen, 15)}</span>}</span>;
+  if (p.guides > 0) return <span className="gd">{<span title="Review ready">{ic(BookOpen, 15)}</span>}</span>;
   if (job?.state === "running")
     return (
       <span className="gd">
-        <span className="gen run" data-tip={job.doing ? `Writing a review · ${job.doing}` : "Writing a review"}>
+        <span className="gen run" title={job.doing ? `Writing a review · ${job.doing}` : "Writing a review"}>
           <HarnessMark harness={harness} size={15} />
         </span>
       </span>
@@ -261,7 +258,7 @@ export function Inbox({ prs, q, onOpen }: Props) {
                   <a key={p.url} className="home-r ib-r" {...link(p.url)}>
                     {ic(p.draft ? GitPullRequestDraft : GitPullRequest, 16)}
                     <span className="t">
-                      <span data-tip={p.title}>{p.title}</span>
+                      <span title={p.title}>{p.title}</span>
                       <span className="w">
                         <OnGitHub url={p.url}>
                           {p.repo} #{p.number}
@@ -290,7 +287,7 @@ export function Inbox({ prs, q, onOpen }: Props) {
                   >
                     {ic(Layers2, 16)}
                     <span className="t">
-                      <span data-tip={bottom.title}>
+                      <span title={bottom.title}>
                         {bottom.title}
                         <span className="chev">{ic(expanded ? ChevronDown : ChevronRight, 13)}</span>
                       </span>
@@ -312,7 +309,7 @@ export function Inbox({ prs, q, onOpen }: Props) {
                         <a key={p.url} className="home-r ib-r kid" {...link(p.url)}>
                           <span className="lvl">{p.stack!.index}</span>
                           <span className="t">
-                            <span data-tip={p.title}>{p.title}</span>
+                            <span title={p.title}>{p.title}</span>
                             <span className="w">
                               <OnGitHub url={p.url}>#{p.number}</OnGitHub>
                             </span>

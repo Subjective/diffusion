@@ -164,7 +164,7 @@ export function PeekRow({ peek }: { peek: Peek }) {
                 <button
                   type="button"
                   className="path go"
-                  data-tip={`Go to ${h.path}:${h.line} (↵)`}
+                  title={`${h.path}:${h.line}`}
                   onClick={(e) => jump(h, e.metaKey || e.ctrlKey)}
                 >
                   <span className="dir">{h.path.slice(0, h.path.lastIndexOf("/") + 1)}</span>
@@ -285,7 +285,7 @@ function HitList({
     <div className="peek-list" ref={ref}>
       {groups.map((g) => (
         <div key={g.path} className="grp">
-          <div className="grp-h" data-tip={g.path}>
+          <div className="grp-h" title={g.path}>
             <span className="name">{g.path.slice(g.path.lastIndexOf("/") + 1)}</span>
             <span className="dir">{g.path.slice(0, g.path.lastIndexOf("/"))}</span>
             <span className="grow" />
@@ -303,7 +303,7 @@ function HitList({
               <span className="txt">
                 <Marked text={h.text.split("\n")[0].trim()} symbol={symbol} />
               </span>
-              {h.changed && <span className="chg" data-tip="Changed in this PR" />}
+              {h.changed && <span className="chg" title="Changed in this PR" />}
             </button>
           ))}
         </div>
