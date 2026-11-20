@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, FileDiff as FileDiffIcon, FolderTree, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FileDiff as FileDiffIcon, Folder, FolderTree, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { startResize } from "../lib/panes";
 import { storage } from "../lib/storage";
@@ -15,7 +15,7 @@ const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator
 interface Props {
   /** The changed files, in the diff's order. */
   files: FD[];
-  /** Guide order lists the changed files flat, as the diff runs; file order is the tree. */
+  /** Guide order lists the changed files as the diff runs, under a folder row wherever the folder changes; file order is the tree. */
   order: "guide" | "alpha";
   skip: Set<string>;
   fileSteps: Map<string, number[]>;
@@ -74,6 +74,16 @@ export function treeOrder(paths: string[]): string[] {
 }
 
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+const dirOf = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf("/")));
+
+/** A folder row's path split into the part it shares with the folder above (shown faint) and the rest. */
+export function splitDir(dir: string, prev: string | null): [string, string] {
+  const a = prev ? prev.split("/") : [];
+  const b = dir.split("/");
+  let k = 0;
+  while (k < a.length && k < b.length - 1 && a[k] === b[k]) k++;
+  return k ? [`${b.slice(0, k).join("/")}/`, b.slice(k).join("/")] : ["", dir];
+}
 
 /** The changed files, or every file at the head, as a tree that follows the file in view. Folders holding changes
  *  start open, the rest folded. A changed file opens in the diff (⌘-click: a tab); any other opens in a tab. */
@@ -157,7 +167,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
     } else useUI.getState().openFile(path, undefined, tab);
   };
 
-  const fileRow = (p: string, indent: number, dir = "") => {
+  const fileRow = (p: string, indent: number) => {
     const f = byPath.get(p);
     const cls = [
       "rail-f",
@@ -185,11 +195,6 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
         <span className="nm">
           <Hit text={base(p)} q={needle} />
         </span>
-        {dir && (
-          <span className="dir">
-            <bdi>{dir}</bdi>
-          </span>
-        )}
         {f && (
           <>
             <span className="grow" />
@@ -231,13 +236,33 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
     for (const p of d.files) rows.push(fileRow(p, 6 + depth * 12 + 17));
   };
   if (flat) {
-    // Skippable files trail the guide's; a rule marks where they start.
+    // Skippable files trail the guide's; a rule marks where they start. A folder row heads each run of files in
+    // one folder, so a folder the guide comes back to shows again as one row, never as a second tree.
     let tail = flat.length;
     while (tail > 0 && skip.has(flat[tail - 1])) tail--;
+    let prev: string | null = null;
     flat.forEach((p, n) => {
-      if (n === tail && n > 0) rows.push(<div key="skip-rule" className="rail-rule" />);
-      const i = p.lastIndexOf("/");
-      rows.push(fileRow(p, 8, i > 0 ? p.slice(0, i) : ""));
+      if (n === tail && n > 0) {
+        rows.push(<div key="skip-rule" className="rail-rule" />);
+        prev = null;
+      }
+      const d = dirOf(p);
+      if (d && d !== prev) {
+        const [same, rest] = splitDir(d, prev);
+        rows.push(
+          <div key={`h:${n}`} className="rail-run" title={d}>
+            {ic(Folder, 12)}
+            <span className="nm">
+              <bdi>
+                {same && <span className="same">{same}</span>}
+                {rest}
+              </bdi>
+            </span>
+          </div>,
+        );
+      }
+      prev = d;
+      rows.push(fileRow(p, d ? 26 : 8));
     });
   } else walk(root, 0);
 

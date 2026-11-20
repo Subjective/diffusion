@@ -2245,20 +2245,31 @@ body.resizing * {
 .rail-f .dot.sm {
   flex: none;
 }
-/* Guide order: each name's folder, dim, cut from the left so its nearest folders stay. */
-.rail-f:has(.dir) .nm {
-  flex: none;
-  max-width: 75%;
+/* Guide order: a folder row heads each run of files in one folder. Its path is cut from the left so the nearest
+   folders stay, and the part it shares with the folder row above is fainter. */
+.rail-run {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin-top: 4px;
+  padding: 0 8px 0 9px;
+  color: var(--subtle);
+  font-size: 11.5px;
+  white-space: nowrap;
 }
-.rail-f .dir {
+.rail-run svg {
+  flex: none;
+}
+.rail-run .nm {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   direction: rtl;
   text-align: left;
-  font-size: 11.5px;
-  color: var(--subtle);
-  opacity: 0.8;
+}
+.rail-run .same {
+  opacity: 0.55;
 }
 .cnt.bin {
   display: inline-grid;
@@ -2268,11 +2279,12 @@ body.resizing * {
 .rail-f.gone .nm {
   text-decoration: line-through;
 }
-/* A new file's name is tinted, as editors show it. */
-.rail-f.new .nm,
-.rail-f.new.skip .nm,
-.rail-f.new.viewed .nm {
-  color: var(--add-fg);
+/* A new file's name is underlined, the quiet twin of a deleted file's strikethrough. */
+.rail-f.new .nm {
+  text-decoration: underline;
+  text-decoration-color: var(--subtle);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 .rail-rule {
   height: 1px;
