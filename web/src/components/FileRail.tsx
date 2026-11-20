@@ -82,6 +82,8 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
   const viewed = useUI((s) => s.viewed);
   const hideSkip = useUI((s) => s.hideSkip);
   const mode = useUI((s) => s.railMode);
+  const hoverRows = useUI((s) => s.hoverRows);
+  const hoverStep = useUI((s) => s.hoverStep);
   const nav = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
@@ -89,6 +91,8 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
   const [all, setAll] = useState<string[] | null>(null);
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
   const byPath = useMemo(() => new Map(files.map((f) => [f.path, f])), [files]);
+  // The files the hovered step, substep or ref touches (row keys are `file:pos`).
+  const lit = useMemo(() => new Set([...hoverRows].map((k) => k.slice(0, k.lastIndexOf(":")))), [hoverRows]);
 
   useEffect(() => {
     if (mode !== "all") return;
@@ -158,6 +162,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
     const cls = [
       "rail-f",
       p === current && "on",
+      lit.has(p) && "lit",
       f && viewed[p] && "viewed",
       f && skip.has(p) && "skip",
       f?.status === "deleted" && "gone",
@@ -189,7 +194,7 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
           <>
             <span className="grow" />
             {(fileSteps.get(p) ?? []).map((s) => (
-              <span key={s} className="dot sm" data-step={s}>
+              <span key={s} className={`dot sm${s === hoverStep && lit.has(p) ? " on" : ""}`} data-step={s}>
                 {s}
               </span>
             ))}
@@ -205,11 +210,12 @@ export function FileRail({ files, order, skip, fileSteps, current, onPick }: Pro
     for (const c of d.dirs) {
       const shut = !isOpen(c);
       const holds = !!current && current.startsWith(`${c.path}/`);
+      const holdsLit = shut && [...lit].some((p) => p.startsWith(`${c.path}/`));
       rows.push(
         <button
           key={`d:${c.path}`}
           type="button"
-          className={`rail-dir${shut && holds ? " on" : ""}`}
+          className={`rail-dir${shut && holds ? " on" : ""}${holdsLit ? " lit" : ""}`}
           style={{ paddingLeft: 6 + depth * 12 }}
           title={c.path}
           aria-expanded={!shut}
