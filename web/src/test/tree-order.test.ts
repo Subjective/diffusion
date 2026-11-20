@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { treeOrder } from "../components/FileRail";
+import { splitDir, treeOrder } from "../components/FileRail";
 
 test("file tree order: folders before files, A–Z, as the navigator lists them", () => {
   const paths = [
@@ -16,4 +16,11 @@ test("file tree order: folders before files, A–Z, as the navigator lists them"
     "web/a.tsx",
     "README.md",
   ]);
+});
+
+test("guide-order folder rows fade the folders they share with the row above", () => {
+  expect(splitDir("src/server/db/migrations", null)).toEqual(["", "src/server/db/migrations"]);
+  expect(splitDir("src/server/db/migrations", "src/server/billing")).toEqual(["src/server/", "db/migrations"]);
+  expect(splitDir("src/server/db", "src/server/db/migrations")).toEqual(["src/server/", "db"]);
+  expect(splitDir("tests/server", "src/server")).toEqual(["", "tests/server"]);
 });
