@@ -8,6 +8,8 @@ import {
   EyeOff,
   FileCode,
   Pencil,
+  RotateCcw,
+  Send,
   Trash2,
   User,
 } from "lucide-react";
@@ -164,15 +166,18 @@ const Avatar = ({ c, size = 20 }: { c: Pick<ThreadComment, "avatar" | "author">;
   <img className="av" src={c.avatar} alt={c.author} width={size} height={size} />
 );
 
-/** A text box that grows with what's typed: ↵ saves, ⇧↵ is a new line, Esc cancels. */
+/** A text box that grows with what's typed: ↵ saves (or posts, for a new comment that goes straight to GitHub),
+ *  ⇧↵ is a new line, Esc cancels. */
 function Compose({
   initial = "",
   placeholder,
+  post = false,
   onSave,
   onCancel,
 }: {
   initial?: string;
   placeholder: string;
+  post?: boolean;
   onSave: (text: string) => Promise<boolean> | boolean;
   onCancel: () => void;
 }) {
@@ -214,11 +219,11 @@ function Compose({
       <button
         type="button"
         className="icon-btn sm solid"
-        {...tip("Save")}
+        {...tip(post ? "Post" : "Save")}
         disabled={!text.trim() || busy}
         onClick={save}
       >
-        {ic(Check, 14)}
+        {post ? ic(Send, 13) : ic(Check, 14)}
       </button>
     </div>
   );
@@ -279,20 +284,16 @@ function CommentView({ c, t, mine }: { c: ThreadComment; t: Thread; mine: boolea
 /** Opens the line popup on a thread's lines with the thread attached, to ask the agent about it (set by App). */
 export const useThreadAsk = create<{ ask: ((t: Thread, x: number, y: number) => void) | null }>(() => ({ ask: null }));
 
-/** Under a GitHub thread: a reply box (opened by a click), asking the agent about it, and resolving it. */
+/** Under a GitHub thread: a reply box, opened by a click. */
 function ThreadFoot({ t }: { t: Thread }) {
   const [replying, setReplying] = useState(false);
   const act = useReview((s) => s.act);
-  const expand = useReview((s) => s.expand);
-  const ask = useThreadAsk((s) => s.ask);
-  const chatHarness = useChat((s) => s.chat.harness);
-  const guideHarness = useApp((s) => s.guide?.meta?.harness);
-  const harness = chatHarness ?? guideHarness ?? null;
   return (
     <div className="th-foot">
       {replying ? (
         <Compose
           placeholder="Reply"
+          post
           onSave={(body) => act({ kind: "reply", thread: t.id, body }, t.id)}
           onCancel={() => setReplying(false)}
         />
@@ -301,63 +302,92 @@ function ThreadFoot({ t }: { t: Thread }) {
           Reply
         </button>
       )}
-      {ask && t.start != null && !replying && (
-        <button
-          type="button"
-          className="icon-btn sm th-ask"
-          {...tip(`Ask ${harnessName(harness)}`)}
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            ask(t, r.right - 360, r.bottom);
-          }}
-        >
-          <HarnessMark harness={harness} size={15} />
-        </button>
-      )}
-      <button
-        type="button"
-        className="th-res"
-        onClick={() => void act({ kind: t.resolved ? "unresolve" : "resolve", thread: t.id }, t.id)}
-      >
-        {ic(Check, 13)}
-        {t.resolved ? "Unresolve" : "Resolve"}
-      </button>
-      {t.resolved && (
-        <button type="button" className="icon-btn sm" {...tip("Collapse")} onClick={() => expand(t.id, false)}>
-          {ic(ChevronDown, 14)}
-        </button>
-      )}
     </div>
   );
 }
 
-/** A thread: the first comment and the latest, with the ones between folded into "N more replies" until opened.
- *  A resolved thread is one quiet line until opened. Your own comments can be edited or deleted. */
-export function ThreadCard({ t, keys }: { t: Thread; keys: string[] }) {
-  const open = useReview((s) => s.expanded.includes(t.id));
-  const expand = useReview((s) => s.expand);
-  const viewer = useReview((s) => s.state?.viewer ?? "");
-  const error = useReview((s) => (s.errorAt === t.id ? s.error : null));
-  const setHover = useUI((s) => s.setHover);
-  const hoverProps = keys.length ? { onMouseEnter: () => setHover(keys), onMouseLeave: () => setHover([]) } : {};
+/** A GitHub thread's header: who's in it, then asking the agent about it, resolving it, and folding it. A click
+ *  anywhere on it folds or opens the thread. Folded, it shows the first line, and its actions only on hover. */
+function ThreadBar({ t, shut, onToggle }: { t: Thread; shut: boolean; onToggle: () => void }) {
+  const act = useReview((s) => s.act);
+  const ask = useThreadAsk((s) => s.ask);
+  const chatHarness = useChat((s) => s.chat.harness);
+  const guideHarness = useApp((s) => s.guide?.meta?.harness);
+  const harness = chatHarness ?? guideHarness ?? null;
   const people = [...new Map(t.comments.map((c) => [c.author, c])).values()];
-  if (t.resolved && !open)
-    return (
-      <button type="button" className="th-closed" data-thread={t.id} onClick={() => expand(t.id)} {...hoverProps}>
-        {ic(Check, 13)}
+  const n = t.comments.length;
+  const count = `${n} comment${n === 1 ? "" : "s"}`;
+  return (
+    <div className={`th-bar${shut ? " shut" : ""}`}>
+      <button type="button" className="th-bar-main" aria-expanded={!shut} onClick={onToggle}>
         <span className="avs">
           {people.slice(0, 3).map((c) => (
             <Avatar key={c.author} c={c} size={18} />
           ))}
         </span>
-        <span className="th-first">
-          <Inline text={t.comments[0].body.split("\n")[0]} />
-        </span>
-        <span className="th-meta">
-          Resolved · {t.comments.length} comment{t.comments.length === 1 ? "" : "s"}
-        </span>
+        {shut ? (
+          <>
+            <span className="th-first">
+              <Inline text={t.comments[0].body.split("\n")[0]} />
+            </span>
+            <span className="th-meta">{t.resolved ? "Resolved" : count}</span>
+          </>
+        ) : (
+          <span className="th-meta">{t.resolved ? `Resolved · ${count}` : count}</span>
+        )}
       </button>
-    );
+      <span className="th-bar-acts">
+        {ask && t.start != null && (
+          <button
+            type="button"
+            className="icon-btn sm"
+            {...tip(`Ask ${harnessName(harness)}`)}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              ask(t, r.right - 360, r.bottom);
+            }}
+          >
+            <HarnessMark harness={harness} size={14} />
+          </button>
+        )}
+        <button
+          type="button"
+          className="icon-btn sm th-res"
+          {...tip(t.resolved ? "Unresolve" : "Resolve")}
+          onClick={() => void act({ kind: t.resolved ? "unresolve" : "resolve", thread: t.id }, t.id)}
+        >
+          {ic(t.resolved ? RotateCcw : Check, 14)}
+        </button>
+      </span>
+      <button
+        type="button"
+        className="icon-btn sm th-chev"
+        aria-label={shut ? "Expand" : "Collapse"}
+        aria-expanded={!shut}
+        tabIndex={-1}
+        onClick={onToggle}
+      >
+        {ic(ChevronDown, 14)}
+      </button>
+    </div>
+  );
+}
+
+/** A thread: the first comment and the latest, with the ones between folded into "N more replies" until opened.
+ *  A GitHub thread has a header bar that folds it to one line; a resolved one starts folded. Your own comments
+ *  can be edited or deleted. */
+export function ThreadCard({ t, keys }: { t: Thread; keys: string[] }) {
+  const open = useReview((s) => s.expanded.includes(t.id));
+  const foldedOpen = useReview((s) => s.folded.includes(t.id));
+  const expand = useReview((s) => s.expand);
+  const fold = useReview((s) => s.fold);
+  const viewer = useReview((s) => s.state?.viewer ?? "");
+  const error = useReview((s) => (s.errorAt === t.id ? s.error : null));
+  const setHover = useUI((s) => s.setHover);
+  const hoverProps = keys.length ? { onMouseEnter: () => setHover(keys), onMouseLeave: () => setHover([]) } : {};
+  const github = !t.pending && !t.ci;
+  const shut = github && (t.resolved ? !open : foldedOpen);
+  const toggle = () => (t.resolved ? expand(t.id, !open) : fold(t.id, !foldedOpen));
   const cs = t.comments;
   const folded = !open && cs.length > 3;
   const between = cs.slice(1, -1);
@@ -366,28 +396,33 @@ export function ThreadCard({ t, keys }: { t: Thread; keys: string[] }) {
   );
   return (
     <div
-      className={`th${t.resolved ? " resolved" : ""}${t.pending ? " pending" : ""}${t.ci ? " ci" : ""}`}
+      className={`th${shut ? " shut" : ""}${t.resolved ? " resolved" : ""}${t.pending ? " pending" : ""}${t.ci ? " ci" : ""}`}
       data-thread={t.id}
       {...hoverProps}
     >
-      {view(cs[0])}
-      {folded ? (
+      {github && <ThreadBar t={t} shut={shut} onToggle={toggle} />}
+      {!shut && (
         <>
-          <button type="button" className="th-more" onClick={() => expand(t.id)}>
-            <span className="avs">
-              {[...new Map(between.map((c) => [c.author, c])).values()].slice(0, 3).map((c) => (
-                <Avatar key={c.author} c={c} size={18} />
-              ))}
-            </span>
-            {between.length} more {between.length === 1 ? "reply" : "replies"}
-          </button>
-          {view(cs[cs.length - 1])}
+          {view(cs[0])}
+          {folded ? (
+            <>
+              <button type="button" className="th-more" onClick={() => expand(t.id)}>
+                <span className="avs">
+                  {[...new Map(between.map((c) => [c.author, c])).values()].slice(0, 3).map((c) => (
+                    <Avatar key={c.author} c={c} size={18} />
+                  ))}
+                </span>
+                {between.length} more {between.length === 1 ? "reply" : "replies"}
+              </button>
+              {view(cs[cs.length - 1])}
+            </>
+          ) : (
+            cs.slice(1).map(view)
+          )}
+          {github && <ThreadFoot t={t} />}
         </>
-      ) : (
-        cs.slice(1).map(view)
       )}
       {error && <div className="rv-err th-err">{error}</div>}
-      {!t.pending && !t.ci && <ThreadFoot t={t} />}
     </div>
   );
 }

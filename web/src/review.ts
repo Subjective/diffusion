@@ -63,9 +63,12 @@ interface Review {
   hiddenFiles: string[];
   /** Threads opened past their collapsed form (long middles, resolved). */
   expanded: string[];
+  /** Open threads folded to one line. */
+  folded: string[];
   load(url: string, refresh?: boolean): Promise<void>;
   toggleFile(path: string): void;
   expand(id: string, on?: boolean): void;
+  fold(id: string, on?: boolean): void;
 }
 
 const savePending = (url: string, pending: PendingComment[]) => storage.set(`rv-pending:${url}`, pending);
@@ -89,6 +92,7 @@ export const useReview = create<Review>((set, get) => ({
   busy: false,
   hiddenFiles: [],
   expanded: [],
+  folded: [],
   addPending(c) {
     const { url, pending } = get();
     const next = [...pending, { ...c, id: `p${Date.now().toString(36)}${pending.length}` }];
@@ -141,6 +145,7 @@ export const useReview = create<Review>((set, get) => ({
         state: null,
         error: null,
         expanded: [],
+        folded: [],
         hiddenFiles: storage.get(`rv-th-hidden:${url}`, []),
         pending: storage.get(`rv-pending:${url}`, []),
       });
@@ -158,8 +163,15 @@ export const useReview = create<Review>((set, get) => ({
     set({ hiddenFiles: next });
   },
   expand(id, on = true) {
-    const { expanded } = get();
-    set({ expanded: on ? [...new Set([...expanded, id])] : expanded.filter((x) => x !== id) });
+    const { expanded, folded } = get();
+    set({
+      expanded: on ? [...new Set([...expanded, id])] : expanded.filter((x) => x !== id),
+      folded: on ? folded.filter((x) => x !== id) : folded,
+    });
+  },
+  fold(id, on = true) {
+    const { folded } = get();
+    set({ folded: on ? [...new Set([...folded, id])] : folded.filter((x) => x !== id) });
   },
 }));
 

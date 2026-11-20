@@ -527,7 +527,15 @@ test("GitHub threads sit under their lines with range bars, fold long middles, a
   expect(nums(".hl")).toEqual(["session.ts:6", "session.ts:7"]);
   fireEvent.mouseLeave(card());
   // resolved: one line until opened; file-level: under the file's header; outdated: not on the diff
-  expect(document.querySelector('[data-thread="T2"]')!.classList.contains("th-closed")).toBe(true);
+  expect(document.querySelector('[data-thread="T2"]')!.classList.contains("shut")).toBe(true);
+  // the header bar folds and opens a thread
+  const bar = (id: string) => document.querySelector<HTMLElement>(`[data-thread="${id}"] .th-bar-main`)!;
+  fireEvent.click(bar("T2"));
+  expect(document.querySelector('[data-thread="T2"]')!.classList.contains("shut")).toBe(false);
+  fireEvent.click(bar("T1"));
+  expect([card().classList.contains("shut"), card().querySelectorAll(".th-c").length]).toEqual([true, 0]);
+  fireEvent.click(bar("T1"));
+  expect(card().querySelectorAll(".th-c")).toHaveLength(4);
   expect(document.querySelector('.file[data-path="src/auth/types.ts"] .file-th [data-thread="T3"]')).toBeTruthy();
   expect(document.querySelector('[data-thread="T4"]')).toBeNull();
 
@@ -564,6 +572,7 @@ test("writing: reply, resolve, edit your own, comment from the line popup, and s
   fireEvent.click(card().querySelector(".th-reply")!);
   const box = card().querySelector<HTMLTextAreaElement>(".th-compose textarea")!;
   fireEvent.change(box, { target: { value: "Will do" } });
+  expect(card().querySelector(".th-compose button")!.getAttribute("aria-label")).toBe("Post");
   fireEvent.keyDown(box, { key: "Enter" });
   await waitFor(() => expect(acted()).toEqual([{ kind: "reply", thread: "T1", body: "Will do" }]));
   fireEvent.click(card().querySelector(".th-res")!);
